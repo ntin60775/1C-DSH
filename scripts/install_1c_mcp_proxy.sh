@@ -25,9 +25,20 @@ fi
 python3 -m venv "$VENV"
 "$VENV/bin/pip" install -q --upgrade pip
 # Пины по итогам живого стенда (sess_ce5b1a59): mcp 2.2.0 ломал импорт
-# fastmcp; pyahocorasick нужен, но в requirements тулкита отсутствует.
+# fastmcp; с v1.10.0 pyahocorasick/spacy есть и в requirements тулкита —
+# явный mcp<2 оставлен страховкой от будущих мажоров.
 "$VENV/bin/pip" install -q fastapi uvicorn "mcp<2" pyahocorasick httpx pydantic
-"$VENV/bin/pip" install -q -r "$TOOLKIT/onec_mcp_toolkit_proxy/requirements.txt" 2>/dev/null || true
+# requirements.txt — в корне клона тулкита (не в onec_mcp_toolkit_proxy/).
+# Падение установки не глотать: промолчанный сбой терял toon-format и пин
+# mcp>=1.26 (v1.10.0), прокси молча уходил в JSON-фолбэк.
+if ! "$VENV/bin/pip" install -q -r "$TOOLKIT/requirements.txt"; then
+	# пин spacy==3.8.0 у апстрима без колёс под новые python (3.13) — сборка
+	# из исходников падает; прокси деградирует штатно (NERDetector, Level 2)
+	grep -vE '^spacy[=<>~ ]' "$TOOLKIT/requirements.txt" >"$TOOLKIT/.requirements-no-spacy.txt"
+	echo "• spacy не собрался — ставлю requirements без него; NER-детектор прокси отключён (штатная деградация)"
+	"$VENV/bin/pip" install -q -r "$TOOLKIT/.requirements-no-spacy.txt"
+	rm -f "$TOOLKIT/.requirements-no-spacy.txt"
+fi
 
 cat <<FIN
 готово: $VENV

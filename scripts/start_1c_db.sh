@@ -7,11 +7,12 @@
 # :6003 (MCP Streamable HTTP для хоста + /1c/poll long-poll для клиента 1С),
 # а клиент 1С подключается к нему сам — через ПараметрЗапуска
 # "startup;mode=proxy;url=http://localhost:PORT" (ручных кликов в форме нет).
-# Подъём двухфазный (v0.4.46): фаза 1 — startup (новая база: оператор
-# подтверждает диалоги на видимом дисплее; база запоминает настройки канала),
-# фаза 2 — перезапуск с /C "autostart;…" включает сеансовые danger-флаги
-# («Запись», «УстановитьПривилегированныйРежим») и прогрев словаря
-# анонимизации. CONTOUR_AUTOSTART=off — только фаза 1.
+# Подъём однофазный (v0.4.73): startup с danger-флагами в строке запуска
+# («Запись», «УстановитьПривилегированныйРежим», подтверждение опасных
+# операций — startup-парсер тулкита v1.10.0, ROCTUP/1c-mcp-toolkit#43),
+# затем прогрев словаря анонимизации. До v1.10.0 флаги читались только из
+# autostart-JSON (там #35) — подъём был двухфазным (v0.4.46…v0.4.72),
+# переменная CONTOUR_AUTOSTART упразднена вместе с фазой 2.
 # На Windows embedded-режим работает нативно — там скрипт тоже корректен,
 # но прокси не нужен (mode=embedded поднимет сервер внутри клиента).
 #
@@ -116,7 +117,7 @@ alive() { curl -so /dev/null --max-time 3 -w '%{http_code}' "$URL" 2>/dev/null |
 
 # Гасим клиента по уникальному маркеру обработки в cmdline: реальный ELF может
 # жить за shim-обёрткой (podman/distrobox-exec), pidfile указывает лишь на
-# обёртку. Используется и в --stop, и в фазе 2 (перезапуск с autostart).
+# обёртку. Используется в --stop.
 kill_client() {
 	local MARKER="$ROOT/$EPF_REL"
 	pkill -f -- "$MARKER" 2>/dev/null || true
@@ -529,15 +530,17 @@ wait_client() { # $1 — метка фазы
 
 cd "$ROOT"
 
-# ── фаза 1: startup. Первая в новой/перезалитой базе требует оператора
-# (диалоги платформы на видимом дисплее) и запоминает настройки канала в
-# настройках базы — без них autostart-фаза подключиться не сможет.
+# ── startup: danger-флаги прямо в строке запуска (startup-парсер тулкита
+# v1.10.0, ROCTUP/1c-mcp-toolkit#43). Первая в новой/перезалитой базе
+# требует оператора (диалоги платформы на видимом дисплее) и запоминает
+# настройки канала в настройках базы — повторные подъёмы проходят без кликов.
 if [[ $DBMODE == proxy ]]; then
 	CARG="startup;mode=proxy;url=http://localhost:$PORT"
 	[[ -n "$CHANNEL" ]] && CARG="$CARG;channel=$CHANNEL"
 else
 	CARG="startup;mode=embedded;port=$PORT"
 fi
+CARG="$CARG;danger_auto_write=1;danger_auto_priv=1;danger_confirm=1"
 launch_client "$CARG"
 if ! wait_client 1; then
 	echo "  сначала: база НОВАЯ или перезалитая (dt, пересоздан build/ib)?" >&2
@@ -546,40 +549,6 @@ if ! wait_client 1; then
 	echo "    1c-db-data, раздел «Первая/перезалитая база»" >&2
 	echo "  прочее: wrong mode (embedded на Linux невозможен)" >&2
 	exit 1
-fi
-
-# ── фаза 2: перезапуск с autostart — включает сеансовые флаги «Автоматически
-# разрешать операции» («Запись», «УстановитьПривилегированныйРежим»; канон
-# владельца 2026-10-04/10-11). Флаги читаются epf только из autostart-JSON
-# (прямой startup-парсер их не несёт — ROCTUP/1c-mcp-toolkit#35), поэтому
-# каждый подъём двухфазный. Протокол владения epf: nonce-файл «valid»,
-# claimed/signal-пути, окно 300 с, связь — из сохранённых настроек базы.
-if [[ $DBMODE == proxy && "${CONTOUR_AUTOSTART:-on}" != "off" ]]; then
-	AD="$ROOT/build/.1c-db-autostart"
-	rm -rf "$AD"
-	mkdir -p "$AD"
-	ATS="$(date +%Y%m%d%H%M%S)"
-	ANONCE="$AD/nonce.tmp"; ACLAIMED="$AD/claimed.tmp"; ASIGNAL="$AD/signal.tmp"
-	APARAMS="$AD/params.json"
-	printf 'valid' > "$ANONCE"
-	python3 - "$APARAMS" "$ASIGNAL" "$ANONCE" "$ACLAIMED" <<'PY'
-import json, sys
-params, signal, nonce, claimed = sys.argv[1:5]
-d = {"signal_path": signal, "mappings_path": "", "mcp_sessions": [],
-     "nonce_path": nonce, "claimed_path": claimed, "restart_password": "",
-     "danger_auto_write": True, "danger_auto_priv": True,
-     "danger_confirm": True, "automatic_recovery": False}
-open(params, "w", encoding="utf-8").write(json.dumps(d))
-PY
-	kill_client
-	echo "• фаза 2: перезапуск с autostart (danger-флаги «Запись»/«Привилегированный»)"
-	launch_client "autostart;$ATS;$APARAMS"
-	if ! wait_client 2; then
-		[[ -f "$ASIGNAL" ]] && echo "  signal: $(head -c 200 "$ASIGNAL")" >&2
-		echo "  escape-люк: CONTOUR_AUTOSTART=off пропускает фазу 2" >&2
-		exit 1
-	fi
-	rm -rf "$AD"
 fi
 
 # ── прогрев словаря анонимизации: словарь строится прокси запросами через
