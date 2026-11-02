@@ -88,12 +88,12 @@ def _anon_on(api_url: str) -> bool:
     return "[PER-" in probe
 
 
-def _raise_channel() -> None:
+def _raise_channel(anon: str = "on") -> None:
     script = ROOT / ".zcode" / "1c" / "scripts" / "start_1c_db.sh"
     if not script.is_file():
         pytest.fail("стенд 1c-db молчит, а .zcode/1c/scripts/start_1c_db.sh нет — "
                     "контур не разведён (навык 1c-project-bootstrap)")
-    env = dict(os.environ, CONTOUR_ANON="on")
+    env = dict(os.environ, CONTOUR_ANON=anon)
     subprocess.run(["bash", str(script), str(ROOT), "--stop"],
                    env=env, timeout=120, capture_output=True)
     done = subprocess.run(["bash", str(script), str(ROOT), "--headless"],
@@ -103,17 +103,34 @@ def _raise_channel() -> None:
                     f"{(done.stdout + done.stderr).strip()[-400:]}")
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def db_origin() -> str:
+    """Канал с включённой анонимизацией на время проб набора.
+
+    Пробы канона требуют токенов, а остальные тесты проекта (canon
+    run_e2e.sh) — сырых значений: после модуля канал возвращается в
+    состояние, ожидаемое окружением. Под run_e2e.sh (CONTOUR_ANON=off в
+    окружении) — сырой канал для остальных файлов; отдельный прогон
+    возвращает штатный анонимизированный стенд. Рестарт — только при
+    несовпадении состояний.
+    """
     origin = _origin()
-    if not _alive(origin) or not _anon_on(f"{origin}/api/execute_query"):
-        _raise_channel()
-        assert _anon_on(f"{origin}/api/execute_query"), \
-            "канал поднят, но пробы персон не токенизируются — анонимизация не включилась"
-    return origin
+    api = f"{origin}/api/execute_query"
+    if not _alive(origin):
+        _raise_channel("on")
+    elif not _anon_on(api):
+        _raise_channel("on")
+    assert _anon_on(api), \
+        "канал поднят, но пробы персон не токенизируются — анонимизация не включилась"
+    yield origin
+    target = "off" if os.environ.get("CONTOUR_ANON") == "off" else "on"
+    if _alive(origin):
+        current = _anon_on(api)
+        if (target == "on") != current:
+            _raise_channel(target)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def db_api(db_origin: str) -> str:
     return f"{db_origin}/api/execute_query"
 
