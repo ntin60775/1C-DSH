@@ -39,7 +39,13 @@ python3 "$SKILL_DIR/scripts/scaffold.py" all \
   регламент переезда со старого конфига — [references/v8project.md](references/v8project.md);
 - `git` — `git init`, `.gitignore` (только дозапись недостающих строк),
   `.gitattributes` (политика CRLF/binary — без неё `unica.check` роняет
-  `repositoryReady` первым коммитом), `--remote`.
+  `repositoryReady` первым коммитом), `--remote`;
+- `e2e-baseline` — базовый e2e-набор приёмки контура в `tests/e2e`
+  (conftest.py с самоподъёмом канала `1c-db` в режиме анонимизации +
+  test_contour_basics.py: живость, прогрев с токенами, число без токена,
+  метаданные, валидатор ссылок; только чтение). Прогон —
+  `run_e2e.sh [профиль] tests/e2e`; существующие файлы набора не трогаются
+  без `--force`. Свои тесты проекта кладутся рядом — набор не мешает им.
 
 Скрипт идемпотентен: существующее не перезаписывается без `--force`
 (`.gitignore` — всегда только дозапись). `--dry-run` — показать план.

@@ -376,6 +376,27 @@ def cmd_check(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_e2e_baseline(args: argparse.Namespace) -> int:
+	"""Базовый e2e-набор приёмки контура: conftest + пробы канона в tests/e2e.
+
+	Пробы канала 1c-db по канону скилла 1c-db-data (токены, число,
+	метаданные, валидатор ссылок), только чтение; канал при необходимости
+	поднимает conftest-фикстура (CONTOUR_ANON=on). Существующие файлы не
+	трогаются без --force — у проекта могут быть свои тесты.
+	"""
+	log("e2e-baseline (tests/e2e):")
+	statuses = [
+		copy_template(os.path.join("e2e", name),
+		              os.path.join("tests", "e2e", name),
+		              args.dry_run, args.force)
+		for name in ("conftest.py", "test_contour_basics.py")
+	]
+	log(f"e2e-baseline: {statuses.count('exists')} skip, "
+	    f"{len(statuses) - statuses.count('exists')} файлов")
+	log("прогон: bash .zcode/1c/scripts/run_e2e.sh [профиль] tests/e2e")
+	return 0
+
+
 def cmd_all(args: argparse.Namespace) -> int:
 	for cmd in (cmd_structure, cmd_v8project, cmd_git):
 		print(f"== {cmd.__name__[4:]} ==")
@@ -436,6 +457,12 @@ def main(argv: list[str] | None = None) -> int:
 		"check", help="обязательный минимум топологии (exit 0/1)",
 		parents=[common])
 	p_check.set_defaults(func=cmd_check)
+
+	p_e2e = sub.add_parser(
+		"e2e-baseline",
+		help="базовый e2e-набор приёмки контура в tests/e2e",
+		parents=[common])
+	p_e2e.set_defaults(func=cmd_e2e_baseline)
 
 	p_all = sub.add_parser(
 		"all", help="structure + v8project + git", parents=[common])

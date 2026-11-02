@@ -272,6 +272,39 @@ def main() -> None:
 		           r.stdout[-300:])
 		_lib.check("check: path-маркер ritual в смешанном кейсе",
 		           "path\tritual" in r.stdout, r.stdout[-300:])
+
+		# ── 13. e2e-baseline: базовый набор приёмки в tests/e2e ──
+		p11 = os.path.join(tmp, "e2eb")
+		r = sh("e2e-baseline", "--dir", p11)
+		_lib.check("e2e-baseline exit 0", r.returncode == 0, r.stderr[:200])
+		for name in ("conftest.py", "test_contour_basics.py"):
+			_lib.check(f"файл {name} создан",
+			           os.path.isfile(os.path.join(p11, "tests/e2e", name)))
+		body = (Path(p11) / "tests/e2e/test_contour_basics.py") \
+			.read_text(encoding="utf-8")
+		_lib.check("набор: пробы канона на месте",
+		           "ПроверкаAnon" in body and "Справочник.Контрагенты" in body,
+		           body[:120])
+		_lib.check("набор: без имён проектов и хардкода портов",
+		           "erp-demo" not in body and "6003" not in body)
+		r = sh("e2e-baseline", "--dir", p11)
+		_lib.check("повтор: оба файла skip", r.stdout.count("skip") >= 2,
+		           r.stdout[:200])
+		(Path(p11) / "tests/e2e/conftest.py") \
+			.write_text("# свой conftest\n", encoding="utf-8")
+		sh("e2e-baseline", "--dir", p11)
+		_lib.check("чужой conftest не перезаписан",
+		           (Path(p11) / "tests/e2e/conftest.py")
+		           .read_text(encoding="utf-8") == "# свой conftest\n")
+		r = sh("e2e-baseline", "--dir", p11, "--force")
+		_lib.check("--force перезаписал conftest",
+		           "CONTOUR_ANON=on" in (Path(p11) / "tests/e2e/conftest.py")
+		           .read_text(encoding="utf-8"), r.stdout[:200])
+		r = sh("e2e-baseline", "--dir", os.path.join(tmp, "e2edry"), "--dry-run")
+		_lib.check("dry-run exit 0 и без файлов",
+		           r.returncode == 0
+		           and not os.path.exists(os.path.join(tmp, "e2edry", "tests")),
+		           r.stderr[:200])
 	finally:
 		shutil.rmtree(tmp, ignore_errors=True)
 	sys.exit(_lib.summary())
