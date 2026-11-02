@@ -277,28 +277,31 @@ def main() -> None:
 		p11 = os.path.join(tmp, "e2eb")
 		r = sh("e2e-baseline", "--dir", p11)
 		_lib.check("e2e-baseline exit 0", r.returncode == 0, r.stderr[:200])
-		for name in ("conftest.py", "test_contour_basics.py"):
-			_lib.check(f"файл {name} создан",
-			           os.path.isfile(os.path.join(p11, "tests/e2e", name)))
+		_lib.check("файл test_contour_basics.py создан",
+		           os.path.isfile(os.path.join(p11, "tests/e2e/test_contour_basics.py")))
+		_lib.check("conftest.py набором не ставится",
+		           not os.path.exists(os.path.join(p11, "tests/e2e/conftest.py")))
 		body = (Path(p11) / "tests/e2e/test_contour_basics.py") \
 			.read_text(encoding="utf-8")
 		_lib.check("набор: пробы канона на месте",
 		           "ПроверкаAnon" in body and "Справочник.Контрагенты" in body,
 		           body[:120])
+		_lib.check("набор: самодостаточен — импорт conftest отсутствует",
+		           "from conftest" not in body and "import conftest" not in body)
 		_lib.check("набор: без имён проектов и хардкода портов",
 		           "erp-demo" not in body and "6003" not in body)
 		r = sh("e2e-baseline", "--dir", p11)
-		_lib.check("повтор: оба файла skip", r.stdout.count("skip") >= 2,
+		_lib.check("повтор: файл skip", r.stdout.count("skip") >= 1,
 		           r.stdout[:200])
 		(Path(p11) / "tests/e2e/conftest.py") \
-			.write_text("# свой conftest\n", encoding="utf-8")
+			.write_text("# свой conftest проекта\n", encoding="utf-8")
 		sh("e2e-baseline", "--dir", p11)
-		_lib.check("чужой conftest не перезаписан",
+		_lib.check("чужой conftest проекта не тронут",
 		           (Path(p11) / "tests/e2e/conftest.py")
-		           .read_text(encoding="utf-8") == "# свой conftest\n")
+		           .read_text(encoding="utf-8") == "# свой conftest проекта\n")
 		r = sh("e2e-baseline", "--dir", p11, "--force")
-		_lib.check("--force перезаписал conftest",
-		           "CONTOUR_ANON=on" in (Path(p11) / "tests/e2e/conftest.py")
+		_lib.check("--force перезаписал набор",
+		           "CONTOUR_ANON=on" in (Path(p11) / "tests/e2e/test_contour_basics.py")
 		           .read_text(encoding="utf-8"), r.stdout[:200])
 		r = sh("e2e-baseline", "--dir", os.path.join(tmp, "e2edry"), "--dry-run")
 		_lib.check("dry-run exit 0 и без файлов",
@@ -311,33 +314,35 @@ def main() -> None:
 		sh("e2e-baseline", "--dir", p12)
 		r = sh("e2e-baseline", "--dir", p12, "--remove")
 		_lib.check("--remove exit 0", r.returncode == 0, r.stderr[:200])
-		_lib.check("--remove: оба файла сняты",
-		           not os.path.exists(os.path.join(p12, "tests/e2e/conftest.py"))
-		           and not os.path.exists(
+		_lib.check("--remove: файл набора снят",
+		           not os.path.exists(
 		               os.path.join(p12, "tests/e2e/test_contour_basics.py")))
 		r = sh("e2e-baseline", "--dir", p12, "--remove")
 		_lib.check("--remove: повтор без файлов — skip, exit 0",
-		           r.returncode == 0 and r.stdout.count("(нет)") == 2,
+		           r.returncode == 0 and r.stdout.count("(нет)") == 1,
 		           r.stdout[:300])
 		sh("e2e-baseline", "--dir", p12)
-		(Path(p12) / "tests/e2e/conftest.py") \
-			.write_text("# доработка проекта\n", encoding="utf-8")
+		(Path(p12) / "tests/e2e/test_contour_basics.py") \
+			.write_text("# доработка поверх набора\n", encoding="utf-8")
 		(Path(p12) / "tests/e2e/test_own.py") \
 			.write_text("# свой тест проекта\n", encoding="utf-8")
 		r = sh("e2e-baseline", "--dir", p12, "--remove")
-		_lib.check("--remove: правленый conftest остался",
-		           (Path(p12) / "tests/e2e/conftest.py")
-		           .read_text(encoding="utf-8") == "# доработка проекта\n")
+		_lib.check("--remove: правленый файл набора остался",
+		           (Path(p12) / "tests/e2e/test_contour_basics.py")
+		           .read_text(encoding="utf-8") == "# доработка поверх набора\n")
 		_lib.check("--remove: WARN про правленый файл",
 		           "keep" in r.stdout and "правлен" in r.stdout, r.stdout[:400])
-		_lib.check("--remove: шаблонный тест снят",
+		_lib.check("--remove: шаблонный тест снят при первом прогоне",
 		           not os.path.exists(
-		               os.path.join(p12, "tests/e2e/test_contour_basics.py")))
+		               os.path.join(p12, "tests/e2e/test_contour_basics.py"))
+		           or (Path(p12) / "tests/e2e/test_contour_basics.py")
+		           .read_text(encoding="utf-8") == "# доработка поверх набора\n")
 		_lib.check("--remove: свой тест проекта не тронут",
 		           os.path.isfile(os.path.join(p12, "tests/e2e/test_own.py")))
 		sh("e2e-baseline", "--dir", p12, "--remove", "--force")
-		_lib.check("--force --remove: правленый conftest снят",
-		           not os.path.exists(os.path.join(p12, "tests/e2e/conftest.py")))
+		_lib.check("--force --remove: правленый файл набора снят",
+		           not os.path.exists(
+		               os.path.join(p12, "tests/e2e/test_contour_basics.py")))
 		_lib.check("--force --remove: свой тест проекта не тронут",
 		           os.path.isfile(os.path.join(p12, "tests/e2e/test_own.py")))
 	finally:
