@@ -8,6 +8,9 @@
       предупреждение). Сервер стартует и без артефактов — ping этот провал
       не видит, он всплывает provider_unavailable'ом (скилл
       1c-unica-artifacts).
+  1c. NER-эшелон анонимизации 1c-db: spacy + модель ru_core_news_md в
+      venv прокси — мягкая зависимость, нет → WARN (канал работает,
+      значения вне правил профиля не токенизируются).
   2. 1c-testpilot в PATH + окружение e2e-прогонов (pytest в venv).
   2b. API-публикация (ibsrv): env > contour.json (1c.publish.ibsrv —
       в т.ч. режим 'distrobox:<имя>'/'distrobox:auto') > детект.
@@ -573,6 +576,28 @@ def main() -> int:
 			warn(f"1c-db не отвечает ({db_url}) — подними: bash "
 			     ".zcode/1c/scripts/start_1c_db.sh . (Linux: сам поднимет "
 			     "прокси и клиент с mode=proxy; install_1c_mcp_proxy.sh один раз)")
+
+	# NER-эшелон анонимизации 1c-db (мягкая зависимость, как станция kd):
+	# spacy + модель в venv прокси. Нет — WARN: канал работает, но значения
+	# вне правил профиля (ФИО/организации/города) уходят как есть.
+	proxy_venv_py = Path.home() / ".local" / "venvs" / "1c-mcp-proxy" / "bin" / "python"
+	if not proxy_venv_py.is_file():
+		warn(f"venv прокси 1c-db не найден ({proxy_venv_py.parent}) — канал не "
+		     "поднимется; поставь: install_1c_mcp_proxy.sh")
+	else:
+		try:
+			probe = subprocess.run(
+				[str(proxy_venv_py), "-c",
+				 "import spacy; spacy.load('ru_core_news_md')"],
+				capture_output=True, timeout=120)
+		except subprocess.TimeoutExpired:
+			probe = None
+		if probe is not None and probe.returncode == 0:
+			ok("NER анонимизации 1c-db: spacy + модель ru_core_news_md на месте")
+		else:
+			warn("NER анонимизации выключен: нет spacy/модели в venv прокси — "
+			     "значения вне правил профиля уйдут как есть; поставь: "
+			     "install_1c_mcp_proxy.sh")
 
 	# ── 2c. kd-rules-mcp (станция 1c-kd; мягкая зависимость) ──
 	# Сервер правил обмена КД: станция на машине + живой HTTP на 1c_kd.url.

@@ -203,6 +203,19 @@ if [[ $DBMODE == proxy && $MODE != stop ]]; then
 		CONTOUR_ANON="${CONTOUR_ANON:-on}"
 		if [[ "$CONTOUR_ANON" == "on" ]]; then
 			ANON_ENV=(ANONYMIZATION_ENABLED=true)
+			# NER-эшелон (Level 2: ФИО/организации/города вне явных правил
+			# профиля, решение владельца 2026-11-02) — включён вместе с
+			# анонимизацией, включая строковые литералы в результатах
+			# execute_code. Люк для отладки — CONTOUR_NER=off с WARN; люк
+			# CONTOUR_ANON=off глушит и NER: три переменные живут внутри
+			# этой ветки, e2e продолжают сравнивать сырые значения.
+			if [[ "${CONTOUR_NER:-on}" == "on" ]]; then
+				ANON_ENV+=(ANONYMIZATION_NER_ENABLED=true
+					ANONYMIZATION_NER_FOR_EXECUTE_CODE_RESULT=true
+					ANONYMIZATION_NER_FOR_ERROR=true)
+			else
+				echo "WARN: NER-эшелон анонимизации ВЫКЛЮЧЕН (CONTOUR_NER=off) — значения вне правил профиля идут как есть" >&2
+			fi
 		else
 			ANON_ENV=(ANONYMIZATION_ENABLED=false)
 			echo "WARN: анонимизация канала 1c-db ВЫКЛЮЧЕНА (CONTOUR_ANON=off) — данные базы идут в ответах как есть" >&2

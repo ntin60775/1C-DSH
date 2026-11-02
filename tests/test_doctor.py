@@ -91,6 +91,33 @@ def main() -> int:
 		check("python3 перед bash-скриптом не советуется",
 		      "python3 .zcode/1c/scripts/start_1c_db.sh" not in r.stdout, r.stdout[:400])
 
+		# ── NER-эшелон анонимизации: мягкая зависимость в venv прокси ──
+		def fake_venv(state: str) -> Path:
+			"""Fake venv прокси: bin/python — заглушка с нужным кодом выхода."""
+			base = root / f"fakevenv-{state}"
+			py = base / ".local" / "venvs" / "1c-mcp-proxy" / "bin" / "python"
+			py.parent.mkdir(parents=True, exist_ok=True)
+			py.write_text(f"#!/bin/sh\nexit {0 if state == 'ok' else 1}\n",
+			              encoding="utf-8")
+			py.chmod(0o755)
+			return base
+
+		scaffold(root, "{}")
+		r = run_doctor(root, {"HOME": str(fake_venv("ok"))})
+		check("NER: spacy+модель на месте — OK-строка",
+		      "NER анонимизации 1c-db: spacy + модель ru_core_news_md на месте" in r.stdout,
+		      r.stdout[:600])
+		r = run_doctor(root, {"HOME": str(fake_venv("нет-spacy"))})
+		check("NER: venv без spacy — WARN с лечением",
+		      "NER анонимизации выключен" in r.stdout
+		      and "install_1c_mcp_proxy.sh" in r.stdout, r.stdout[:600])
+		check("NER-провал не FAIL (мягкая зависимость)",
+		      "FAIL NER" not in r.stdout, r.stdout[:600])
+		r = run_doctor(root, {"HOME": str(root / "fakevenv-нет-venv")})
+		check("NER: venv прокси нет — WARN с установкой",
+		      "venv прокси 1c-db не найден" in r.stdout
+		      and "install_1c_mcp_proxy.sh" in r.stdout, r.stdout[:600])
+
 		# ── 2c. kd-rules-mcp: мягкая зависимость (WARN, не FAIL) ──
 		scaffold(root, "{}")
 		r = run_doctor(root, {"KD_RULES_STATION": str(Path(tmp) / "нет-станции")})
