@@ -305,6 +305,41 @@ def main() -> None:
 		           r.returncode == 0
 		           and not os.path.exists(os.path.join(tmp, "e2edry", "tests")),
 		           r.stderr[:200])
+
+		# ── 14. e2e-baseline --remove: снятие после приёмки ──
+		p12 = os.path.join(tmp, "e2erem")
+		sh("e2e-baseline", "--dir", p12)
+		r = sh("e2e-baseline", "--dir", p12, "--remove")
+		_lib.check("--remove exit 0", r.returncode == 0, r.stderr[:200])
+		_lib.check("--remove: оба файла сняты",
+		           not os.path.exists(os.path.join(p12, "tests/e2e/conftest.py"))
+		           and not os.path.exists(
+		               os.path.join(p12, "tests/e2e/test_contour_basics.py")))
+		r = sh("e2e-baseline", "--dir", p12, "--remove")
+		_lib.check("--remove: повтор без файлов — skip, exit 0",
+		           r.returncode == 0 and r.stdout.count("(нет)") == 2,
+		           r.stdout[:300])
+		sh("e2e-baseline", "--dir", p12)
+		(Path(p12) / "tests/e2e/conftest.py") \
+			.write_text("# доработка проекта\n", encoding="utf-8")
+		(Path(p12) / "tests/e2e/test_own.py") \
+			.write_text("# свой тест проекта\n", encoding="utf-8")
+		r = sh("e2e-baseline", "--dir", p12, "--remove")
+		_lib.check("--remove: правленый conftest остался",
+		           (Path(p12) / "tests/e2e/conftest.py")
+		           .read_text(encoding="utf-8") == "# доработка проекта\n")
+		_lib.check("--remove: WARN про правленый файл",
+		           "keep" in r.stdout and "правлен" in r.stdout, r.stdout[:400])
+		_lib.check("--remove: шаблонный тест снят",
+		           not os.path.exists(
+		               os.path.join(p12, "tests/e2e/test_contour_basics.py")))
+		_lib.check("--remove: свой тест проекта не тронут",
+		           os.path.isfile(os.path.join(p12, "tests/e2e/test_own.py")))
+		sh("e2e-baseline", "--dir", p12, "--remove", "--force")
+		_lib.check("--force --remove: правленый conftest снят",
+		           not os.path.exists(os.path.join(p12, "tests/e2e/conftest.py")))
+		_lib.check("--force --remove: свой тест проекта не тронут",
+		           os.path.isfile(os.path.join(p12, "tests/e2e/test_own.py")))
 	finally:
 		shutil.rmtree(tmp, ignore_errors=True)
 	sys.exit(_lib.summary())

@@ -383,17 +383,49 @@ def cmd_e2e_baseline(args: argparse.Namespace) -> int:
 	метаданные, валидатор ссылок), только чтение; канал при необходимости
 	поднимает conftest-фикстура (CONTOUR_ANON=on). Существующие файлы не
 	трогаются без --force — у проекта могут быть свои тесты.
+
+	Жизненный цикл (решение владельца): полигон контура держит набор
+	постоянно; в остальных проектах набор ставится на время приёмки контура
+	и снимается `--remove` после неё. Снимаются только файлы, совпадающие
+	с шаблоном — правленый (своя доработка поверх набора) файл остаётся
+	с WARN; --force снимает и его. Свои тесты проекта не трогаются.
 	"""
+	names = ("conftest.py", "test_contour_basics.py")
 	log("e2e-baseline (tests/e2e):")
+	if args.remove:
+		removed = kept = missing = 0
+		for name in names:
+			dst = os.path.join(TARGET_DIR, "tests", "e2e", name)
+			if not os.path.isfile(dst):
+				log(f"  skip    tests/e2e/{name} (нет)")
+				missing += 1
+				continue
+			same = read_template(os.path.join("e2e", name)) == \
+				open(dst, encoding="utf-8").read()
+			if not same and not args.force:
+				log(f"  keep    tests/e2e/{name} (правлен, не шаблон — "
+				    "сними руками или --force)")
+				kept += 1
+				continue
+			action = "removed" if same else "removed*"
+			log(f"  {action:<8} tests/e2e/{name}" + ("" if same else " (правлен, --force)"))
+			if not args.dry_run:
+				os.remove(dst)
+			removed += 1
+		log(f"e2e-baseline --remove: снято {removed}, правленых оставлено {kept}, "
+		    f"отсутствующих {missing}")
+		log("вернуть набор: та же команда без --remove")
+		return 0
 	statuses = [
 		copy_template(os.path.join("e2e", name),
 		              os.path.join("tests", "e2e", name),
 		              args.dry_run, args.force)
-		for name in ("conftest.py", "test_contour_basics.py")
+		for name in names
 	]
 	log(f"e2e-baseline: {statuses.count('exists')} skip, "
 	    f"{len(statuses) - statuses.count('exists')} файлов")
 	log("прогон: bash .zcode/1c/scripts/run_e2e.sh [профиль] tests/e2e")
+	log("снятие после приёмки (кроме полигона): scaffold.py e2e-baseline --remove")
 	return 0
 
 
@@ -462,6 +494,9 @@ def main(argv: list[str] | None = None) -> int:
 		"e2e-baseline",
 		help="базовый e2e-набор приёмки контура в tests/e2e",
 		parents=[common])
+	p_e2e.add_argument("--remove", action="store_true",
+	                   help="снять набор после приёмки (только файлы, "
+	                        "совпадающие с шаблоном; --force снимает и правленые)")
 	p_e2e.set_defaults(func=cmd_e2e_baseline)
 
 	p_all = sub.add_parser(
