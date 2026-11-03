@@ -416,6 +416,11 @@ if sys.argv[2]:
 from ib_lock import resolve_infobase_connection
 root = pathlib.Path(sys.argv[1])
 conn = resolve_infobase_connection(str(root)) or ""
+# Абсолютный File=: СтрокаСоединенияИнформационнойБазы() отдаёт строку как
+# запущено — относительная делает базу неразличимой между деревьями
+# (проба принадлежности фикстуры onec_db, ишью #48).
+if conn.startswith("File=") and not conn[5:].lstrip('"').startswith("/"):
+    conn = "File=" + str((root / conn[5:].strip().strip('"')).resolve())
 f = root / "v8project.local.yaml"
 if f.is_file():
     text = f.read_text(encoding="utf-8")
