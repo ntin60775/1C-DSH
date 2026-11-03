@@ -40,6 +40,7 @@ EXTENSION читается из v8project.yaml (line-парсер).
 import json
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -63,6 +64,109 @@ ESCALATION_FILE = ".zcode/unica-gate-escalations.txt"
 
 SED_INPLACE_RE = re.compile(r"sed\s+(-[a-zA-Z]*i[a-zA-Z]*|--in-place)")
 REDIRECT_RE = re.compile(r">>?\s*([^\s;|&]+)")
+SHELL_SEPARATORS = {"&&", "||", ";", "|", "&", ">", "<", "(", ")"}
+
+
+def _segments(tokens):
+	"""Команда по шелл-разделителям: списки токенов без разделителей."""
+	segment = []
+	for token in tokens:
+		if token in SHELL_SEPARATORS:
+			if segment:
+				yield segment
+			segment = []
+		else:
+			segment.append(token)
+	if segment:
+		yield segment
+
+
+def _sed_operands(segment):
+	"""(цели, неразбираемые) вызова sed; segment[0] — исполняемый файл.
+
+	Скрипт задан флагом -e/-f/--expression/--file (одиночным, в кластере
+	вроде -ie или прикреплённой формой -es/a/b/) — все свободные токены цели;
+	иначе первый свободный токен — скрипт, остальные — цели
+	(спека: docs/UNICA-GATE-BASH-WRITE-SPEC.md).
+	"""
+	targets, unresolved = [], []
+	expr_seen = False
+	script_seen = False
+	i = 1
+	while i < len(segment):
+		token = segment[i]
+		if token in SHELL_SEPARATORS:
+			break
+		if token.startswith("--"):
+			base = token.split("=", 1)[0]
+			if base in ("--expression", "--file"):
+				expr_seen = True
+				i += 1 if "=" in token else 2
+				continue
+			i += 1
+			continue
+		if token.startswith("-") and len(token) > 1:
+			letters = token[1:]
+			if "e" in letters or "f" in letters:
+				expr_seen = True
+				i += 2 if token in ("-e", "-f") else 1
+				continue
+			if token in ("-l", "--line-length"):
+				i += 2
+				continue
+			i += 1  # -i, -n, -E, -r, -s, -z, --posix, -i.bak, -l5…
+			continue
+		if expr_seen or script_seen:
+			if "$" in token or "`" in token:
+				unresolved.append(token)
+			else:
+				targets.append(token)
+		else:
+			script_seen = True
+		i += 1
+	return targets, unresolved
+
+
+def bash_writes_to_source(command: str, cwd: str):
+	"""Цель записи в исходники через bash (sed -i / перенаправление) или None.
+
+	sed разбирается по операндам: цель в исходниках блокируется, правка
+	копии во временном каталоге проходит. Неразбираемый вызов (shlex упал,
+	цель-переменная) — fail-closed по правилу «sed -i и упоминание пути
+	исходников в строке».
+	"""
+
+	def legacy_hit():
+		if SED_INPLACE_RE.search(command):
+			for prefix in SOURCE_PREFIXES:
+				if prefix in command:
+					return prefix
+		return None
+
+	try:
+		lex = shlex.shlex(command, posix=True, punctuation_chars=True)
+		lex.commenters = ""
+		lex.whitespace_split = True
+		tokens = list(lex)
+	except ValueError:
+		return legacy_hit()
+	prefix_in_command = any(prefix in command for prefix in SOURCE_PREFIXES)
+	for segment in _segments(tokens):
+		if os.path.basename(segment[0]) != "sed":
+			continue
+		targets, unresolved = _sed_operands(segment)
+		for token in unresolved:
+			if prefix_in_command:
+				return token
+		for token in targets:
+			norm = normalize_source_path(token, cwd)
+			if norm and not is_agents_doc(norm[0]):
+				return token
+	for m in REDIRECT_RE.finditer(command):
+		norm = normalize_source_path(m.group(1), cwd)
+		if norm and not is_agents_doc(norm[0]):
+			return m.group(1)
+	return None
 
 
 # ── маршрутизация правки (подсказки в глаголах 0.15) ────────────────────────
@@ -119,19 +223,6 @@ def paths_from_tool_input(tool_input: dict):
 	"""Write/Edit/ApplyPatch: путь в file_path (в ZCode), откат на path."""
 	path = tool_input.get("file_path") or tool_input.get("path") or ""
 	return [str(path)] if path else []
-
-
-def bash_writes_to_source(command: str, cwd: str):
-	"""Цель записи в исходники через bash (sed -i / перенаправление) или None."""
-	if SED_INPLACE_RE.search(command):
-		for prefix in SOURCE_PREFIXES:
-			if prefix in command:
-				return prefix
-	for m in REDIRECT_RE.finditer(command):
-		norm = normalize_source_path(m.group(1), cwd)
-		if norm and not is_agents_doc(norm[0]):
-			return m.group(1)
-	return None
 
 
 # ── v8project.yaml: source-set'ы EXTENSION ──────────────────────────────────

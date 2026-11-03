@@ -143,6 +143,37 @@ def main() -> int:
 		r = pre("Bash", {"command": "echo x >> build/out/log.txt"})
 		check("перенаправление вне исходников проходит", r.returncode == 0, f"exit {r.returncode}")
 
+		# ── bash: sed разбирается по операндам (спека bash-write) ──
+		r = pre("Bash", {"command":
+			"cp src/cfe/Расширение/Module.bsl /tmp/w.bsl && sed -i 's/a/b/' /tmp/w.bsl"})
+		check("правка копии из исходника в /tmp проходит", r.returncode == 0,
+		      f"exit {r.returncode}")
+		r = pre("Bash", {"command": "sed -i 's/src\\/cf\\///' /tmp/w.bsl"})
+		check("упоминание src в скрипте sed — не цель", r.returncode == 0,
+		      f"exit {r.returncode}")
+		r = pre("Bash", {"command": f"sed -i -e 's/a/b/' -e 's/c/d/' {bsl}"})
+		check("sed -i -e по исходнику блокируется", r.returncode == 2, f"exit {r.returncode}")
+		r = pre("Bash", {"command": f"sed -i -f fix.sed {bsl}"})
+		check("sed -i -f по исходнику блокируется", r.returncode == 2, f"exit {r.returncode}")
+		r = pre("Bash", {"command": f"sed -ie 's/a/b/' {bsl}"})
+		check("кластер флагов -ie по исходнику блокируется", r.returncode == 2,
+		      f"exit {r.returncode}")
+		r = pre("Bash", {"command": f"echo x | sed -i 's/a/b/' {bsl}"})
+		check("sed после пайпа по исходнику блокируется", r.returncode == 2,
+		      f"exit {r.returncode}")
+		r = pre("Bash", {"command": "f=src/cf/CommonModules/Модуль.bsl; sed -i 's/a/b/' \"$f\""})
+		check("переменная-цель при упоминании src блокируется (fail-closed)",
+		      r.returncode == 2, f"exit {r.returncode}")
+		r = pre("Bash", {"command": "f=build/ib/x.txt; sed -i 's/a/b/' \"$f\""})
+		check("переменная-цель вне исходников проходит", r.returncode == 0,
+		      f"exit {r.returncode}")
+		r = pre("Bash", {"command": "sed -i 's/a/b/ /tmp/w.bsl"})
+		check("неразбираемая команда без упоминания src проходит", r.returncode == 0,
+		      f"exit {r.returncode}")
+		r = pre("Bash", {"command": "sed -i 's/a/b/ /tmp/w.bsl # src/cf/"})
+		check("неразбираемая команда с упоминанием src блокируется", r.returncode == 2,
+		      f"exit {r.returncode}")
+
 		# ── прочие инструменты и неразборчивый вход не задеваются ──
 		r = pre("Read", {"file_path": bsl})
 		check("read не блокируется", r.returncode == 0, f"exit {r.returncode}")

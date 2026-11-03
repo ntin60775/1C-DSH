@@ -100,6 +100,15 @@
             ],
             "timeoutMs": 45000,
             "statusMessage": "1c-zcode: стайл-чек BSL"
+          },
+          {
+            "type": "process",
+            "command": "python3",
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/hooks/bsl_module_gate.py"
+            ],
+            "timeoutMs": 45000,
+            "statusMessage": "1c-zcode: гейт носителя BSL/XML"
           }
         ]
       },
@@ -136,6 +145,15 @@
             ],
             "timeoutMs": 45000,
             "statusMessage": "1c-zcode: стайл-чек BSL"
+          },
+          {
+            "type": "process",
+            "command": "python3",
+            "args": [
+              "${ZCODE_PLUGIN_ROOT}/hooks/bsl_module_gate.py"
+            ],
+            "timeoutMs": 10000,
+            "statusMessage": "1c-zcode: гейт носителя BSL/XML"
           }
         ]
       }
