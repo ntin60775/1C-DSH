@@ -16,6 +16,7 @@ from urllib.parse import quote
 import json
 import os
 import pathlib
+import re
 import subprocess
 import urllib.error
 import urllib.request
@@ -143,8 +144,10 @@ def test_status_endpoint(db_origin: str):
 def test_warmup_tokens(db_api: str):
     data = query(db_api, "ВЫБРАТЬ ПЕРВЫЕ 5 Наименование ИЗ Справочник.Контрагенты")
     assert data.strip(), "база без Контрагентов — прогрев словаря не проверить"
-    assert "[ORG-" in data or "[INN-" in data, \
-        f"представления Контрагентов пришли без токенов (анонимизация выключена?): {data[:200]}"
+    # Категория токена зависит от профиля базы (ORG/INN/STR/…); инвариант —
+    # «токен, не сырое»: сырое наименование значит, что словарь не готов.
+    assert re.search(r"\[[A-Z]+-\d+\]", data), \
+        f"представления Контрагентов пришли сырыми (анонимизация выключена?): {data[:200]}"
 
 
 def test_person_literal_tokenized(db_api: str):
