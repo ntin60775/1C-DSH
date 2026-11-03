@@ -148,6 +148,8 @@ def main() -> int:
 	r = run_migrate(p_dry, tmp)
 	check("dry-run: exit 0", r.returncode == 0, r.stdout[-300:] + r.stderr[-300:])
 	check("dry-run: дерево не изменено", snapshot(p_dry) == before, "файлы изменились")
+	check("dry-run: файловая ИБ без providers — подсказки о провайдере нет",
+	      "серверная ИБ без providers" not in r.stdout, r.stdout[-300:])
 
 	# ── префлайт: без вендоренного контура --apply прерывается до мутаций ──
 	p_pre = tmp / "proj-preflight"
@@ -271,6 +273,37 @@ def main() -> int:
 	check("tools/ непустой: exit 0", r.returncode == 0, r.stdout[-300:])
 	check("tools/ непустой: каталог жив",
 	      (p_k / "tools" / "keep.txt").is_file(), "снесён вместе с нужным")
+
+	# ── серверная ИБ без providers: подсказка о провайдере в плане (#44) ──
+	p_s = tmp / "proj-server-ib"
+	make_project(p_s)
+	(p_s / "v8project.yaml").write_text(
+		"name: fakeproj\n"
+		"infobase:\n"
+		"  connection: Srvr=srv-01;Ref=fake_base\n",
+		encoding="utf-8")
+	git(p_s, "add", "-A")
+	git(p_s, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "server-ib")
+	r = run_migrate(p_s, tmp)
+	check("серверная ИБ: подсказка о провайдере в плане",
+	      "серверная ИБ без providers" in r.stdout
+	      and "infobases.origin.dbms" in r.stdout, r.stdout[-400:])
+
+	# providers задан — подсказки нет (даже на серверной ИБ)
+	p_p = tmp / "proj-with-providers"
+	make_project(p_p)
+	(p_p / "v8project.yaml").write_text(
+		"name: fakeproj\n"
+		"providers:\n"
+		"  push: ibcmd\n"
+		"infobase:\n"
+		"  connection: Srvr=srv-01;Ref=fake_base\n",
+		encoding="utf-8")
+	git(p_p, "add", "-A")
+	git(p_p, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "providers")
+	r = run_migrate(p_p, tmp)
+	check("providers задан: подсказки нет",
+	      "серверная ИБ без providers" not in r.stdout, r.stdout[-300:])
 
 	return summary()
 

@@ -85,7 +85,8 @@ python3 "$SKILL_DIR/scripts/scaffold.py" all \
 - корневой `AGENTS.md` — входная точка агентов.
 
 **Минимум отсутствует — навык срабатывает полноценно**: блок вопросов
-оператору целиком (имя проекта, kinds, components, remote, ib-connection),
+оператору целиком (имя проекта, kinds, components, remote, ib-connection,
+провайдер сборки),
 потом `--dry-run` → план → запуск. Не дооснащать молча дефолтами и не
 чинить отдельные файлы мимо ритуала: выбор структуры — это решение
 владельца, а не угадывание агента. Минимум на месте — дооснащение
@@ -100,7 +101,12 @@ python3 "$SKILL_DIR/scripts/scaffold.py" all \
    unica создаст `src/cf` — скелет докинет остальное) / дооснащение
    существующего. Идемпотентность покрывает все три.
 2. Один блок вопросов оператору с дефолтами: имя проекта, kinds,
-   components, remote.
+   components, remote, провайдер синхронизации (`designer` | `ibcmd`).
+   При `ibcmd` на серверной ИБ — каркас `infobases.origin.dbms` в
+   `v8project.local.yaml` (`kind`, `server`, `name`, `user`, `password`
+   СУБД); файловой базе `dbms` не нужен. Блок `providers` в
+   `v8project.yaml` вставляет агент сам — внешний контракт, scaffold его
+   не пишет.
 3. `--dry-run` → покажи план → запуск.
 4. Первый коммит атомарен: скелет + `v8project.yaml` + `v8project.local.yaml`
    вне git + `.gitignore` + `.gitattributes`.

@@ -432,6 +432,24 @@ def main() -> int:
 			over = {key_of(ln) for ln in secondary if key_of(ln)}
 			return [ln for ln in primary if key_of(ln) not in over] + secondary
 
+		def first_connection(lines):
+			"""Первая connection-строка: infobases.origin.connection / infobase.connection."""
+			section, in_origin = None, False
+			for line in lines:
+				if line[:1] not in (" ", "\t"):
+					section = line.split(":", 1)[0].strip()
+					in_origin = False
+					continue
+				stripped = line.strip()
+				if section == "infobases" and stripped.rstrip(":").strip() == "origin":
+					in_origin = True
+					continue
+				m = re.match(r"^connection\s*:\s*(.+?)\s*$", stripped)
+				if m and (section == "infobase"
+				          or (section == "infobases" and in_origin)):
+					return m.group(1).strip().strip("'\"")
+			return None
+
 		main_keys = [re.match(r"^(infobase|infobases)\s*:", ln).group(1)
 		             for ln in v8_lines if re.match(r"^(infobase|infobases)\s*:", ln)]
 		_, local_block = read_block(local_lines, "infobase")
@@ -465,6 +483,19 @@ def main() -> int:
 			local_lines += ["", "# Перенесено из v8project.yaml (0.15: привязка машины)."] + moved
 			v8_lines = remove_block(v8_lines, key)
 			changed.append("привязка ИБ перенесена в v8project.local.yaml (0.15)")
+
+		# Провайдер сборки мигратор не выбирает — решение владельца (#44):
+		# серверная ИБ без providers молча уйдёт в designer, показать в плане.
+		if not any(re.match(r"^providers\s*:", ln)
+		           for ln in v8_lines + local_lines):
+			conn = first_connection(local_lines) or first_connection(v8_lines)
+			if conn and conn.startswith("Srvr="):
+				note("v8project.yaml: серверная ИБ без providers — сборка пойдёт "
+				     "через designer (умолчание). Для ibcmd: блок `providers: "
+				     "push: ibcmd` в v8project.yaml + каркас "
+				     "infobases.origin.dbms в v8project.local.yaml "
+				     "(kind/server/name/user/password; MSSQLServer ibcmd на "
+				     "Linux/macOS не поддерживает)")
 
 		if apply and changed:
 			v8.write_text("\n".join(v8_lines).rstrip() + "\n", encoding="utf-8")
