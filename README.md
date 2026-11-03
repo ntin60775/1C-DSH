@@ -12,7 +12,7 @@ bootstrap и миграция. Нативный порт [1c-omp](../1c-omp) н�
 
 | Путь | Что |
 |---|---|
-| `hooks/` | гейты (python3 stdlib, stateless, состояние в `~/.zcode/state/1c/`): `unica_source_gate` (правка только через Unica + инварианты пересборки + ворктри + замок ИБ), `doc_gate` (мутации после сверки с документацией), `retry_gate`, `mcp_gate` (прод-контур fail-closed), `bsl_style_gate` (пак стайла), `ib_lock`, `session_clean` |
+| `hooks/` | гейты (python3 stdlib, stateless, состояние в `~/.zcode/state/1c/`): `unica_source_gate` (правка только через Unica + инварианты пересборки + ворктри + замок ИБ), `doc_gate` (мутации после сверки с документацией), `retry_gate`, `mcp_gate` (прод-контур fail-closed), `anon_gate` (граница анонимизации: отключение raw-режима и включение API деанонимизации блокируется в командах и правках, исключений нет), `bsl_style_gate` (пак стайла), `ib_lock`, `session_clean` |
 | `skills/` | `1c-contour` (карта контура, приоритеты качества), `1c-bsl-review-standards` (формальный ревью BSL: стайл-пак + v8std), `1c-test-contour` (e2e), `1c-testpilot` (GUI-клиент), `1c-db-data` (данные базы), `1c-ibsrv-publish` (HTTP-публикация), `1c-kd-rules` + `kd2-rules-build` / `kd2-exchange-pitfalls` / `kd3-rules` (правила обмена КД 2/3 через MCP `1c-kd` — [docs/KD-RULES.md](docs/KD-RULES.md)), `1c-unica-worktree` / `1c-unica-artifacts` (каналы юники), `1c-project-bootstrap`, `1c-project-layout` (топология каталогов) |
 | `commands/` | `/1c-doctor`, `/1c-test`, `/1c-bootstrap`, `/1c-migrate-from-omp` |
 | `workflows/` | `1c-e2e-author` (агент сам пишет e2e-тест), `1c-e2e-run` (прогон pytest без модели + ЖР-сверка и приёмка-кодом) |
