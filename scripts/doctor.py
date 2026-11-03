@@ -555,6 +555,22 @@ def main() -> int:
 		warn(".zcode/1c/contour.json нет — прогони wire_config.py: он создаст "
 		     "каркас env-настроек (1c_db.url, publish, платформа, venv testpilot)")
 
+	# Ворктри без своего канала 1c-db: без ONEC_DB_URL юниты (фикстура
+	# onec_db) и e2e уйдут на дефолт :6003 — прокси ОСНОВНОГО дерева, и
+	# тесты молча пишут в чужую базу. Проба принадлежности в фикстуре
+	# ловит рассинхрон в момент прогона; WARN — до прогона (мягкая,
+	# зависит от того, где реально слушает основной прокси).
+	git_file = root / ".git"
+	if git_file.is_file() and "worktrees" in git_file.read_text(
+			encoding="utf-8", errors="replace") \
+			and not os.environ.get("ONEC_DB_URL") \
+			and not (contour.get("1c_db") or {}).get("url"):
+		warn("cwd — git-ворктри без своего канала 1c-db: без ONEC_DB_URL юниты "
+		     "пойдут на дефолт :6003 — прокси основного дерева (чужая база). "
+		     "Подними свой стенд: bash .zcode/1c/scripts/start_1c_db.sh . "
+		     "(порт из contour.json ворктри — :6003 с основным не делить), "
+		     "URL — в ONEC_DB_URL (скилл 1c-unica-worktree)")
+
 	if (root / ".zcode" / "testpilot" / "profiles.yaml").is_file():
 		ok("profiles.yaml testpilot на месте")
 	else:
