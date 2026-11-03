@@ -25,11 +25,10 @@ import pytest
 
 # ── Канал 1c-db: адрес из .zcode/1c/contour.json, самоподъём ──
 # Тесты читают живой канал через REST-фолбэк прокси и не пишут данные в базу.
-# Фикстура поднимает канал, если стенд молчит или работает без анонимизации:
-# токенные пробы канона требуют включённой анонимизации (CONTOUR_ANON=on),
-# независимо от окружения вызвавшего (run_e2e.sh экспортирует CONTOUR_ANON=off
-# — фикстура перекрывает его явно). Импортов из conftest нет — набор встаёт
-# и в проект со своим conftest.
+# Фикстура поднимает канал, если стенд молчит или пришёл без анонимизации:
+# целевое состояние — токенизированный канал, всегда и независимо от
+# окружения вызвавшего. Импортов из conftest нет — набор встаёт и в проект
+# со своим conftest.
 
 
 def _find_root() -> pathlib.Path:
@@ -88,12 +87,12 @@ def _anon_on(api_url: str) -> bool:
     return "[PER-" in probe
 
 
-def _raise_channel(anon: str = "on") -> None:
+def _raise_channel() -> None:
     script = ROOT / ".zcode" / "1c" / "scripts" / "start_1c_db.sh"
     if not script.is_file():
         pytest.fail("стенд 1c-db молчит, а .zcode/1c/scripts/start_1c_db.sh нет — "
                     "контур не разведён (навык 1c-project-bootstrap)")
-    env = dict(os.environ, CONTOUR_ANON=anon)
+    env = dict(os.environ, CONTOUR_ANON="on")
     subprocess.run(["bash", str(script), str(ROOT), "--stop"],
                    env=env, timeout=120, capture_output=True)
     done = subprocess.run(["bash", str(script), str(ROOT), "--headless"],
@@ -105,29 +104,22 @@ def _raise_channel(anon: str = "on") -> None:
 
 @pytest.fixture(scope="module")
 def db_origin() -> str:
-    """Канал с включённой анонимизацией на время проб набора.
+    """Канал с включённой анонимизацией — на время проб и после них.
 
-    Пробы канона требуют токенов, а остальные тесты проекта (canon
-    run_e2e.sh) — сырых значений: после модуля канал возвращается в
-    состояние, ожидаемое окружением. Под run_e2e.sh (CONTOUR_ANON=off в
-    окружении) — сырой канал для остальных файлов; отдельный прогон
-    возвращает штатный анонимизированный стенд. Рестарт — только при
-    несовпадении состояний.
+    Молчащий стенд или канал без токенов поднимается заново штатным
+    headless-подъёмом (CONTOUR_ANON="on" — независимо от окружения
+    вызвавшего); в остальных случаях ничего не меняется. Подстройки под
+    окружение нет: после модуля канал остаётся поднятым и токенизированным.
     """
     origin = _origin()
     api = f"{origin}/api/execute_query"
     if not _alive(origin):
-        _raise_channel("on")
+        _raise_channel()
     elif not _anon_on(api):
-        _raise_channel("on")
+        _raise_channel()
     assert _anon_on(api), \
         "канал поднят, но пробы персон не токенизируются — анонимизация не включилась"
     yield origin
-    target = "off" if os.environ.get("CONTOUR_ANON") == "off" else "on"
-    if _alive(origin):
-        current = _anon_on(api)
-        if (target == "on") != current:
-            _raise_channel(target)
 
 
 @pytest.fixture(scope="module")

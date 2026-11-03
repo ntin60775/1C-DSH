@@ -95,10 +95,11 @@ PY
 )"
 
 export TC1C_PROFILES_FILE="$PROFILES"
-# e2e-ассерты сравнивают сырые значения базы — анонимизация канала на время
-# прогона гасится (WARN печатает start_1c_db.sh); интерактивные сессии агента
-# работают с токенами по умолчанию
-export CONTOUR_ANON=off
+# Прогоны идут на анонимизированном канале 1c-db — анонимизация не
+# отключается ни скриптом, ни окружением: это граница, а не параметр
+# стенда. Оракулы — токен-базированные: сырые справочные значения в
+# ассертах не сравниваются (сверка литералом на сервере или токен в
+# params — скилл 1c-test-contour, раздел оракулов).
 # Тест-клиент наследует окружение: без этого под Xvfb ловим чёрные окна
 # (Wayland/GTK, аппаратный GL) — тот же фикс, что у клиента 1c-db.
 export GDK_BACKEND=x11
@@ -170,17 +171,6 @@ except Exception: print('proxy')" "$ROOT/test-results/e2e-sweep.json" 2>/dev/nul
 			|| { echo "   файл пуст или некорректен — stderr свипа:" >&2; sed 's/^/   /' "$ROOT/test-results/e2e-sweep.err" >&2; }
 		[ "$RC" = "0" ] && RC=3
 	fi
-fi
-
-# ── возврат канала к дефолту: прогон гасил анонимизацию (CONTOUR_ANON=off) ──
-# Прокси после прогона остался бы в raw-режиме — интерактивные сессии агента
-# обязаны получать токенизированные ответы. Рестарт клиента: переживает сам.
-if [ -f "$ROOT/.zcode/1c/scripts/start_1c_db.sh" ]; then
-	set +e
-	CONTOUR_ANON=on bash "$ROOT/.zcode/1c/scripts/start_1c_db.sh" "$ROOT" --stop >/dev/null 2>&1
-	CONTOUR_ANON=on bash "$ROOT/.zcode/1c/scripts/start_1c_db.sh" "$ROOT" --headless >/dev/null 2>&1 \
-		|| echo "WARN: не удалось вернуть анонимизированный стенд — запусти start_1c_db.sh <root> --headless руками" >&2
-	set -e
 fi
 
 exit "$RC"

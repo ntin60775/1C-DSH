@@ -300,8 +300,8 @@ def main() -> None:
 		           (Path(p11) / "tests/e2e/conftest.py")
 		           .read_text(encoding="utf-8") == "# свой conftest проекта\n")
 		r = sh("e2e-baseline", "--dir", p11, "--force")
-		_lib.check("--force перезаписал набор",
-		           "CONTOUR_ANON=on" in (Path(p11) / "tests/e2e/test_contour_basics.py")
+		_lib.check("--force перезаписал набор: подъём канала в on",
+		           'CONTOUR_ANON="on"' in (Path(p11) / "tests/e2e/test_contour_basics.py")
 		           .read_text(encoding="utf-8"), r.stdout[:200])
 		r = sh("e2e-baseline", "--dir", os.path.join(tmp, "e2edry"), "--dry-run")
 		_lib.check("dry-run exit 0 и без файлов",
