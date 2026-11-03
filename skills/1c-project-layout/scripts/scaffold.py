@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -259,6 +260,23 @@ def cmd_structure(args: argparse.Namespace) -> int:
 	log(f"structure: каталогов {created}/{skipped} (создано/пропущено), "
 	    f"каталожных AGENTS.md {written}/{ag_skipped}")
 	return 0
+
+
+FILE_CONNECTION_RE = re.compile(r"^File=(.+)$")
+
+
+def normalize_ib_connection(connection: str) -> str:
+	"""File= с относительным путём → абсолютный от корня проекта.
+
+	Гард onec_db (проба принадлежности базы) спроектирован под абсолютный
+	File=: относительное значение красится как несоответствие с подсказкой
+	рестарта (ворктри-ловушка #48). Серверные строки (Srvr=…;Ref=…) и явные
+	абсолютные File= не меняются.
+	"""
+	m = FILE_CONNECTION_RE.match(connection)
+	if not m or os.path.isabs(m.group(1)):
+		return connection
+	return "File=" + os.path.join(TARGET_DIR, os.path.normpath(m.group(1)))
 
 
 def cmd_v8project(args: argparse.Namespace) -> int:
@@ -518,6 +536,8 @@ def main(argv: list[str] | None = None) -> int:
 	if not args.project_name:
 		args.project_name = os.path.basename(TARGET_DIR.rstrip(os.sep)) or "project"
 	PROJECT_NAME = args.project_name
+	if getattr(args, "ib_connection", None):
+		args.ib_connection = normalize_ib_connection(args.ib_connection)
 	if not args.dry_run:
 		os.makedirs(TARGET_DIR, exist_ok=True)
 	if args.dry_run:

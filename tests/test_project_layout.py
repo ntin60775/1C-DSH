@@ -7,6 +7,7 @@ AGENTS.md, каркас v8project.yaml, git-шаблоны, check минимум
 корневой AGENTS.md не перезаписывается (таблица — в stdout), check —
 exit 0/1 с машиночитаемыми miss-строками."""
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -126,8 +127,10 @@ def main() -> None:
 		           and "type: EXTENSION" in v8, v8[:200])
 		_lib.check("каркас: инфобазы не в общем файле", "infobases:" not in v8, v8[:300])
 		local5 = (Path(p5) / "v8project.local.yaml").read_text(encoding="utf-8")
-		_lib.check("каркас: дефолт File=build/ib в local-слое",
-		           "File=build/ib" in local5, local5[:300])
+		_conn5 = re.search(r"File=([^'\s#]+)", local5).group(1)
+		_lib.check("каркас: дефолт File= — абсолютный путь build/ib (гард onec_db)",
+		           os.path.isabs(_conn5) and _conn5.replace("\\", "/").endswith("build/ib"),
+		           _conn5[:200])
 		_lib.check("local-оверлей создан",
 		           os.path.isfile(os.path.join(p5, "v8project.local.yaml")))
 		(Path(p5) / "v8project.yaml").write_text("# свой контракт\n", encoding="utf-8")

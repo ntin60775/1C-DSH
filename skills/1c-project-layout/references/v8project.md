@@ -29,10 +29,12 @@ source-set:
 ```
 
 ```yaml
-# v8project.local.yaml (в git не попадает)
+# v8project.local.yaml (в git не попадает); File= — абсолютный путь
+# (скэфолд делает относительный абсолютным от корня; гард onec_db
+# проверяет принадлежность базы по абсолютной строке)
 infobases:
   origin:
-    connection: 'File=build/ib'
+    connection: 'File=/abs/path/to/project/build/ib'
 ```
 
 ## Верхний уровень `v8project.yaml`
