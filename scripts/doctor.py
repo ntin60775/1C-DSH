@@ -57,6 +57,15 @@ for _rel in ("../../hooks", "../hooks"):
 
 from contour_common import contour_config
 
+# deploy_recon — сосед по scripts/ в обеих раскладках; секция остатков (3d)
+# импортирует его проверки: единственный источник истины между разведкой
+# на деплое (run-шаг post_update) и принуждением здесь (ишью #49).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+	import deploy_recon
+except ImportError:  # старая вендоренная раскладка без deploy_recon
+	deploy_recon = None
+
 UNICA_MIN = "0.15.0-rc.1"
 CONTOUR_SKILLS = {"1c-contour", "1c-test-contour", "1c-testpilot", "1c-db-data",
                   "1c-project-bootstrap", "1c-project-layout", "1c-ibsrv-publish", "bsp",
@@ -487,6 +496,23 @@ def main() -> int:
 		else:
 			fail(f"scaffold check упал (exit {done.returncode}): "
 			     f"{done.stderr.strip()[:120]}")
+
+	# ── 3d. Остатки прежнего/чужого контура (разведка deploy_recon) ──
+	# Намеренно жёстче recon: doctor — точка лечения, не разведки (recon в
+	# post_update только предупреждает и всегда exit 0).
+	if deploy_recon is None:
+		warn("deploy_recon рядом с doctor не найден (старая раскладка) — "
+		     "остатки прежнего контура не проверяются")
+	else:
+		leftovers = deploy_recon.find_leftovers(root)
+		if leftovers:
+			fail("остатки прежнего/чужого контура (%d): %s — лечение: "
+			     "scripts/migrate_from_omp.py (dry-run → --apply) + перенос "
+			     "покрытия по канону скилла 1c-test-contour"
+			     % (len(leftovers), "; ".join(
+			         "%s: %s" % (f["code"], f["target"]) for f in leftovers[:8])))
+		else:
+			ok("остатков прежнего контура не найдено (deploy_recon)")
 
 	wire = Path(__file__).resolve().parent / "wire_config.py"
 	if (root / ".zcode" / "config.json").is_file():

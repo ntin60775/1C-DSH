@@ -202,6 +202,8 @@ def main() -> int:
 	check("apply: tests-блок снят", "yaxunit" not in v8 and "execution_timeout_seconds" not in v8, v8[:300])
 	check("apply: va-подблок снят", "vanessa" not in v8 and "\nva:" not in v8, v8[:300])
 	check("apply: имя проекта живо", "name: fakeproj" in v8, v8[:200])
+	check("apply: файловая ИБ — каркас providers: push: ibcmd",
+	      "providers:" in v8 and "  push: ibcmd" in v8, v8[:400])
 
 	# ── local с одним infobase.user: привязка из main переезжает и сливается ──
 	p2 = tmp / "proj-local-user"
@@ -235,7 +237,7 @@ def main() -> int:
 	      and "1c-testpilot" in config.get("mcp", {}).get("servers", {}), "нет")
 
 	# разбираем именно секцию остаточных (в нотах шагов те же имена легальны)
-	dirty_section = r.stdout.split("остаточные упоминания", 1)[-1]
+	dirty_section = r.stdout.split("остаточные упоминания", 1)[-1].split("Осталось вручную", 1)[0]
 	check("apply: скан чистоты — остаток найден",
 	      "docs/legacy-note.md" in dirty_section, dirty_section[:400])
 	check("apply: скан чистоты — вендоренный слой пропущен",
@@ -304,6 +306,77 @@ def main() -> int:
 	r = run_migrate(p_p, tmp)
 	check("providers задан: подсказки нет",
 	      "серверная ИБ без providers" not in r.stdout, r.stdout[-300:])
+
+	# ── сироты, проза, tools.va (дельты #49) ──
+	p_o = tmp / "proj-orphans"
+	make_project(p_o)
+	(p_o / "features" / "AGENTS.md").write_text(
+		"# Каталог features — сценарные тесты (Vanessa Automation)\n", encoding="utf-8")
+	(p_o / "tests" / "epf").mkdir(parents=True)
+	(p_o / "tests" / "epf" / "AGENTS.md").write_text(
+		"# Каталог tests/epf — тестовые обработки (xUnit-подобные, Vanessa-ADD)\n",
+		encoding="utf-8")
+	(p_o / "tests" / "cfe").mkdir(parents=True)
+	(p_o / "tests" / "cfe" / "AGENTS.md").write_text(
+		"# Каталог tests/cfe — тестовые расширения (YAxUnit)\n", encoding="utf-8")
+	(p_o / "tests" / "cfe" / "Тесты").mkdir()
+	(p_o / "tests" / "cfe" / "Тесты" / "Module.bsl").write_text("// легаси\n",
+	                                                           encoding="utf-8")
+	agents_o = (p_o / "AGENTS.md").read_text(encoding="utf-8")
+	(p_o / "AGENTS.md").write_text(
+		agents_o
+		+ "KB-поиск: `python3 .omp/plugins/node_modules/ontoship/skills/kb-search/gitmark.py search`.\n"
+		+ "| `features/` | Сценарные тесты Vanessa Automation |\n", encoding="utf-8")
+	(p_o / "v8project.local.yaml").write_text(
+		"tools:\n  va:\n    epf_path: build/tools/vanessa-automation-single.epf\n",
+		encoding="utf-8")
+	git(p_o, "add", "-A")
+	git(p_o, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "orphans")
+
+	r = run_migrate(p_o, tmp)
+	check("сироты: в плане снос features/AGENTS.md",
+	      "снести сироту: features/AGENTS.md" in r.stdout, r.stdout[-500:])
+	check("сироты: в плане снос tests/cfe/AGENTS.md",
+	      "снести сироту: tests/cfe/AGENTS.md" in r.stdout, r.stdout[-500:])
+	check("сироты: в плане правка прозы",
+	      "проза AGENTS.md: снести строку" in r.stdout
+	      and "Vanessa" in r.stdout, r.stdout[-600:])
+	check("сироты: в плане снос tools.va с бэкапом",
+	      "tools.va из v8project.local.yaml" in r.stdout
+	      and "бэкап" in r.stdout, r.stdout[-400:])
+
+	r = run_migrate(p_o, tmp, "--apply")
+	check("сироты: apply exit 0", r.returncode == 0, r.stdout[-500:] + r.stderr[-300:])
+	check("сироты: features/AGENTS.md снесён",
+	      not (p_o / "features" / "AGENTS.md").exists(), "остался")
+	check("сироты: tests/epf/AGENTS.md снесён",
+	      not (p_o / "tests" / "epf" / "AGENTS.md").exists(), "остался")
+	check("сироты: tests/cfe/AGENTS.md снесён, код расширения не тронут",
+	      not (p_o / "tests" / "cfe" / "AGENTS.md").exists()
+	      and (p_o / "tests" / "cfe" / "Тесты" / "Module.bsl").is_file(), "не то")
+	agents_o2 = (p_o / "AGENTS.md").read_text(encoding="utf-8")
+	check("сироты: мёртвые строки прозы снесены",
+	      "Vanessa" not in agents_o2 and ".omp/" not in agents_o2, agents_o2[:400])
+	check("сироты: секция контура и KB живы",
+	      "1C CONTOUR" in agents_o2 and "<!-- KB (ontoship) -->" in agents_o2,
+	      agents_o2[:400])
+	local_o = (p_o / "v8project.local.yaml").read_text(encoding="utf-8")
+	check("сироты: tools.va снесён из local",
+	      "va:" not in local_o and "epf_path" not in local_o, local_o[:300])
+	check("сироты: бэкап local лежит рядом с блоком",
+	      (p_o / "v8project.local.yaml.bak").is_file()
+	      and "epf_path" in (p_o / "v8project.local.yaml.bak").read_text(encoding="utf-8"),
+	      "нет")
+
+	# идемпотентность 5.5: dry-run после apply не планирует действий
+	r = run_migrate(p_o, tmp, "--test-stack-only")
+	check("идемпотентность: exit 0", r.returncode == 0, r.stdout[-300:])
+	check("идемпотентность: сирот в плане нет",
+	      "снести сироту" not in r.stdout, r.stdout[-400:])
+	check("идемпотентность: прозы в плане нет",
+	      "снести строку" not in r.stdout, r.stdout[-400:])
+	check("идемпотентность: tools.va в плане нет",
+	      "tools.va" not in r.stdout, r.stdout[-400:])
 
 	return summary()
 

@@ -105,6 +105,20 @@ def migrate_test_stack(root: Path, apply: bool):
 	"""Шаг 5.5: старый Vanessa/xUnit-стек → активы в архив, инфраструктура снос."""
 	# ── 5.5 Старый тест-стек (xUnit/Vanessa): активы переехали, инфраструктура сносится ──
 	print("5.5 Старый тест-стек (Vanessa/xUnit)")
+	# Осиротевшие каталожные AGENTS.md: каталог опустел (содержимое в архиве
+	# или его не было), файл канонизирует мёртвый стек. Снос ДО уборки пустых
+	# каталогов — иначе rmdir снова заблокирован (корень остатков после
+	# миграции 0.4.64: features/AGENTS.md блокировал rmdir features/).
+	for rel in ("features/AGENTS.md", "tests/epf/AGENTS.md", "tests/cfe/AGENTS.md"):
+		p = root / rel
+		if p.is_file():
+			if apply:
+				if tracked(root, rel):
+					run_git(root, "rm", "-q", rel)
+				else:
+					p.unlink()
+				DONE.append(f"rm {rel}")
+			note(f"снести сироту: {rel} (каталог опустел / канонизирует мёртвый стек)")
 	dst_features = root / "docs" / "omp-migrated" / "tests" / "features"
 	features_dir = root / "features"
 	if features_dir.is_dir():
@@ -167,6 +181,58 @@ def migrate_test_stack(root: Path, apply: bool):
 				remove_path(root, rel, apply=True)
 			else:
 				note(f"снести: {rel} (замещает MCP 1c-db)")
+
+	# Проза корневого AGENTS.md: строки с мёртвыми стеками и .omp-путями
+	# сносятся по содержимому, не по номеру строки (файл живой, правится
+	# руками). Маркерная секция — собственность контура, не трогается.
+	# Что писать вместо — решает проект: мигратор прозу не генерирует.
+	agents = root / "AGENTS.md"
+	if agents.is_file():
+		agents_lines = agents.read_text(encoding="utf-8").splitlines()
+		prose_drop = re.compile(r"vanessa|yaxunit|xunit|\.omp/", re.IGNORECASE)
+		kept, dropped, in_section = [], [], False
+		for ln in agents_lines:
+			if SECTION_BEGIN in ln:
+				in_section = True
+			elif SECTION_END in ln:
+				in_section = False
+			if in_section or not prose_drop.search(ln):
+				kept.append(ln)
+			else:
+				dropped.append(ln.strip()[:90])
+		if dropped:
+			for d in dropped:
+				note(f"проза AGENTS.md: снести строку «{d}» — опиши каталог/поиск заново")
+			if apply:
+				agents.write_text("\n".join(kept).rstrip() + "\n", encoding="utf-8")
+				DONE.append("AGENTS.md (проза без мёртвых стеков)")
+		else:
+			note("проза корневого AGENTS.md чиста от мёртвых стеков")
+
+	# tools.va в local-слое: epf снесён, ключ остался. Файл вне git — перед
+	# правкой бэкап рядом (.bak), восстановить иначе нечем.
+	local_yaml = root / "v8project.local.yaml"
+	local_lines = local_yaml.read_text(encoding="utf-8").splitlines() if local_yaml.is_file() else None
+	if local_lines is not None:
+		va_range = None
+		for i, ln in enumerate(local_lines):
+			if re.match(r"^  va\s*:", ln):
+				end = i + 1
+				while end < len(local_lines) and (
+						local_lines[end].startswith("    ") or not local_lines[end].strip()):
+					end += 1
+				va_range = (i, end)
+				break
+		if va_range is not None:
+			start, end = va_range
+			if apply:
+				import shutil
+				shutil.copy2(local_yaml, local_yaml.with_suffix(".yaml.bak"))
+				kept_local = local_lines[:start] + local_lines[end:]
+				local_yaml.write_text("\n".join(kept_local).rstrip() + "\n", encoding="utf-8")
+				DONE.append("v8project.local.yaml (tools.va снесён, бэкап .bak)")
+			note(f"снести tools.va из v8project.local.yaml (мёртвый Vanessa-блок, "
+			     f"{end - start} строк; бэкап: v8project.local.yaml.bak)")
 	epf = root / "build" / "tools" / "vanessa-automation-single.epf"
 	if epf.is_file() and apply:
 		epf.unlink()
@@ -496,6 +562,13 @@ def main() -> int:
 				     "infobases.origin.dbms в v8project.local.yaml "
 				     "(kind/server/name/user/password; MSSQLServer ibcmd на "
 				     "Linux/macOS не поддерживает)")
+			elif conn and conn.startswith("File="):
+				# Канон контура: файловая база собирается ibcmd. Каркас пишется
+				# механически; выбор провайдера для серверной базы — вопрос
+				# владельцу (#44), не молчаливый designer.
+				if apply:
+					v8_lines = v8_lines + ["", "providers:", "  push: ibcmd"]
+				changed.append("providers: push: ibcmd (канон файловой базы)")
 
 		if apply and changed:
 			v8.write_text("\n".join(v8_lines).rstrip() + "\n", encoding="utf-8")
@@ -663,6 +736,15 @@ def main() -> int:
 		print(f"Legacy-артефакты старого тест-стека (не удаляются, вне нового контура): {', '.join(legacy)}")
 		print("  Vanessa-активы конвертируются в tests/e2e (скилл 1c-test-contour), "
 		      "затем удаляются из docs/omp-migrated/tests/.")
+	print()
+	print("Осталось вручную (мигратор за это не берётся):")
+	print("  - конвертация проверок YAxUnit → pytest: юниты tests/unit")
+	print("    (фикстура onec_db, execute_code), скилл 1c-test-contour;")
+	print("    после переноса всех проверок — снос source-set «Тесты» и tests/cfe/")
+	print("  - описать каталоги/поиск в AGENTS.md заново: строки с мёртвыми")
+	print("    стеками снесены мигратором (план выше)")
+	print("  - серверная ИБ: выбор провайдера — ритуал #44 (вопрос о провайдере),")
+	print("    не молчаливый designer")
 	print()
 	if not apply:
 		print("DRY-RUN завершён. Применить: --apply")
