@@ -22,8 +22,8 @@
 #   start_1c_db.sh <project-root> --stop     # погасить клиент и прокси (свои)
 #   start_1c_db.sh <project-root> --proxy-only / --stop-proxy
 #   start_1c_db.sh <project-root> --print-config  # url порт epf mode channel — и выход
-#   start_1c_db.sh <project-root> --instance base2  # валидация записи instances.X
-#                   # из .zcode/1c/db-instances.yaml; рантайм инстанса — Т5
+#   start_1c_db.sh <project-root> --instance base2  # стенд инстанса: связь,
+#                   # канал и дисплей — из .zcode/1c/db-instances.yaml
 #
 # Конфиг (.zcode/1c/contour.json → "1c_db"):
 #   url      — MCP-endpoint (по умолчанию http://127.0.0.1:6003/mcp)
@@ -39,13 +39,14 @@
 #   channel  — канал изоляции прокси (опционально, ?channel=)
 #
 # Инстансы (.zcode/1c/db-instances.yaml, машино-локальный; образец —
-# .zcode/1c/templates/db-instances.example.yaml): --instance X проверяет
-# запись instances.X. Файла штатно может не быть — моно-режим (main из
-# v8project.local.yaml). Рантайм инстанса (связь, канал, дисплей) — следующий
-# тикет мультистенда (Т5): на текущем шаге --instance либо отказывает с
-# причиной (нет файла/инстанса, битый YAML, неполные поля), либо после
-# успешной проверки останавливается громко — фолбэк на main запрещён
-# (мультистенд #37 Готово 1).
+# .zcode/1c/templates/db-instances.example.yaml): --instance X поднимает
+# стенд записи instances.X — связь, user, password, канал и дисплей из
+# записи; клиент/Xvfb/WM — рантайм-ключи от sha1(корень|X) (конфликтов двух
+# инстансов нет), pid-файл и лог прокси — от sha1(корень), общий: прокси
+# один на проект, инстанс = канал. Негодная запись (нет файла/инстанса,
+# битый YAML, неполные поля) — exit 2, фолбэк на main запрещён (мультистенд
+# #37 Готово 2). Файла штатно может не быть — моно-режим (main из
+# v8project.local.yaml). Порт-арбитраж и kill-маркер per-instance — Т6/Т7.
 #
 # Зависимости: install_1c_mcp_proxy.sh (один раз; venv ~/.local/venvs/
 # 1c-mcp-proxy, путь к клону тулкита — $ONEC_MCP_TOOLKIT_DIR или аргумент).
@@ -103,11 +104,9 @@ fi
 ROOT="$(cd "$ROOT" && pwd)"
 
 HASH="$(printf '%s' "$ROOT" | sha1sum | cut -c1-8)"
-PIDFILE="/tmp/1c-db-$HASH.pid"
-LOG="/tmp/1c-db-$HASH.log"
-XVFB_PIDFILE="/tmp/1c-db-xvfb-$HASH.pid"
-WM_PIDFILE="/tmp/1c-db-wm-$HASH.pid"
-WM_LOG="/tmp/1c-db-wm-$HASH.log"
+# Прокси — один на проект (решение «один прокси, инстанс = канал»): его
+# pid-файл и лог от корня. Клиент/Xvfb/WM — пер-инстансные ключи, назначаются
+# после разбора --instance (IHASH ниже).
 PROXY_LOG="/tmp/1c-mcp-proxy-$HASH.log"
 PROXY_PIDFILE="/tmp/1c-mcp-proxy-$HASH.pid"
 VENV="$HOME/.local/venvs/1c-mcp-proxy"
@@ -129,9 +128,10 @@ done
 # файловая база (серверным стендам замок не нужен, зеркало гейта).
 # python/hooks недоступны или связь не нашлась — старт не блокируем
 # (политика код-замка, граница Т2).
-stand_lock_py() { # $1 — take|transfer|release; остальные — аргументы режима
+stand_lock_py() { # $1 — take|transfer|release; остальные — аргументы режима.
+                  # Связь — STAND_CONN (инстанс, Т5); пусто — резолв main из v8project
 	python3 - "$ROOT" "$HOOKS_DIR" "$@" <<'PY'
-import sys
+import os, sys
 root, hooks, mode = sys.argv[1], sys.argv[2], sys.argv[3]
 try:
     if hooks:
@@ -139,7 +139,7 @@ try:
     import ib_lock
 except (ImportError, OSError):
     sys.exit(0)  # гард недоступен — работу не блокируем
-conn = ib_lock.resolve_infobase_connection(root)
+conn = os.environ.get("STAND_CONN") or ib_lock.resolve_infobase_connection(root)
 if not conn or not conn.lower().startswith("file="):
     sys.exit(0)  # гард файловой базы: серверные стенды не замкиваются
 if mode == "take":
@@ -172,7 +172,8 @@ PY
 # отказом на табах, посторонних ключах, скалярах вместо словарей и непоследовательном
 # отступе — тихой деградации конфига нет. Пароль не печатается: в сообщениях
 # только имена инстансов и полей.
-instances_py() { # $1 — имя инстанса; годная запись — молчаливый выход 0
+instances_py() { # $1 — имя инстанса; годная запись — три строки
+                 # «connection/channel/display<TAB>значение» на stdout
 	python3 - "$ROOT" "$1" <<'PY'
 import sys, pathlib
 
@@ -285,19 +286,64 @@ if name not in entries:
 missing = [f for f in ("connection", "user", "password") if not entries[name].get(f)]
 if missing:
     fail(f"--instance {name}: в {rel} не заполнены поля {', '.join(missing)} — образец: {SAMPLE}")
+
+# Годная запись: связь собирается здесь — относительный File= абсолютизируется
+# от корня (зеркало mono-пути: СтрокаСоединенияИнформационнойБазы() различает
+# деревья только по абсолюту), Usr/Pwd из полей, дубли не наращиваются.
+conn = entries[name]["connection"]
+if conn.startswith("File=") and not conn[5:].lstrip('"').startswith("/"):
+    conn = "File=" + str((root / conn[5:].strip().strip('"')).resolve())
+if "Usr=" not in conn:
+    conn += f';Usr="{entries[name]["user"]}"'
+if "Pwd=" not in conn:
+    conn += f';Pwd="{entries[name]["password"]}"'
+print(f"connection\t{conn}")
+print(f"channel\t{entries[name].get('channel') or name}")
+print(f"display\t{entries[name].get('display') or ''}")
 PY
 }
 
-# Рантайм инстанса (связь/канал/дисплей из записи) — Т5 мультистенда; на
-# текущем шаге --instance после успешной проверки останавливается громко:
-# тихий запуск main-стенда под видом инстанса запрещён («фолбэк на main
-# запрещён», #37 Готово 1).
+# ── выбор X-дисплея --headless (мультистенд Т5): заданное поле display;
+# не задано — свободный сокет из пула 97/98/99 по порядку (занятый
+# пропускается); исчерпание — отказ 2 с подсказкой (решение оператора 3).
+# Каталог сокетов подменяемый — XUNIX_DIR (тесты; вне тестов дефолт).
+pick_display() { # $1 — поле display (пусто = пул); stdout — номер дисплея
+	local XUNIX="${XUNIX_DIR:-/tmp/.X11-unix}" d
+	if [[ -n "${1:-}" ]]; then
+		printf '%s\n' "$1"
+		return 0
+	fi
+	for d in 97 98 99; do
+		[[ ! -e "$XUNIX/X$d" ]] && { printf '%s\n' "$d"; return 0; }
+	done
+	echo "✗ пул дисплеев 97/98/99 исчерпан — задай display явно в db-instances.yaml" >&2
+	return 2
+}
+
+# ── рантайм инстанса (мультистенд Т5): связь/канал/дисплей из записи;
+# клиент/Xvfb/WM — ключи от sha1(корень|имя), прокси — общий от корня.
+# Тихого фолбэка на main нет: годная запись применяется, негодная — отказ.
+INST_CONN="" INST_CHANNEL="" INST_DISPLAY=""
 if [[ $INSTANCE_SET -eq 1 ]]; then
-	instances_py "$INSTANCE"
-	echo "✗ --instance $INSTANCE: запись годна, но рантайм инстанса появится в" >&2
-	echo "  следующем тикете мультистенда (Т5) — стенд не запускаю" >&2
-	exit 2
+	INST_REC="$(instances_py "$INSTANCE")"
+	IHASH="$(printf '%s' "$ROOT|$INSTANCE" | sha1sum | cut -c1-8)"
+	while IFS= read -r rec; do
+		k="${rec%%$'\t'*}"; v="${rec#*$'\t'}"
+		case "$k" in
+		connection) INST_CONN="$v" ;;
+		channel) INST_CHANNEL="$v" ;;
+		display) INST_DISPLAY="$v" ;;
+		esac
+	done <<< "$INST_REC"
+else
+	IHASH="$HASH"
 fi
+PIDFILE="/tmp/1c-db-$IHASH.pid"
+LOG="/tmp/1c-db-$IHASH.log"
+XVFB_PIDFILE="/tmp/1c-db-xvfb-$IHASH.pid"
+XVFB_LOG="/tmp/1c-db-xvfb-$IHASH.log"
+WM_PIDFILE="/tmp/1c-db-wm-$IHASH.pid"
+WM_LOG="/tmp/1c-db-wm-$IHASH.log"
 
 # ── контурные url/порт/epf/mode/channel ──
 read -r URL PORT EPF_REL DBMODE CHANNEL < <(python3 - "$ROOT" <<'PY'
@@ -329,6 +375,17 @@ port = tail.split(":", 1)[1].split("/", 1)[0] if ":" in tail else "6003"
 print(url, port, epf, mode, db.get("channel") or "")
 PY
 )
+
+# ── канал и пробы инстанса (Т5) ──
+# Канал записи перекрывает contour.json; дефолт — имя инстанса (в
+# instances_py). Пробы/прогрев бьют в конкретный канал: без ?channel=
+# execute_code может уйти в дефолтный канал чужого инстанса и ответить
+# «жив» не о том клиенте. alive() — живость самого прокси, он общий.
+if [[ $INSTANCE_SET -eq 1 ]]; then
+	CHANNEL="$INST_CHANNEL"
+fi
+PROBE_URL="$URL"
+[[ -n "$CHANNEL" ]] && PROBE_URL="$URL?channel=$CHANNEL"
 
 if [[ $MODE == print_config ]]; then
 	echo "$URL $PORT $EPF_REL $DBMODE $CHANNEL"
@@ -481,9 +538,10 @@ if [[ $MODE == stop ]]; then
 	# shim-обёртку — см. kill_client).
 	kill_client
 	# stand-замок выпуска: владелец — pid из pidfile; нет pidfile — замок
-	# подчистится взятием по пробе процесса.
+	# подчистится взятием по пробе процесса. Связь — STAND_CONN (инстанс Т5),
+	# пусто — резолв main.
 	if [[ -f "$PIDFILE" ]]; then
-		stand_lock_py release "$(cat "$PIDFILE" 2>/dev/null)" || true
+		STAND_CONN="$INST_CONN" stand_lock_py release "$(cat "$PIDFILE" 2>/dev/null)" || true
 	fi
 	rm -f "$PIDFILE"
 	echo "• клиент 1С остановлен"
@@ -512,7 +570,9 @@ fi
 # 2026-10-11), и скрипт зависал до запуска клиента; 30 с достаточно живому
 # каналу.
 client_alive() {
-	timeout -k 5 30 python3 - "$URL" <<'PY' 2>/dev/null
+	# Проба — в канал инстанса (PROBE_URL): дефолтный канал может отвечать
+	# за чужой клиент (два инстанса — два канала одного прокси)
+	timeout -k 5 30 python3 - "$PROBE_URL" <<'PY' 2>/dev/null
 import json, sys, urllib.request
 url = sys.argv[1]
 def rpc(payload, sid=None, timeout=25):
@@ -635,8 +695,13 @@ if [[ -z "$CLIENT" || ! -f "$CLIENT" ]]; then
 	exit 2
 fi
 
-# ── строка подключения (не печатается; user/password из local-оверлея) ──
-CONN="$(python3 - "$ROOT" "$HOOKS_DIR" <<'PY'
+# ── строка подключения (не печатается) ──
+# Инстанс — готовая связь из записи (instances_py, абсолютизация и Usr/Pwd
+# там же); main — резолв из v8project*.yaml + user/password из local-оверлея.
+if [[ $INSTANCE_SET -eq 1 ]]; then
+	CONN="$INST_CONN"
+else
+	CONN="$(python3 - "$ROOT" "$HOOKS_DIR" <<'PY'
 import re, sys, pathlib
 if sys.argv[2]:
     sys.path.insert(0, sys.argv[2])
@@ -661,9 +726,10 @@ if f.is_file():
 print(conn)
 PY
 )"
-if [[ -z "$CONN" ]]; then
-	echo "✗ связь базы не найдена в v8project*.yaml" >&2
-	exit 2
+	if [[ -z "$CONN" ]]; then
+		echo "✗ связь базы не найдена в v8project*.yaml" >&2
+		exit 2
+	fi
 fi
 
 # ── запуск клиента ──
@@ -677,33 +743,36 @@ if [[ $HEADLESS -eq 1 ]]; then
 		echo "✗ --headless требует Xvfb" >&2
 		exit 2
 	fi
-	XVFB_LOG="/tmp/1c-db-xvfb-$HASH.log"
-	# Xvfb :97 — ресурс стенда: если живой уже есть (хвост прошлого стенда),
+	# Дисплей: поле display инстанса; не задано — свободный из пула 97/98/99
+	# (мультистенд Т5: у каждого инстанса свой невидимый дисплей)
+	XUNIX="${XUNIX_DIR:-/tmp/.X11-unix}"
+	DISPLAY_NUM="$(pick_display "$INST_DISPLAY")" || exit 2
+	# Xvfb :N — ресурс стенда: если живой уже есть (хвост прошлого стенда),
 	# переиспользуем; если сокет остался от мёртвого — сносим и стартуем чисто
 	# (иначе второй Xvfb молча умирает «address in use», а клиент садится на
 	# чужой — наблюдение 2026-10-12).
-	if [[ -S /tmp/.X11-unix/X97 ]] && pgrep -f 'X[v]fb :97' >/dev/null 2>&1; then
-		pgrep -f 'X[v]fb :97' | head -1 > "$XVFB_PIDFILE"
-		echo "• Xvfb :97 уже поднят — переиспользую (pid $(cat "$XVFB_PIDFILE"))"
-	elif [[ -S /tmp/.X11-unix/X97 ]]; then
-		rm -f /tmp/.X11-unix/X97
-		setsid Xvfb :97 -screen 0 1920x1080x24 >"$XVFB_LOG" 2>&1 &
+	if [[ -S "$XUNIX/X$DISPLAY_NUM" ]] && pgrep -f "X[v]fb :$DISPLAY_NUM" >/dev/null 2>&1; then
+		pgrep -f "X[v]fb :$DISPLAY_NUM" | head -1 > "$XVFB_PIDFILE"
+		echo "• Xvfb :$DISPLAY_NUM уже поднят — переиспользую (pid $(cat "$XVFB_PIDFILE"))"
+	elif [[ -S "$XUNIX/X$DISPLAY_NUM" ]]; then
+		rm -f "$XUNIX/X$DISPLAY_NUM"
+		setsid Xvfb ":$DISPLAY_NUM" -screen 0 1920x1080x24 >"$XVFB_LOG" 2>&1 &
 		echo $! > "$XVFB_PIDFILE"
-		echo "• Xvfb :97 поднят заново (убран stale-сокет; pid $(cat "$XVFB_PIDFILE"))"
+		echo "• Xvfb :$DISPLAY_NUM поднят заново (убран stale-сокет; pid $(cat "$XVFB_PIDFILE"))"
 	else
-		setsid Xvfb :97 -screen 0 1920x1080x24 >"$XVFB_LOG" 2>&1 &
+		setsid Xvfb ":$DISPLAY_NUM" -screen 0 1920x1080x24 >"$XVFB_LOG" 2>&1 &
 		echo $! > "$XVFB_PIDFILE"
-		echo "• Xvfb :97 поднят (pid $(cat "$XVFB_PIDFILE"))"
+		echo "• Xvfb :$DISPLAY_NUM поднят (pid $(cat "$XVFB_PIDFILE"))"
 	fi
 	# ждём X-сокет: клиент стартует мгновенно и без него падает «Unable to
 	# initialize GTK» — это была реальная поломка прогона
 	XREADY=0
 	for _ in $(seq 1 20); do
-		if [[ -S /tmp/.X11-unix/X97 ]]; then XREADY=1; break; fi
+		if [[ -S "$XUNIX/X$DISPLAY_NUM" ]]; then XREADY=1; break; fi
 		sleep 0.5
 	done
 	if [[ $XREADY -ne 1 ]]; then
-		echo "✗ Xvfb :97 не поднялся за 10с; лог: $XVFB_LOG" >&2
+		echo "✗ Xvfb :$DISPLAY_NUM не поднялся за 10с; лог: $XVFB_LOG" >&2
 		tail -3 "$XVFB_LOG" >&2
 		exit 2
 	fi
@@ -715,7 +784,7 @@ if [[ $HEADLESS -eq 1 ]]; then
 	# Наличие WM — только по выводу xprop («window id»): xprop возвращает
 	# rc=0 даже для отсутствующего свойства (наблюдение 29.10).
 	wm_running() {
-		[[ $(DISPLAY=:97 xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null) == *"window id"* ]]
+		[[ $(DISPLAY=:"$DISPLAY_NUM" xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null) == *"window id"* ]]
 	}
 	WM=""
 	for candidate in xfwm4 openbox fluxbox jwm metacity marco i3 twm; do
@@ -725,18 +794,18 @@ if [[ $HEADLESS -eq 1 ]]; then
 		echo "⚠ WM не найден (xfwm4/openbox/…): модальные диалоги платформы под" >&2
 		echo "  Xvfb невидимы — стенд может навечно виснуть на вопросах (ишью #40)" >&2
 	elif wm_running; then
-		echo "• WM на :97 уже есть — переиспользую"
+		echo "• WM на :$DISPLAY_NUM уже есть — переиспользую"
 	else
-		setsid env -u WAYLAND_DISPLAY GDK_BACKEND=x11 DISPLAY=:97 "$WM" >"$WM_LOG" 2>&1 &
+		setsid env -u WAYLAND_DISPLAY GDK_BACKEND=x11 DISPLAY=":$DISPLAY_NUM" "$WM" >"$WM_LOG" 2>&1 &
 		echo $! > "$WM_PIDFILE"
 		sleep 1
 		if wm_running; then
-			echo "• невидимый дисплей :97 полноценный: Xvfb + $WM"
+			echo "• невидимый дисплей :$DISPLAY_NUM полноценный: Xvfb + $WM"
 		else
 			echo "⚠ $WM не поднялся (лог: $WM_LOG) — модальные диалоги будут невидимы" >&2
 		fi
 	fi
-	CHILD_ENV+=(DISPLAY=:97)
+	CHILD_ENV+=(DISPLAY=":$DISPLAY_NUM")
 else
 	CHILD_ENV+=(DISPLAY="${DISPLAY:-:0}")
 fi
@@ -786,9 +855,10 @@ else
 	CARG="startup;mode=embedded;port=$PORT"
 fi
 CARG="$CARG;danger_auto_write=1;danger_auto_priv=1;danger_confirm=1"
-stand_lock_py take "$$" || exit 2
+# Замок на связь ИНСТАНСА (STAND_CONN); mono — резолв main внутри функции
+STAND_CONN="$INST_CONN" stand_lock_py take "$$" || exit 2
 launch_client "$CARG"
-if ! stand_lock_py transfer "$$" "$(cat "$PIDFILE" 2>/dev/null)"; then
+if ! STAND_CONN="$INST_CONN" stand_lock_py transfer "$$" "$(cat "$PIDFILE" 2>/dev/null)"; then
 	echo "⚠ stand-замок не передан клиенту — он умрёт с скриптом, второй старт пройдёт" >&2
 fi
 if ! wait_client 1; then
@@ -807,7 +877,7 @@ fi
 # жёсткой проверки нет — у баз без каталогов-источников словаря не бывает,
 # а критерий готовности — канон навыка 1c-db-data.
 for _ in 1 2; do
-	timeout -k 5 30 python3 - "$URL" <<'PY' 2>/dev/null || true
+	timeout -k 5 30 python3 - "$PROBE_URL" <<'PY' 2>/dev/null || true
 import json, sys, urllib.request
 url = sys.argv[1]
 def rpc(payload, sid=None, timeout=25):
