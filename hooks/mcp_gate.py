@@ -36,6 +36,14 @@ Override семейства 1c-db задаётся ключом `1c-db` и де�
 инструмента либо `*`. Комментарии — `#`. Каждое решение пишется в журнал.
 
 Журнал: rule-audit.jsonl, rule: "mcp-unsafe-gate".
+
+Гард stand-замка (мультистенд, #37 Готово 4): инструмент
+mcp__1c-testpilot__launch_client блокируется, пока на базу профиля взят
+stand-замок (один клиент на файловую базу — вне зависимости от контура).
+Связь профиля читается из .zcode/testpilot/profiles.yaml; серверные
+профили (server: true) в строку подключения из профиля не разрешаются —
+гард файловой базы их не видит. attach и stop клиент не поднимают —
+не блокируются.
 """
 import re
 import sys
@@ -49,7 +57,10 @@ from contour_common import (
 	read_event,
 )
 
+import ib_lock
+
 RULE = "mcp-unsafe-gate"
+STAND_RULE = "stand-lock"
 
 DEFAULT_DANGEROUS = {
 	"1c-testpilot": {
@@ -192,6 +203,96 @@ def block_message(server: str, short: str, root: str, contour: str) -> str:
 	])
 
 
+# ── гард stand-замка ─────────────────────────────────────────────────────────
+
+def profile_connection(root: str, profile: str):
+	"""`base` профиля из .zcode/testpilot/profiles.yaml строкой File=..., иначе None.
+
+	Канон profiles.yaml 1.9.x: профили под корневым `profiles:`, имя — строка
+	с отступом, завершающаяся «:» (кавычки и хвостовые комментарии терпятся).
+	base — путь относительно каталога файла. Серверный профиль (server: true)
+	не разрешается: адрес сервера в профиле не живёт — гард файловой базы
+	его не видит.
+	"""
+	if not profile:
+		return None
+	path = Path(root) / ".zcode" / "testpilot" / "profiles.yaml"
+	try:
+		lines = path.read_text(encoding="utf-8").splitlines()
+	except OSError:
+		return None
+	in_profiles = False
+	name = None
+	base = None
+	server = False
+	for line in lines:
+		stripped = line.split("#", 1)[0].rstrip()
+		if not stripped.strip():
+			continue
+		if line[:1] not in (" ", "\t"):
+			in_profiles = stripped == "profiles:"
+			name = None
+			continue
+		if not in_profiles:
+			continue
+		indent = len(line) - len(line.lstrip())
+		if indent >= 2 and stripped.endswith(":") and ":" not in stripped[:-1]:
+			name = stripped[:-1].strip().strip("'\"")
+			continue
+		if name != profile:
+			continue
+		key, _, value = stripped.partition(":")
+		value = value.strip().strip("'\"")
+		if key.strip() == "base" and value:
+			base = value
+		elif key.strip() == "server":
+			server = value.lower() in ("true", "yes", "1")
+	if not base or server:
+		return None
+	if not base.startswith("/"):
+		base = str((path.parent / base).resolve())
+	return f"File={base}"
+
+
+def stand_lock_hit(tool_input, root: str):
+	"""Живой stand-замок на базу вызова tc_session(action="launch_client"), иначе None.
+
+	Реальная поверхность testpilot 1.9.x: запуск клиента — tc_session с
+	action="launch_client"; base — путь файловой базы или «server\\база»
+	(server=true), либо профиль из profiles.yaml; явные параметры перекрывают
+	профиль. Относительный base разрешается от корня дерева — best effort:
+	клиент раннера садится в тот же cwd сессии. Серверные базы гард
+	файловой базы не видит.
+	"""
+	if not isinstance(tool_input, dict) or tool_input.get("action") != "launch_client":
+		return None
+	base = str(tool_input.get("base") or "").strip()
+	if base:
+		conn = None if tool_input.get("server") else file_connection(root, base)
+	else:
+		conn = profile_connection(root, str(tool_input.get("profile") or ""))
+	if not conn:
+		return None
+	return ib_lock.stand_lock_status(root, conn)
+
+
+def file_connection(root: str, base: str) -> str:
+	"""Строка File=<абсолютный путь> из base вызова; относительный — от корня дерева."""
+	if base.startswith("/"):
+		return f"File={base}"
+	return f"File={(Path(root) / base).resolve()}"
+
+
+def stand_block_message(holder: dict) -> str:
+	return "\n".join([
+		"launch_client (tc_session) не поднимает второй клиент: база занята",
+		"  stand-замком (гард файловой базы, stand-lock).",
+		f"  Держатель: {ib_lock.describe_holder(holder)}",
+		"  Живой стенд гасится start_1c_db.sh --stop в дереве держателя;",
+		"  connect и stop_client клиент не поднимают — не блокируются.",
+	])
+
+
 # ── хук ──────────────────────────────────────────────────────────────────────
 
 def main() -> int:
@@ -206,18 +307,31 @@ def main() -> int:
 	if not cwd:
 		import os
 		cwd = os.getcwd()
+	root = project_root(cwd)
+
+	# гард stand-замка: запуск клиента тест-клиентом (tc_session). Держателя
+	# нет — падаем в общий путь гейта (override dangerous и эскалации живы).
+	if mcp_short_name(tool_name, "1c-testpilot") == "tc_session" \
+			and isinstance(tool_input, dict) \
+			and tool_input.get("action") == "launch_client":
+		holder = stand_lock_hit(tool_input, root)
+		if holder:
+			what = str(tool_input.get("profile") or tool_input.get("base") or "?")
+			audit(STAND_RULE, f"launch_client {what} ({root})",
+			      f"база занята stand-замком, держатель pid {holder.get('pid')}", "blocked")
+			sys.stderr.write(stand_block_message(holder) + "\n")
+			return 2
 
 	hit = None
 	if tool_name == "Bash":
 		if isinstance(tool_input, dict):
-			hit = mutating_via_bash(str(tool_input.get("command") or ""), project_root(cwd))
+			hit = mutating_via_bash(str(tool_input.get("command") or ""), root)
 	elif tool_name.startswith("mcp__"):
-		hit = mutating_via_mcp(tool_name, project_root(cwd))
+		hit = mutating_via_mcp(tool_name, root)
 	if hit is None:
 		return 0
 
 	server, short = hit
-	root = project_root(cwd)
 	contour = contour_of(root)
 	if contour == "test":
 		audit(RULE, f"{short} ({server}, {root})", "тест-контур: изменяющий вызов разрешён", "allowed")

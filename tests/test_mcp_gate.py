@@ -9,8 +9,10 @@
 Запуск: python3 tests/test_mcp_gate.py
 """
 import json
+import os
 import re
 import sys
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -22,6 +24,10 @@ try:
 	from mcp_gate import TOOLKIT_MCP_RE  # noqa: E402
 except ImportError:  # базовое дерево: семейства 1c-db-<имя> в гейте ещё нет
 	TOOLKIT_MCP_RE = None
+try:
+	import ib_lock  # noqa: E402
+except ImportError:  # базовое дерево: stand-замков ещё нет
+	ib_lock = None
 
 
 def main() -> int:
@@ -131,6 +137,85 @@ def main() -> int:
 		instance_audit = [e for e in audit_entries(state, "mcp-unsafe-gate")
 		                  if "1c-db-base2" in str(e.get("action"))]
 		check("инстансное имя сервера попадает в журнал", bool(instance_audit), "нет записи")
+
+		# ── гард stand-замка: tc_session(action=launch_client) не поднимает
+		# второй клиент (реальная поверхность testpilot 1.9.x) ──
+		# взятие замка тест-процессом и хук должны видеть один каталог состояния
+		saved_state = os.environ.get("ZCODE_1C_STATE_DIR")
+		os.environ["ZCODE_1C_STATE_DIR"] = state
+		profiles = tree / ".zcode" / "testpilot"
+		profiles.mkdir(parents=True, exist_ok=True)
+		(profiles / "profiles.yaml").write_text(
+			"profiles:\n"
+			'  "main":\n'
+			"    base: ../../build/ib   # от каталога этого файла\n"
+			"    user: Тестировщик\n"
+			"    password: ''\n"
+			"  other:\n"
+			"    base: ../../build/ib-other\n"
+			"    password: ''\n"
+			"  srv:\n"
+			"    base: SomeBase\n"
+			"    server: true\n"
+			"    password: ''\n",
+			encoding="utf-8")
+		if ib_lock is not None and hasattr(ib_lock, "acquire_stand_lock"):
+			holder_proc = subprocess.Popen(["sleep", "30"])
+			try:
+				status, _ = ib_lock.acquire_stand_lock(cwd, "File=build/ib",
+				                                       holder_proc.pid, "start_client")
+				check("замок для гард-теста взят", status == "ok", status)
+				r = call("mcp__1c-testpilot__tc_session",
+				         {"action": "launch_client", "profile": "main"})
+				check("tc_session launch_client по профилю на замкнутой базе блокируется",
+				      r.returncode == 2, f"exit {r.returncode}")
+				check("блок stand-замка в журнале", any(
+					e.get("decision") == "blocked" and e.get("rule") == "stand-lock"
+					for e in audit_entries(state)), "нет записи")
+				r = call("mcp__1c-testpilot__tc_session",
+				         {"action": "launch_client", "base": "build/ib"})
+				check("tc_session launch_client с явным base на замкнутой базе блокируется",
+				      r.returncode == 2, f"exit {r.returncode}")
+				r = call("mcp__1c-testpilot__tc_session",
+				         {"action": "launch_client", "profile": "other"})
+				check("tc_session на свободной базе проходит", r.returncode == 0,
+				      f"exit {r.returncode}")
+				r = call("mcp__1c-testpilot__tc_session",
+				         {"action": "launch_client", "profile": "нет-такого"})
+				check("tc_session с неизвестным профилем проходит", r.returncode == 0,
+				      f"exit {r.returncode}")
+				r = call("mcp__1c-testpilot__tc_session",
+				         {"action": "launch_client", "profile": "srv"})
+				check("серверный профиль гард файловой базы не ловит", r.returncode == 0,
+				      f"exit {r.returncode}")
+				r = call("mcp__1c-testpilot__tc_session",
+				         {"action": "launch_client", "base": "build/ib", "server": True})
+				check("серверный base гард файловой базы не ловит", r.returncode == 0,
+				      f"exit {r.returncode}")
+				r = call("mcp__1c-testpilot__tc_session", {"action": "connect", "profile": "main"})
+				check("connect (attach) не блокируется", r.returncode == 0,
+				      f"exit {r.returncode}")
+				r = call("mcp__1c-testpilot__tc_session", {"action": "stop_client"})
+				check("stop_client не блокируется", r.returncode == 0,
+				      f"exit {r.returncode}")
+				ib_lock.release_stand_lock(cwd, "File=build/ib", holder_proc.pid)
+				r = call("mcp__1c-testpilot__tc_session",
+				         {"action": "launch_client", "profile": "main"})
+				check("после выпуска tc_session проходит", r.returncode == 0,
+				      f"exit {r.returncode}")
+				r = call("mcp__1c-testpilot__tc_field", {"profile": "main"})
+				check("чтение (tc_field) замком не блокируется", r.returncode == 0,
+				      f"exit {r.returncode}")
+			finally:
+				holder_proc.kill()
+				holder_proc.wait()
+		else:
+			check("гард tc_session в гейте присутствует", False,
+			      "нет stand-логики (базовое дерево)")
+		if saved_state is None:
+			os.environ.pop("ZCODE_1C_STATE_DIR", None)
+		else:
+			os.environ["ZCODE_1C_STATE_DIR"] = saved_state
 
 		# ── override опасных инструментов через contour.json ──
 		c1dir = zdir / "1c"

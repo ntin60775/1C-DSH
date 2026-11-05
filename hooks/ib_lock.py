@@ -267,6 +267,33 @@ def stand_lock_status(tree: str, connection: str):
 	return None
 
 
+def transfer_stand_lock(tree: str, connection: str, from_pid: int, to_pid: int) -> bool:
+	"""Передаёт владение stand-замком: скрипт-стартер → живой клиент (Т3).
+
+	Скрипт берёт замок на $$ до запуска клиента (иначе окно гонки) и после
+	запуска передаёт владение клиенту — сам он после прогрева выходит, и
+	замок на его pid умер бы раньше клиента. True — замок теперь на to_pid;
+	False — замок не наш или не записан (ничего не меняли).
+	"""
+	path = _stand_lock_path(connection, tree)
+	lock = _read_lock(path)
+	if not lock or lock.get("pid") != int(from_pid):
+		return False
+	lock["pid"] = int(to_pid)
+	payload = json.dumps(lock, ensure_ascii=False, indent=2)
+	tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+	try:
+		tmp.write_text(payload, encoding="utf-8")
+		os.replace(tmp, path)
+	except OSError:
+		try:
+			tmp.unlink(missing_ok=True)
+		except OSError:
+			pass
+		return False
+	return True
+
+
 def purge_stale_locks() -> int:
 	"""Выметает просроченные замки (вызывается SessionStart-хуком). Возвращает счёт."""
 	directory = session_state_dir("ib-locks")
