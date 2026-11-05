@@ -18,8 +18,9 @@
 #                  (этап 4 мультистенда)
 #
 # start_1c_db.sh --instance X отказывает (exit 2), пока в записи нет
-# connection, user и password или канал вне [A-Za-z0-9_-]{1,64} — фолбэка
-# на main нет.
+# connection, user и password, канал вне [A-Za-z0-9_-]{1,64} или имя
+# не годится в путь kill-маркера build/.1c-db-autostart-<имя> (нельзя
+# «/», «\», начало с «.») — фолбэка на main нет.
 instances:
   base2:
     channel: base2
