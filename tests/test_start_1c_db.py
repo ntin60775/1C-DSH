@@ -126,11 +126,13 @@ wait_client тест2 && echo "ok=$n"
     )
 
     # 6. Т3 гард stand-замка: второй старт отказан, владение клиенту, release-on-stop.
-    #    Функция гарта извлекается из скрипта и гоняется с реальными процессами;
+    #    Функция гарда извлекается из скрипта и гоняется с реальными процессами;
     #    release проверяется полным --stop'ом скрипта (без подъёма стенда).
+    #    contour.json уводит проект на свободный порт: stop_proxy добивает
+    #    владельца порта без проверки принадлежности — дефолтный 6003 опасен.
     import shlex
     proj = tmp / "guard"
-    proj.mkdir()
+    write_cfg(proj, '{"1c_db": {"url": "http://127.0.0.1:6123/mcp"}}')
     (proj / "v8project.local.yaml").write_text(
         'infobases:\n  origin:\n    connection: File=build/ib\n', encoding="utf-8")
     hooks_dir = str(REPO / "hooks")
@@ -180,15 +182,56 @@ wait_client тест2 && echo "ok=$n"
             capture_output=True, text=True).stdout.strip()
         pidfile = Path("/tmp") / f"1c-db-{pidhash}.pid"
         pidfile.write_text(f"{other.pid}\n", encoding="utf-8")
+        # клиент ещё жив (kill не доставлен — грабля среды): --stop не снимает
         r = subprocess.run(["bash", str(SCRIPT), str(proj), "--stop"],
                            capture_output=True, text=True, env=guard_env)
-        _lib.check("гард: --stop отрабатывает без стенда", r.returncode == 0,
-                   f"rc={r.returncode}, err={r.stderr[:200]!r}")
         held = _ib.stand_lock_status(str(proj), "File=build/ib")
-        _lib.check("гард: после stop замок выпущен", held is None, f"held={held!r}")
+        _lib.check("гард: --stop при живом клиенте замок не снимает",
+                   r.returncode == 0 and held is not None,
+                   f"rc={r.returncode}, held={held!r}, err={r.stderr[:200]!r}")
+        # клиент умер — --stop выпускает замок
+        other.kill()
+        other.wait()
+        r = subprocess.run(["bash", str(SCRIPT), str(proj), "--stop"],
+                           capture_output=True, text=True, env=guard_env)
+        held = _ib.stand_lock_status(str(proj), "File=build/ib")
+        _lib.check("гард: после stop замок выпущен", r.returncode == 0 and held is None,
+                   f"rc={r.returncode}, held={held!r}")
         r = guard("take", str(owner.pid))
         _lib.check("гард: после stop взятие проходит", r.returncode == 0,
                    f"rc={r.returncode}, err={r.stderr[:200]!r}")
+        # гард файловой базы: серверную связь не замкивает (зеркало гейта)
+        srv = tmp / "guard-srv"
+        srv.mkdir()
+        (srv / "v8project.local.yaml").write_text(
+            'infobases:\n  origin:\n    connection: Srvr="host";Ref="erp";\n', encoding="utf-8")
+        harness_srv = (f"set -uo pipefail\n"
+                       f"ROOT={shlex.quote(str(srv))}\n"
+                       f"HOOKS_DIR={shlex.quote(hooks_dir)}\n"
+                       f"export ZCODE_1C_STATE_DIR={shlex.quote(str(state_dir))}\n"
+                       f"{func}\n"
+                       f'"$@"\n')
+        hsrv = tmp / "guard-harness-srv.sh"
+        hsrv.write_text(harness_srv, encoding="utf-8")
+        r = subprocess.run(["bash", str(hsrv), "stand_lock_py", "take", str(owner.pid)],
+                           capture_output=True, text=True, env=guard_env)
+        held = _ib.stand_lock_status(str(srv), 'Srvr="host";Ref="erp";')
+        _lib.check("гард: серверная база не замкивается",
+                   r.returncode == 0 and held is None, f"rc={r.returncode}, held={held!r}")
+        # проводка живёт в потоке скрипта: take до запуска клиента,
+        # transfer после, release в stop-ветке
+        script_text = SCRIPT.read_text(encoding="utf-8")
+        take_at = script_text.find('stand_lock_py take "$$"')
+        launch_at = script_text.find('launch_client "$CARG"')
+        transfer_at = script_text.find("stand_lock_py transfer")
+        release_at = script_text.find("stand_lock_py release")
+        stop_at = script_text.find("MODE == stop")
+        _lib.check("гард: проводка take→launch→transfer в потоке скрипта",
+                   0 < take_at < launch_at < transfer_at,
+                   f"take={take_at}, launch={launch_at}, transfer={transfer_at}")
+        _lib.check("гард: release внутри stop-ветки",
+                   stop_at != -1 and release_at > stop_at,
+                   f"stop={stop_at}, release={release_at}")
     finally:
         for proc in (owner, other):
             proc.kill()

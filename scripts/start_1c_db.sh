@@ -78,23 +78,26 @@ for rel in "../../hooks" "../hooks"; do
 done
 
 # ── stand-замок: один клиент на файловую базу (мультистенд, #37 Готово 4) ──
-# take — замком процесса скрипта ДО запуска клиента (отказ exit 2 с pid
-# владельца); transfer — владение клиенту сразу после запуска (скрипт после
-# прогрева выходит, замок на $$ умер бы раньше клиента); release — при
-# остановке стенда по pid из pidfile. python/hooks недоступны или связь не
-# нашлась — старт не блокируем (политика код-замка, граница Т2).
+# take — замок процесса скрипта ДО запуска клиента (отказ exit 2 с pid
+# владельца); transfer — владение замком передаётся клиенту сразу после
+# запуска (скрипт после прогрева выходит, замок на $$ умер бы раньше
+# клиента); release — при остановке стенда по pid из pidfile. Гард — только
+# файловая база (серверным стендам замок не нужен, зеркало гейта).
+# python/hooks недоступны или связь не нашлась — старт не блокируем
+# (политика код-замка, граница Т2).
 stand_lock_py() { # $1 — take|transfer|release; остальные — аргументы режима
 	python3 - "$ROOT" "$HOOKS_DIR" "$@" <<'PY'
 import sys
 root, hooks, mode = sys.argv[1], sys.argv[2], sys.argv[3]
 try:
-    sys.path.insert(0, hooks)
+    if hooks:
+        sys.path.insert(0, hooks)
     import ib_lock
 except (ImportError, OSError):
     sys.exit(0)  # гард недоступен — работу не блокируем
 conn = ib_lock.resolve_infobase_connection(root)
-if not conn:
-    sys.exit(0)
+if not conn or not conn.lower().startswith("file="):
+    sys.exit(0)  # гард файловой базы: серверные стенды не замкиваются
 if mode == "take":
     status, holder = ib_lock.acquire_stand_lock(root, conn, int(sys.argv[4]))
     if status == "busy":
@@ -102,9 +105,20 @@ if mode == "take":
               file=sys.stderr)
         sys.exit(2)
 elif mode == "transfer":
-    ib_lock.transfer_stand_lock(root, conn, int(sys.argv[4]), int(sys.argv[5]))
+    if not ib_lock.transfer_stand_lock(root, conn, int(sys.argv[4]), int(sys.argv[5])):
+        print("⚠ stand-замок не передан клиенту — подчистится пробой процесса",
+              file=sys.stderr)
 elif mode == "release":
-    ib_lock.release_stand_lock(root, conn, int(sys.argv[4]))
+    try:
+        pid = int(sys.argv[4])
+    except ValueError:
+        sys.exit(0)  # битый/пустой pidfile — замок подчистится взятием
+    if ib_lock._stand_owner_alive(pid):
+        # kill не всегда доставляется (грабля среды): при живом клиенте
+        # замок не снимать
+        print(f"⚠ клиент {pid} ещё жив — stand-замок не снят", file=sys.stderr)
+        sys.exit(0)
+    ib_lock.release_stand_lock(root, conn, pid)
 PY
 }
 
@@ -292,7 +306,7 @@ if [[ $MODE == stop ]]; then
 	# stand-замок выпуска: владелец — pid из pidfile; нет pidfile — замок
 	# подчистится взятием по пробе процесса.
 	if [[ -f "$PIDFILE" ]]; then
-		stand_lock_py release "$(cat "$PIDFILE")"
+		stand_lock_py release "$(cat "$PIDFILE" 2>/dev/null)" || true
 	fi
 	rm -f "$PIDFILE"
 	echo "• клиент 1С остановлен"
@@ -597,7 +611,9 @@ fi
 CARG="$CARG;danger_auto_write=1;danger_auto_priv=1;danger_confirm=1"
 stand_lock_py take "$$" || exit 2
 launch_client "$CARG"
-stand_lock_py transfer "$$" "$(cat "$PIDFILE")" || true
+if ! stand_lock_py transfer "$$" "$(cat "$PIDFILE" 2>/dev/null)"; then
+	echo "⚠ stand-замок не передан клиенту — он умрёт с скриптом, второй старт пройдёт" >&2
+fi
 if ! wait_client 1; then
 	echo "  сначала: база НОВАЯ или перезалитая (dt, пересоздан build/ib)?" >&2
 	echo "  → разовое подтверждение диалогов платформы (NativeAPI-компонента," >&2
