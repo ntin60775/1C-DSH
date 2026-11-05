@@ -30,7 +30,7 @@
         ]
       },
       {
-        "matcher": "^(Bash|mcp__1c-testpilot__.*|mcp__1c-db__.*)$",
+        "matcher": "^(Bash|mcp__1c-testpilot__.*|mcp__1c-db(-[a-z0-9_-]+)?__.*)$",
         "hooks": [
           {
             "type": "process",
