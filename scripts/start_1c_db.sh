@@ -40,18 +40,23 @@
 #
 # Инстансы (.zcode/1c/db-instances.yaml, машино-локальный; образец —
 # .zcode/1c/templates/db-instances.example.yaml): --instance X поднимает
-# стенд записи instances.X — связь, user, password, канал и дисплей из
-# записи; клиент/Xvfb/WM — рантайм-ключи от sha1(корень|X) (конфликтов двух
+# стенд записи instances.X — связь, user, password, канал (перекрывает
+# 1c_db.channel contour.json) и дисплей (действует с --headless) из записи;
+# клиент/Xvfb/WM — рантайм-ключи от sha1(корень|X) (конфликтов двух
 # инстансов нет), pid-файл и лог прокси — от sha1(корень), общий: прокси
 # один на проект, инстанс = канал. Негодная запись (нет файла/инстанса,
-# битый YAML, неполные поля) — exit 2, фолбэк на main запрещён (мультистенд
-# #37 Готово 2). Файла штатно может не быть — моно-режим (main из
-# v8project.local.yaml). Порт-арбитраж и kill-маркер per-instance — Т6/Т7.
+# битый YAML, неполные поля, канал вне [A-Za-z0-9_-]{1,64}) — exit 2,
+# фолбэк на main запрещён (мультистенд #37 Готово 2). Файла штатно может
+# не быть — моно-режим (main из v8project.local.yaml, дисплей :97).
+# Границы следующего тикета: порт-арбитраж — Т6; kill-маркер per-instance —
+# Т7 (--stop по-прежнему гасит клиентов всех инстансов по общему маркеру
+# обработки и общий прокси).
 #
 # Зависимости: install_1c_mcp_proxy.sh (один раз; venv ~/.local/venvs/
 # 1c-mcp-proxy, путь к клону тулкита — $ONEC_MCP_TOOLKIT_DIR или аргумент).
 # Строка подключения и пароли не печатаются (но видны в cmdline клиента —
-# известное ограничение /IBConnectionString).
+# известное ограничение /IBConnectionString; при выпуске stand-замка связь
+# инстанса передаётся python-процессу через env STAND_CONN — вне cmdline).
 set -euo pipefail
 
 MODE="start"
@@ -175,7 +180,7 @@ PY
 instances_py() { # $1 — имя инстанса; годная запись — три строки
                  # «connection/channel/display<TAB>значение» на stdout
 	python3 - "$ROOT" "$1" <<'PY'
-import sys, pathlib
+import re, sys, pathlib
 
 SAMPLE = ".zcode/1c/templates/db-instances.example.yaml"
 FIELDS = {"channel", "connection", "user", "password", "display", "publish_port"}
@@ -297,16 +302,32 @@ if "Usr=" not in conn:
     conn += f';Usr="{entries[name]["user"]}"'
 if "Pwd=" not in conn:
     conn += f';Pwd="{entries[name]["password"]}"'
+# Канал — живое имя изоляции прокси: недопустимый канал тулкит молча уводит
+# в default (channel_registry.validate_channel_id) — два инстанса схлопнутся
+# в один канал, чужая проба ответит «жив», danger-запись уйдёт не в ту базу.
+# Канон тулкита: ^[A-Za-z0-9_-]{1,64}$ (channel_registry.py CHANNEL_ID_RE).
+channel = entries[name].get("channel") or name
+if not re.match(r"^[A-Za-z0-9_-]{1,64}$", channel):
+    fail(f"--instance {name}: канал «{channel}» вне [A-Za-z0-9_-]{{1,64}} — "
+         f"недопустимый канал прокси молча уводит в default и ломает изоляцию "
+         f"инстансов; задай channel латиницей или переименуй инстанс — образец: {SAMPLE}")
+display = entries[name].get("display") or ""
+if display and not re.match(r"^[0-9]+$", display):
+    fail(f"--instance {name}: display «{display}» — нужен номер дисплея без "
+         f"двоеточия, например 98 — образец: {SAMPLE}")
 print(f"connection\t{conn}")
-print(f"channel\t{entries[name].get('channel') or name}")
-print(f"display\t{entries[name].get('display') or ''}")
+print(f"channel\t{channel}")
+print(f"display\t{display}")
 PY
 }
 
-# ── выбор X-дисплея --headless (мультистенд Т5): заданное поле display;
-# не задано — свободный сокет из пула 97/98/99 по порядку (занятый
-# пропускается); исчерпание — отказ 2 с подсказкой (решение оператора 3).
-# Каталог сокетов подменяемый — XUNIX_DIR (тесты; вне тестов дефолт).
+# ── выбор X-дисплея --headless инстанса (мультистенд Т5): заданное поле
+# display; не задано — свободный из пула 97–99 по порядку. Занят = живой
+# Xvfb: сокет без процесса — stale, его ветка очистки ниже снесёт и поднимет
+# чисто. Исчерпание пула — exit 2 с подсказкой задать display (мультистенд
+# #37). Каталог сокетов подменяемый — XUNIX_DIR (тесты; вне тестов дефолт).
+# Гонка «двое разом выбрали один дисплей» этим не закрывается — арбитраж
+# ресурсов мультистенда носит следующий тикет (порт — Т6).
 pick_display() { # $1 — поле display (пусто = пул); stdout — номер дисплея
 	local XUNIX="${XUNIX_DIR:-/tmp/.X11-unix}" d
 	if [[ -n "${1:-}" ]]; then
@@ -314,9 +335,12 @@ pick_display() { # $1 — поле display (пусто = пул); stdout — н�
 		return 0
 	fi
 	for d in 97 98 99; do
-		[[ ! -e "$XUNIX/X$d" ]] && { printf '%s\n' "$d"; return 0; }
+		if [[ ! -e "$XUNIX/X$d" ]] || ! pgrep -f "X[v]fb :$d" >/dev/null 2>&1; then
+			printf '%s\n' "$d"
+			return 0
+		fi
 	done
-	echo "✗ пул дисплеев 97/98/99 исчерпан — задай display явно в db-instances.yaml" >&2
+	echo "✗ пул дисплеев 97–99 исчерпан (живой Xvfb на каждом) — задай display явно в db-instances.yaml" >&2
 	return 2
 }
 
@@ -333,6 +357,7 @@ if [[ $INSTANCE_SET -eq 1 ]]; then
 		connection) INST_CONN="$v" ;;
 		channel) INST_CHANNEL="$v" ;;
 		display) INST_DISPLAY="$v" ;;
+		*) echo "✗ --instance $INSTANCE: неизвестная строка записи «$k» — расхождение скрипта и instances_py" >&2; exit 2 ;;
 		esac
 	done <<< "$INST_REC"
 else
@@ -377,15 +402,21 @@ PY
 )
 
 # ── канал и пробы инстанса (Т5) ──
-# Канал записи перекрывает contour.json; дефолт — имя инстанса (в
-# instances_py). Пробы/прогрев бьют в конкретный канал: без ?channel=
-# execute_code может уйти в дефолтный канал чужого инстанса и ответить
-# «жив» не о том клиенте. alive() — живость самого прокси, он общий.
+# Канал записи перекрывает 1c_db.channel из contour.json; дефолт — имя
+# инстанса (в instances_py). Пробы/прогрев бьют в конкретный канал: без
+# ?channel= execute_code может уйти в дефолтный канал чужого инстанса и
+# ответить «жив» не о том клиенте. Канал несёт только proxy-клиент
+# (startup-строка), поэтому embedded-режим пробуется без ?channel=.
+# alive() — живость самого прокси, он общий.
 if [[ $INSTANCE_SET -eq 1 ]]; then
 	CHANNEL="$INST_CHANNEL"
 fi
 PROBE_URL="$URL"
-[[ -n "$CHANNEL" ]] && PROBE_URL="$URL?channel=$CHANNEL"
+if [[ "$DBMODE" == "proxy" && -n "$CHANNEL" ]]; then
+	sep="?"
+	[[ "$URL" == *\?* ]] && sep="&"
+	PROBE_URL="$URL${sep}channel=$CHANNEL"
+fi
 
 if [[ $MODE == print_config ]]; then
 	echo "$URL $PORT $EPF_REL $DBMODE $CHANNEL"
@@ -535,7 +566,12 @@ fi
 
 if [[ $MODE == stop ]]; then
 	# Клиент гасим по маркеру обработки в cmdline (pidfile указывает лишь на
-	# shim-обёртку — см. kill_client).
+	# shim-обёртку — см. kill_client). Радиус: маркер общий на проект —
+	# гасятся клиенты всех инстансов; прокси ниже тоже общий. Per-instance
+	# гашение — Т7 мультистенда.
+	if [[ $INSTANCE_SET -eq 1 ]]; then
+		echo "⚠ --stop --instance $INSTANCE гасит клиентов ВСЕХ инстансов (маркер общий) и общий прокси — per-instance гашение — Т7" >&2
+	fi
 	kill_client
 	# stand-замок выпуска: владелец — pid из pidfile; нет pidfile — замок
 	# подчистится взятием по пробе процесса. Связь — STAND_CONN (инстанс Т5),
@@ -552,7 +588,7 @@ if [[ $MODE == stop ]]; then
 	fi
 	rm -f "$WM_PIDFILE"
 	# Xvfb --headless-стенда тоже свой — гасим по pidfile, иначе оседают
-	# «забытые» Xvfb :97.
+	# «забытые» Xvfb стенда.
 	if [[ -f "$XVFB_PIDFILE" ]] && kill -0 "$(cat "$XVFB_PIDFILE")" 2>/dev/null; then
 		kill "$(cat "$XVFB_PIDFILE")" 2>/dev/null || true
 		echo "• Xvfb остановлен"
@@ -609,7 +645,7 @@ PY
 }
 if curl -so /dev/null --max-time 3 "$URL"; then
 	if client_alive; then
-		echo "✓ 1c-db уже отвечает (клиент подключён): $URL"
+		echo "✓ 1c-db уже отвечает (клиент подключён): $PROBE_URL"
 		exit 0
 	fi
 fi
@@ -743,10 +779,15 @@ if [[ $HEADLESS -eq 1 ]]; then
 		echo "✗ --headless требует Xvfb" >&2
 		exit 2
 	fi
-	# Дисплей: поле display инстанса; не задано — свободный из пула 97/98/99
-	# (мультистенд Т5: у каждого инстанса свой невидимый дисплей)
+	# Дисплей: у инстанса — поле display записи, не задано — свободный из
+	# пула 97–99 (мультистенд Т5); mono — жёсткий :97, как до мультистенда
+	# (рамки спеки: моно-режим — поведение сегодняшнего дня)
 	XUNIX="${XUNIX_DIR:-/tmp/.X11-unix}"
-	DISPLAY_NUM="$(pick_display "$INST_DISPLAY")" || exit 2
+	if [[ $INSTANCE_SET -eq 1 ]]; then
+		DISPLAY_NUM="$(pick_display "$INST_DISPLAY")" || exit 2
+	else
+		DISPLAY_NUM="97"
+	fi
 	# Xvfb :N — ресурс стенда: если живой уже есть (хвост прошлого стенда),
 	# переиспользуем; если сокет остался от мёртвого — сносим и стартуем чисто
 	# (иначе второй Xvfb молча умирает «address in use», а клиент садится на
@@ -784,7 +825,7 @@ if [[ $HEADLESS -eq 1 ]]; then
 	# Наличие WM — только по выводу xprop («window id»): xprop возвращает
 	# rc=0 даже для отсутствующего свойства (наблюдение 29.10).
 	wm_running() {
-		[[ $(DISPLAY=:"$DISPLAY_NUM" xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null) == *"window id"* ]]
+		[[ $(DISPLAY=":$DISPLAY_NUM" xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null) == *"window id"* ]]
 	}
 	WM=""
 	for candidate in xfwm4 openbox fluxbox jwm metacity marco i3 twm; do
@@ -825,7 +866,7 @@ wait_client() { # $1 — метка фазы
 	local total=${WAIT_DEADLINE:-420}
 	local deadline=$(( $(date +%s) + total ))
 	local next_report=0 now
-	echo "• фаза $1: жду подключения клиента к $URL (до $(( total / 60 )) мин)"
+	echo "• фаза $1: жду подключения клиента к $PROBE_URL (до $(( total / 60 )) мин)"
 	while (( $(date +%s) < deadline )); do
 		if client_alive; then
 			echo "— ✓ подключён"
@@ -910,4 +951,4 @@ PY
 	sleep 3
 done
 
-echo "✓ 1c-db готов: клиент с danger-флагами, словарь прогрет, MCP на $URL"
+echo "✓ 1c-db готов: клиент с danger-флагами, словарь прогрет, MCP на $PROBE_URL"
