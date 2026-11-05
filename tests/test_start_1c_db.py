@@ -15,6 +15,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -710,6 +711,164 @@ wait_client тест2 && echo "ok=$n"
     _lib.check("Т5: mono-дисплей жёсткий :97 (поведение сегодняшнего дня)",
                'DISPLAY_NUM="97"' in txt,
                "mono-ветка :97 не найдена")
+
+    # 9. Т6 flock-арбитраж порта: полный прогон скрипта с мок-прокси
+    #    (fake HOME: venv/bin/python → http-сервер на $PORT). Чужой на
+    #    желаемом порту → первый свободный, фактический url — в
+    #    contour.local.json; гонка двух стартов — порты не делятся; свой
+    #    живой прокси переиспользуется. Порт 6317 — изолированный желаемый
+    #    (машина может держать живой стенд на 6003). Точка остановки
+    #    прогона — отказ «клиент/связь не найден» ПОСЛЕ подъёма прокси:
+    #    rc≠0 ожидаем, проверяется подъём и фиксация порта.
+    WP, FP = 6317, 6318  # желаемый и первый свободный за чужим
+    rt = tmp / "t6"
+    (rt / ".zcode" / "1c").mkdir(parents=True)
+    (rt / "tools" / "mcp").mkdir(parents=True)
+    (rt / ".zcode" / "1c" / "contour.json").write_text(
+        f'{{"1c_db": {{"epf_path": "tools/mcp/Mock.epf",'
+        f' "url": "http://127.0.0.1:{WP}/mcp"}}}}',
+        encoding="utf-8")
+    (rt / "tools" / "mcp" / "Mock.epf").write_text("mock", encoding="utf-8")
+    mock = tmp / "mock_proxy.py"
+    mock.write_text(
+        "import os\n"
+        "from http.server import BaseHTTPRequestHandler, HTTPServer\n"
+        "class H(BaseHTTPRequestHandler):\n"
+        "    def _ok(self):\n"
+        "        self.send_response(200)\n"
+        "        self.send_header('Content-Type', 'application/json')\n"
+        "        self.end_headers()\n"
+        "        self.wfile.write(b'{}')\n"
+        "    do_GET = _ok\n"
+        "    do_POST = _ok\n"
+        "    def log_message(self, *a):\n"
+        "        pass\n"
+        "HTTPServer(('127.0.0.1', int(os.environ['PORT'])), H).serve_forever()\n",
+        encoding="utf-8")
+    fhome = tmp / "fhome"
+    vpy = fhome / ".local" / "venvs" / "1c-mcp-proxy" / "bin" / "python"
+    vpy.parent.mkdir(parents=True)
+    vpy.write_text(f"#!/bin/sh\nexec python3 {mock} \"$@\"\n", encoding="utf-8")
+    vpy.chmod(0o755)
+    toolkit = tmp / "toolkit"
+    (toolkit / "onec_mcp_toolkit_proxy").mkdir(parents=True)
+    env6 = dict(os.environ)
+    env6["HOME"] = str(fhome)
+    env6["ONEC_MCP_TOOLKIT_DIR"] = str(toolkit)
+
+    def run6(root, *args, timeout=120):
+        return subprocess.run(
+            ["bash", str(SCRIPT), str(root), *args],
+            capture_output=True, text=True, env=env6, timeout=timeout)
+
+    def mock_procs():
+        r = subprocess.run(
+            ["pgrep", "-f", f"{tmp.name}/mock_proxy.py"],
+            capture_output=True, text=True)
+        return [ln for ln in r.stdout.split() if ln]
+
+    def kill_mocks():
+        subprocess.run(["pkill", "-f", f"{tmp.name}/mock_proxy.py"],
+                       capture_output=True)
+
+    def port_responds(port):
+        return subprocess.run(
+            ["bash", "-c", f"curl -so /dev/null --max-time 2 http://127.0.0.1:{port}/mcp"],
+            capture_output=True).returncode == 0
+
+    def local_url(root):
+        p = root / ".zcode" / "1c" / "contour.local.json"
+        try:
+            return (json_loads(p)).get("1c_db", {}).get("url")
+        except Exception:
+            return None
+
+    def json_loads(p):
+        import json as _json
+        return _json.loads(p.read_text(encoding="utf-8"))
+
+    try:
+        # критерий 1: чужой на желаемом → поднимаемся на первый свободный, local несёт url
+        holder = subprocess.Popen(
+            [sys.executable, "-c",
+             "from http.server import BaseHTTPRequestHandler, HTTPServer;"
+             " HTTPServer(('127.0.0.1',"
+             f" {WP}),BaseHTTPRequestHandler).serve_forever()"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            # holder должен успеть занять порт до прогона
+            for _ in range(50):
+                if port_responds(WP):
+                    break
+                time.sleep(0.1)
+            r = run6(rt)
+            _lib.check(f"Т6: чужой на {WP} — стенд поднялся на {FP}",
+                       f":{FP}/mcp" in r.stdout and port_responds(FP),
+                       f"rc={r.returncode}, out={r.stdout[-400:]!r}, err={r.stderr[-200:]!r}")
+            _lib.check("Т6: фактический url зафиксирован в contour.local.json",
+                       local_url(rt) == f"http://127.0.0.1:{FP}/mcp",
+                       f"local={local_url(rt)!r}")
+        finally:
+            holder.kill()
+            holder.wait()
+
+        # критерий 3: свой живой прокси переиспользуется (инвариант) —
+        # на чистом проекте без занятых портов: подъём на 6003, повтор —
+        # без роста числа процессов
+        rt2 = tmp / "t6b"
+        (rt2 / ".zcode" / "1c").mkdir(parents=True)
+        (rt2 / "tools" / "mcp").mkdir(parents=True)
+        (rt2 / ".zcode" / "1c" / "contour.json").write_text(
+            f'{{"1c_db": {{"epf_path": "tools/mcp/Mock.epf",'
+            f' "url": "http://127.0.0.1:{WP}/mcp"}}}}',
+            encoding="utf-8")
+        (rt2 / "tools" / "mcp" / "Mock.epf").write_text("mock", encoding="utf-8")
+        r1 = run6(rt2)
+        n_after_first = len(mock_procs())
+        r2 = run6(rt2)
+        _lib.check("Т6: свой живой прокси переиспользуется — процессов не прибавилось",
+                   r2.returncode == 0 or r2.returncode == 2
+                   and len(mock_procs()) == n_after_first
+                   and "прокси отвечает" in r2.stdout,
+                   f"rc1={r1.returncode}, rc2={r2.returncode}, "
+                   f"n1={n_after_first}, n2={len(mock_procs())}, out2={r2.stdout[-300:]!r}")
+
+        # критерий 2: гонка двух стартов — порты не делятся: на каждом порту
+        # ровно один мок-прокси; у базы оба претендуют на 6003
+        rt3 = tmp / "t6c"
+        (rt3 / ".zcode" / "1c").mkdir(parents=True)
+        (rt3 / "tools" / "mcp").mkdir(parents=True)
+        (rt3 / ".zcode" / "1c" / "contour.json").write_text(
+            f'{{"1c_db": {{"epf_path": "tools/mcp/Mock.epf",'
+            f' "url": "http://127.0.0.1:{WP}/mcp"}}}}',
+            encoding="utf-8")
+        (rt3 / "tools" / "mcp" / "Mock.epf").write_text("mock", encoding="utf-8")
+        kill_mocks()
+        ps = [subprocess.Popen(
+            ["bash", str(SCRIPT), str(rt3)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env6)
+            for _ in range(2)]
+        outs = [p.communicate(timeout=120) for p in ps]
+        rcs = [p.returncode for p in ps]
+        urls = [ln.split()[-3] for out, _ in outs
+                for ln in out.splitlines() if ln.startswith("✓ прокси отвечает")]
+        _lib.check(f"Т6: гонка — два старта дали {WP} и {FP} (не поделили)",
+                   len(urls) == 2 and len(set(urls)) == 2
+                   and sorted(f":{WP}/mcp" in u for u in urls) == [False, True]
+                   and sorted(f":{FP}/mcp" in u for u in urls) == [False, True],
+                   f"rcs={rcs}, urls={urls}, err={[e[-150:] for _, e in outs]}")
+        _lib.check("Т6: гонка — ровно два мок-прокси (не делили порт)",
+                   len(mock_procs()) == 2,
+                   f"n={len(mock_procs())}, pids={mock_procs()}")
+
+        # mono-инвариант print-config: local читается поверх contour
+        r = run6(rt, "--print-config")
+        fields = r.stdout.split()
+        _lib.check("Т6: print-config показывает фактический порт из local",
+                   r.returncode == 0 and fields[1] == str(FP),
+                   f"rc={r.returncode}, fields={fields}")
+    finally:
+        kill_mocks()
 
 finally:
     import shutil

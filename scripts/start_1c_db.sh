@@ -48,9 +48,19 @@
 # битый YAML, неполные поля, канал вне [A-Za-z0-9_-]{1,64}) — exit 2,
 # фолбэк на main запрещён (мультистенд #37 Готово 2). Файла штатно может
 # не быть — моно-режим (main из v8project.local.yaml, дисплей :97).
-# Границы следующего тикета: порт-арбитраж — Т6; kill-маркер per-instance —
-# Т7 (--stop по-прежнему гасит клиентов всех инстансов по общему маркеру
-# обработки и общий прокси).
+# Границы следующего тикета: kill-маркер per-instance — Т7 (--stop
+# по-прежнему гасит клиентов всех инстансов по общему маркеру обработки
+# и общий прокси).
+#
+# Порт (мультистенд Т6): желаемый — 1c_db.url из contour.json, фактический
+# — машино-локальный факт в .zcode/1c/contour.local.json (читается
+# поверх contour.json, пишется арбитражем после подъёма). Арбитраж —
+# атомарная пара «проверил — занял» flock'ом на per-port замок, поднятый
+# прокси наследует fd замка; живой прокси проекта переиспользуется,
+# занятый/чужой порт → первый свободный от желаемого (6003 → 6004, …).
+# HTTP-проба и ss-владелец порта — только выбор кандидата и диагностика.
+# Смена порта на живой ZCode-сессии = переподключение MCP (wire_config
+# читает local — следующий юнит мультистенда).
 #
 # Зависимости: install_1c_mcp_proxy.sh (один раз; venv ~/.local/venvs/
 # 1c-mcp-proxy, путь к клону тулкита — $ONEC_MCP_TOOLKIT_DIR или аргумент).
@@ -395,6 +405,15 @@ try:
     mode = db.get("mode") or mode
 except Exception:
     pass
+# Фактический порт стенда — машино-локальный факт (мультистенд Т6): local
+# поверх contour.json. Файла может не быть (первый старт) — желаемый порт
+# из contour.json. Пишет его арбитраж порта после подъёма прокси.
+loc = root / ".zcode" / "1c" / "contour.local.json"
+try:
+    l1c = json.loads(loc.read_text(encoding="utf-8")).get("1c_db") or {}
+    url = l1c.get("url") or url
+except Exception:
+    pass
 tail = url.split("//", 1)[-1]
 port = tail.split(":", 1)[1].split("/", 1)[0] if ":" in tail else "6003"
 print(url, port, epf, mode, db.get("channel") or "")
@@ -485,6 +504,32 @@ fi
 
 # ── прокси (нужен только в режиме proxy) ──
 if [[ $DBMODE == proxy && $MODE != stop ]]; then
+	# ── порт-арбитраж (мультистенд Т6): атомарная пара «проверил — занял»
+	# через flock на per-port замок; поднятый прокси наследует fd замка —
+	# пока жив, порт наш, умирание освобождает ядром. Живой на кандидате —
+	# свой (pidfile жив) → переиспользуем; чужой → следующий. HTTP-проба и
+	# ss-владелец — выбор кандидата и диагностика, арбитраж — только flock.
+	PORT_LOCKED=0
+	for _cand in $(seq "$PORT" $((PORT + 9))); do
+		_curl_url="${URL/:$PORT/:$_cand}"
+		if curl -so /dev/null --max-time 3 "$_curl_url" 2>/dev/null; then
+			if [[ -f "$PROXY_PIDFILE" ]] && kill -0 "$(cat "$PROXY_PIDFILE" 2>/dev/null)" 2>/dev/null; then
+				PORT="$_cand"; URL="$_curl_url"; PORT_LOCKED=1; break
+			fi
+			echo "• :$_cand отвечает чужому процессу — пробую следующий порт" >&2
+			continue
+		fi
+		exec {PORT_LOCK_FD}>>"/tmp/1c-mcp-proxy-$HASH-$_cand.lock"
+		if flock -n "$PORT_LOCK_FD" 2>/dev/null; then
+			PORT="$_cand"; URL="$_curl_url"; PORT_LOCKED=1; break
+		fi
+		exec {PORT_LOCK_FD}>&-
+		echo "• :$_cand забран параллельным стартом — пробую следующий порт" >&2
+	done
+	if [[ $PORT_LOCKED -eq 0 ]]; then
+		echo "✗ свободного порта нет: $PORT–$((PORT + 9)) заняты — расчисти или задай 1c_db.url в .zcode/1c/contour.json" >&2
+		exit 2
+	fi
 	if ! alive; then
 		if [[ ! -x "$VENV/bin/python" ]]; then
 			echo "✗ нет $VENV — один раз выполни:" >&2
@@ -554,8 +599,30 @@ if [[ $DBMODE == proxy && $MODE != stop ]]; then
 		PP=$(ss -tlnp 2>/dev/null | grep ":$PORT " | grep -oP 'pid=\K[0-9]+' | head -1) || true
 		[[ -n "$PP" ]] && echo "$PP" > "$PROXY_PIDFILE"
 		echo "✓ прокси отвечает: $URL (pid $(cat "$PROXY_PIDFILE"))"
+		# фактический порт — в local-слой (единственный носитель, Т6;
+		# gitignored по правилу Т4). doctor/wire_config читают его — следующий
+		# юнит; до того ZCode-сессии подключены к прежнему url — смена
+		# порта на живой сессии = переподключение MCP
+		python3 - "$ROOT" "$URL" <<'PY'
+import json, sys, pathlib
+root, url = pathlib.Path(sys.argv[1]), sys.argv[2]
+p = root / ".zcode" / "1c" / "contour.local.json"
+data = {}
+try:
+    data = json.loads(p.read_text(encoding="utf-8"))
+except Exception:
+    pass
+data.setdefault("1c_db", {})["url"] = url
+p.parent.mkdir(parents=True, exist_ok=True)
+p.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+PY
+		echo "• порт $PORT зафиксирован в .zcode/1c/contour.local.json"
 	else
 		echo "✗ прокси не поднялся; смотри $PROXY_LOG" >&2
+		# диагностика, не арбитраж: владелец порта, если им оказался
+		# неотвечающий на HTTP процесс
+		PP=$(ss -tlnp 2>/dev/null | grep ":$PORT " | grep -oP 'pid=\K[0-9]+' | head -1) || true
+		[[ -n "$PP" ]] && echo "  порт $PORT держит pid $PP: $(ps -o comm= -p "$PP" 2>/dev/null)" >&2
 		exit 1
 	fi
 fi
