@@ -183,8 +183,72 @@ def suggest_unica_tool(rel: str) -> str:
 	return "unica.apply / unica.run (контракт узла — словарь unica.run {}; сверка — unica.view)"
 
 
-def block_message(rel: str, suggestion: str) -> str:
-	return "\n".join([
+ESCALATION_FORMAT_HINT = (
+	"формат: одна строка = путь относительно корня дерева (как в поле «Файл:»"
+	" выше); причина — #-комментарием строкой выше; файл кладётся в корень"
+	" дерева, в котором лежит целевой файл")
+
+
+def escalation_entries(target_root: str, session_cwd: str):
+	"""(найден, подошедшие, разбор) allowlist'а эскалаций для дерева target_root.
+
+	подошедшие — строки, нормализующиеся в исходник этого дерева в
+	относительной форме (точное совпадение с rel-путём). Остальные не
+	выбрасываются и не матчатся молча — собираются в разбор для блока с
+	причиной, почему строка не подошла (issue #51). Файл читается из дерева
+	цели; при отсутствии — из cwd сессии (ворктри против основного дерева;
+	поведение закреплено тестом).
+	"""
+	for root in (target_root, session_cwd):
+		path = Path(root) / ESCALATION_FILE
+		if not path.is_file():
+			continue
+		try:
+			lines = path.read_text(encoding="utf-8").splitlines()
+		except OSError:
+			return True, [], [f"файл эскалаций не прочитан: {path}"]
+		matched, report = [], []
+		for raw in lines:
+			line = raw.strip()
+			if not line or line.startswith("#"):
+				continue  # пустая строка и причина-комментарий — не путь
+			if " — " in line or " – " in line:
+				report.append(f'"{line}" — путь и причина одной строкой;'
+				              " причина перенеси в #-комментарий строкой выше")
+			elif " #" in line:
+				report.append(f'"{line}" — причина в конце строки;'
+				              " перенеси в #-комментарий строкой выше")
+			elif normalize_source_path(line, root) is None:
+				report.append(f'"{line}" — строка не резолвится в исходник дерева')
+			elif line != normalize_source_path(line, root)[0]:
+				report.append(f'"{line}" — не относительный путь от корня дерева;'
+				              " укажи относительную форму, как в поле «Файл:» выше")
+			else:
+				matched.append(line)
+		return True, matched, report
+	return False, [], []
+
+
+def escalation_block_lines(found: bool, matched: list, report: list, tree_root: str) -> list:
+	"""Разбор эскалаций для блока: несовпадение перестаёт быть молчаливым."""
+	if not found:
+		return [
+			f"Разбор эскалаций: {ESCALATION_FILE} в дереве {tree_root} не найден —",
+			"  без файла разовая прямая правка не проходит.",
+		]
+	if not matched and not report:
+		return [f"Разбор эскалаций: файл найден, путей: 0 (только комментарии)."]
+	lines = [f"Разбор эскалаций: файл найден, путей: {len(matched)};"
+		         " для этого файла не подошли:"]
+	for line in matched:
+		lines.append(f'  - "{line}" (эскалация другого файла)')
+	for entry in report:
+		lines.append(f"  - {entry}")
+	return lines
+
+
+def block_message(rel: str, suggestion: str, escalation: tuple | None = None) -> str:
+	lines = [
 		"Прямое редактирование исходников 1С заблокировано (unica-source-gate).",
 		"",
 		f"Файл: {rel}",
@@ -200,23 +264,15 @@ def block_message(rel: str, suggestion: str) -> str:
 		"",
 		"Разовая прямая правка (когда unica.* не выражает изменение) —",
 		"впиши путь в .zcode/unica-gate-escalations.txt и повтори.",
-		"",
-		"Все вызовы Unica требуют cwd корня проекта.",
-	])
-
-
-def escalation_entries(target_root: str, session_cwd: str):
-	"""Строки allowlist'а эскалаций для дерева target_root (пусто, если файла нет)."""
-	for root in (target_root, session_cwd):
-		path = Path(root) / ESCALATION_FILE
-		if not path.is_file():
-			continue
-		try:
-			lines = path.read_text(encoding="utf-8").splitlines()
-		except OSError:
-			return []
-		return [ln.strip() for ln in lines if ln.strip() and not ln.lstrip().startswith("#")]
-	return []
+		f"  {ESCALATION_FORMAT_HINT}",
+	]
+	if escalation is not None:
+		found, matched, report, tree_root = escalation
+		lines.append("")
+		lines.extend(escalation_block_lines(found, matched, report, tree_root))
+	lines.append("")
+	lines.append("Все вызовы Unica требуют cwd корня проекта.")
+	return "\n".join(lines)
 
 
 def paths_from_tool_input(tool_input: dict):
@@ -431,13 +487,15 @@ def handle_pre(event: dict) -> int:
 		rel, root = norm
 		if is_agents_doc(rel):
 			continue
-		if rel in escalation_entries(root, cwd):
+		esc_found, esc_matched, esc_report = escalation_entries(root, cwd)
+		if rel in esc_matched:
 			audit(RULE, f"{tool_name.lower()} {rel} (дерево {root})",
 			      f"эскалация: разрешена прямой правкой ({ESCALATION_FILE})", "confirmed")
 			continue
 		suggestion = suggest_unica_tool(rel)
 		audit(RULE, f"{tool_name.lower()} {rel}", f"требуется {suggestion}")
-		return block(block_message(rel, suggestion))
+		return block(block_message(rel, suggestion,
+		                           (esc_found, esc_matched, esc_report, root)))
 	return 0
 
 

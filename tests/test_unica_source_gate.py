@@ -128,9 +128,46 @@ def main() -> int:
 			"изменён allowlist" in str(e.get("reason"))
 			for e in audit_entries(state, "unica-source-gate")), "нет записи")
 
-		# ── эскалация своего дерева не открывает чужое ──
+		# ── несовпавшая строка эскалаций отрабатывает с разбором (#51) ──
 		other = tmp_path / "other-tree"
 		(other / "src" / "cfe" / "Расширение").mkdir(parents=True)
+		(esc / "unica-gate-escalations.txt").write_text(
+			f"# разовая прямая правка\n{bsl} — правка легаси\n", encoding="utf-8")
+		r = pre("Write", {"file_path": bsl, "content": ""})
+		check("строка «путь — причина» блокирует", r.returncode == 2, f"exit {r.returncode}")
+		check("в причине перечень несовпавших строк", "для этого файла не подошли" in r.stderr,
+		      r.stderr[:200])
+		check("причина называет формат строки", "путь и причина одной строкой" in r.stderr,
+		      r.stderr[:200])
+		(esc / "unica-gate-escalations.txt").write_text(
+			f"# разовая прямая правка\n{tree / bsl}\n", encoding="utf-8")
+		r = pre("Write", {"file_path": bsl, "content": ""})
+		check("абсолютная форма в allowlist не матчится", r.returncode == 2,
+		      f"exit {r.returncode}")
+		check("подсказка об относительной форме в блоке", "не относительный путь" in r.stderr,
+		      r.stderr[:200])
+		(esc / "unica-gate-escalations.txt").unlink()
+		r = pre("Write", {"file_path": bsl, "content": ""})
+		check("без файла эскалаций блок называет отсутствие",
+		      r.returncode == 2 and "не найден" in r.stderr, r.stderr[:200])
+
+		# ── эскалации читаются из дерева цели, фолбэк — cwd сессии (#51) ──
+		(esc / "unica-gate-escalations.txt").write_text(
+			"# разовая прямая правка\nsrc/cfe/Расширение/Module.bsl\n", encoding="utf-8")
+		r = pre("Write", {"file_path": str(other / "src/cfe/Расширение/Module.bsl"),
+		                  "content": ""})
+		check("фолбэк на allowlist cwd-дерева закреплён", r.returncode == 0,
+		      f"exit {r.returncode}")
+		other_z = other / ".zcode"
+		other_z.mkdir()
+		(other_z / "unica-gate-escalations.txt").write_text(
+			"# чужое дерево: совпадения нет\n", encoding="utf-8")
+		r = pre("Write", {"file_path": str(other / "src/cfe/Расширение/Module.bsl"),
+		                  "content": ""})
+		check("файл дерева цели приоритетен: без совпадения блок", r.returncode == 2,
+		      f"exit {r.returncode}")
+
+		# ── эскалация своего дерева не открывает чужое ──
 		r = pre("Write", {"file_path": str(other / "src/cfe/Расширение/Module.bsl"), "content": ""})
 		check("запись чужого пути из-под своего cwd блокируется", r.returncode == 2,
 		      f"exit {r.returncode}")
