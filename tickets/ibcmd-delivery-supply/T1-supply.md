@@ -13,28 +13,31 @@
 ## Что делается
 
 - deploy.json: mapping `skills/1c-ibcmd-delivery →
-  .zcode/skills/1c-ibcmd-delivery` к 14 скилловым mappings (всего в
-  контракте 18: скиллы плюс hooks, workflows, scripts, templates).
+  .zcode/skills/1c-ibcmd-delivery`; итого 15 скилловых mappings из 19
+  (было 14 из 18; прочие — hooks, workflows, scripts, templates).
 - tests/test_deploy_mappings.py (новый): инвариант поставки — каждый
-  каталог `skills/*/SKILL.md` замаплен; каждый mapping-источник
-  существует; каждая цель под `.zcode/`.
+  каталог `skills/*/SKILL.md` замаплен в свой каталог; дубликатов
+  from/to нет; источники существуют внутри репо; цели под `.zcode/`.
 - skills/1c-ibcmd-delivery/SKILL.md — три вставки минимальным diff:
   - дистрибокс в раздел «Хост Linux»: ibcmd на Linux-хосте может жить
     только в distrobox-контейнере; детект по живым контейнерам, вызов
-    `distrobox enter <имя> -- ibcmd …`; имя контейнера и версия
-    платформы — машина/проект, в канон не гвоздятся;
-  - сигнатуры глаголов у цикла поставки: «Is a directory» и «Неверный
-    формат хранилища данных» при `config load` = взят неверный глагол
-    (каталог/XML — `config import`, контейнеры .cf/.cfe — `config load`);
-    unica `make` — поверхность 0.15, на канон-профиле 0.13 отказ «tool
-    is not in the canonical profile», рабочий путь — `config import` +
-    apply, сборка .cfe — `config save` из базы;
+    `distrobox enter <имя> -- ibcmd …`; имя контейнера — из конфигурации
+    машины; каталог базы виден из контейнера;
+  - сигнатуры глаголов у цикла поставки: `config load` на каталоге даёт
+    `Is a directory`, на Configuration.xml — «Неверный формат хранилища
+    данных» (диагноз по аргументу: каталог — `config import`,
+    контейнеры .cf/.cfe — `config load`); unica `make` — поверхность
+    0.15, на профиле 0.13 (`profiles.yaml`) отказ «tool is not in the
+    canonical v0.13 profile», сборка .cfe — `config save` из базы;
   - запрет apply после упавшего import — у раздела «Доказательство
     донесённой версии»: apply поверх упавшего import применяет старый
     буфер и печатает ложное «Создано поколение».
 - templates/agents-section.md: строка «загрузка `.cf`/`.cfe` — через
   ibcmd» дополняется указателем на скилл.
-- README.md: таблица состава skills/ дополняется `1c-ibcmd-delivery`.
+- README.md: таблица состава skills/ дополняется `1c-ibcmd-delivery`
+  (строка таблицы — одна физическая строка).
+- Релиз: bump `.zcode-plugin/plugin.json` до 0.4.92 в релизном коммите;
+  после merge — запись в docs/ops/continue.md.
 - Красный смок: пин каталога снимается, тег v0.4.92 остаётся пометкой
   негодного выпуска, полигон откатывается установкой предыдущей версии;
   повторный выпуск — решение оператора.
@@ -54,19 +57,21 @@ forbidden-грепы и грейпы канона по чеклисту AGENTS �
 ## Критерии приёмки
 
 Критерии 1–4 падают на базовом коммите; 5 — предmerge-инвариант без
-красноты; 6–7 — пост-merge чекпоинты выпуска, красноты не требуют.
+красноты; 6–8 — пост-merge чекпоинты выпуска, красноты не требуют.
 
 1. Артефакт: вывод нового теста, прогнанного по рецепту красноты
    (базовое дерево + новый тест, без mapping). Ожидание: падение с
-   именем сироты `1c-ibcmd-delivery` — на базовом дереве ни теста, ни
-   mapping нет.
+   именем сироты `1c-ibcmd-delivery`; на базовом дереве mapping нет,
+   тест берётся из рабочего дерева.
 2. Артефакт: grep `ibcmd-delivery` в deploy.json рабочего дерева.
    Ожидание: строка mapping с источником `skills/1c-ibcmd-delivery` и
    целью под `.zcode/`.
 3. Артефакт: текст skills/1c-ibcmd-delivery/SKILL.md. Ожидание: три
-   вставки на месте — раздел про distrobox, сигнатуры «Is a directory»,
-   «Неверный формат хранилища данных», «tool is not in the canonical
-   profile», правило «import упал — apply не звать».
+   вставки на месте — абзац про distrobox в разделе «Хост Linux»
+   (`distrobox enter <имя> -- ibcmd …`), сигнатуры `Is a directory` и
+   «Неверный формат хранилища данных» с диагнозом по аргументу, отказ
+   «tool is not in the canonical v0.13 profile» у make, правило
+   «import упал — apply не звать».
 4. Артефакт: grep по templates/agents-section.md и README.md.
    Ожидание: указатель на скилл в секции про ibcmd, имя скилла в
    таблице состава.
@@ -74,11 +79,14 @@ forbidden-грепы и грейпы канона по чеклисту AGENTS �
    scripts/lint_skill_frontmatter.py, forbidden-грепы и грейпов канона.
    Ожидание: exit 0, ни одного провала («Готово» 6 спеки). Зелёный до и
    после — охрана; краснота инварианта доказывается критерием 1.
-6. Артефакт: тег v0.4.92 в репо, пин в sot-zcode-marketplace, вывод
-   `validate --fetch`. Ожидание: тег и пин согласованы, validate зелёный.
+6. Артефакт: .zcode-plugin/plugin.json, тег v0.4.92 в репо, пин в
+   sot-zcode-marketplace, вывод `validate --fetch`. Ожидание: версия
+   манифеста 0.4.92, тег и пин согласованы, validate зелёный.
 7. Артефакт: развёртка полигона после установки тем же путём, что бой.
    Ожидание: `1c-ibcmd-delivery` в `.zcode/skills/`, отчёт `/1c-doctor`,
    живой вызов unica отвечает.
+8. Артефакт: docs/ops/continue.md после merge. Ожидание: запись «юнит
+   отгружен, приёмка за оператором» и очередь действий.
 
 ## Границы
 
