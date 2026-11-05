@@ -188,16 +188,27 @@ wait_client тест2 && echo "ok=$n"
             capture_output=True, text=True).stdout.strip()
         pidfile = Path("/tmp") / f"1c-db-{pidhash}.pid"
         pidfile.write_text(f"{other.pid}\n", encoding="utf-8")
-        # клиент ещё жив (kill не доставлен — грабля среды): --stop не снимает
-        r = subprocess.run(["bash", str(SCRIPT), str(proj), "--stop"],
-                           capture_output=True, text=True, env=guard_env)
+        # инвариант Т3: при ЖИВОМ клиенте замок не снимается (release-ветка)
+        r = guard("release", str(other.pid))
         held = _ib.stand_lock_status(str(proj), "File=build/ib")
-        _lib.check("гард: --stop при живом клиенте замок не снимает",
+        _lib.check("гард: release при живом клиенте замок не снимает",
                    r.returncode == 0 and held is not None,
                    f"rc={r.returncode}, held={held!r}, err={r.stderr[:200]!r}")
-        # клиент умер — --stop выпускает замок
-        other.kill()
-        other.wait()
+        # --stop (Т7): клиент из pid-файла, переживший маркер, добивается по
+        # pid — замок выпускается фактом его смерти, а не мимо живого
+        r = subprocess.run(["bash", str(SCRIPT), str(proj), "--stop"],
+                           capture_output=True, text=True, env=guard_env)
+        for _ in range(50):  # смерть от kill мгновенная; на базе клиент жив
+            if other.poll() is not None:
+                break
+            time.sleep(0.1)
+        held = _ib.stand_lock_status(str(proj), "File=build/ib")
+        _lib.check("гард: --stop добивает живого клиента по pid и выпускает замок",
+                   r.returncode == 0 and not Path(f"/proc/{other.pid}/stat").exists()
+                   and held is None
+                   and "добиваю по pid" in r.stderr,
+                   f"rc={r.returncode}, held={held!r}, err={r.stderr[:200]!r}")
+        # мёртвый клиент — повторный --stop идёт штатно
         r = subprocess.run(["bash", str(SCRIPT), str(proj), "--stop"],
                            capture_output=True, text=True, env=guard_env)
         held = _ib.stand_lock_status(str(proj), "File=build/ib")
