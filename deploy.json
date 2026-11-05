@@ -31,6 +31,10 @@
       "to": ".zcode/skills/1c-ibsrv-publish"
     },
     {
+      "from": "skills/1c-ibcmd-delivery",
+      "to": ".zcode/skills/1c-ibcmd-delivery"
+    },
+    {
       "from": "skills/1c-project-bootstrap",
       "to": ".zcode/skills/1c-project-bootstrap"
     },
