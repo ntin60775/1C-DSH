@@ -17,11 +17,17 @@
 
 Второй вид замка — stand:<нормализованная строка подключения> (мультистенд):
 «один клиент на базу» для файловых стендов. Без TTL: владелец — pid
-клиента, живость — свежая проба процесса (ps -p) при взятии и в статусе;
-мёртвый владелец освобождает замок, взятие подчищает stale. Лежит в
-отдельном каталоге stand-locks — TTL-выметка ib-locks его не касается.
-Код-замки unica и stand-замок — разные пространства ключей и не блокируют
-друг друга.
+клиента; живость — свежая проба /proc/<pid>/stat при взятии и в статусе,
+зомби (Z) считается мёртвым — базу он не держит; мёртвый владелец
+освобождает замок, взятие подчищает stale. Занятие атомарное:
+готовый файл замка появляется жёсткой ссылкой (занято — EEXIST),
+наполовину записанного замка не бывает; при проигранной гонке —
+перечитать владельца. Гонка «двое разом увидели мёртвого владельца»
+остаётся, её арбитр (flock) — решение Т3/Т6. Ключ и запись замка —
+без Usr=/Pwd=: пароль не влияет на ключ и не живёт в файлах состояния.
+Лежит в отдельном каталоге stand-locks — TTL-выметка ib-locks его не
+касается. Код-замки unica и stand-замок — разные пространства ключей
+и не блокируют друг друга.
 """
 import hashlib
 import json
@@ -92,9 +98,20 @@ def lock_key(connection: str, tree: str) -> str:
 
 
 def stand_lock_key(connection: str, tree: str) -> str:
-	"""Ключ stand-замка: то же пространство подключений, префикс вида замка."""
-	return hashlib.sha1(
-		f"stand:{_normalized_connection(connection, tree)}".encode("utf-8")).hexdigest()
+	"""Ключ stand-замка: stand: + нормализация без Usr=/Pwd=.
+
+	Пароль в ключ не входит: смена пароля в local-слое не должна создавать
+	второй стенд на ту же базу. Пустые сегменты (хвост «;») отбрасываются.
+	"""
+	norm = ";".join(part for part in _normalized_connection(connection, tree).split(";")
+	                if part and not part.startswith(("usr=", "pwd=")))
+	return hashlib.sha1(f"stand:{norm}".encode("utf-8")).hexdigest()
+
+
+def _without_credentials(connection: str) -> str:
+	"""Строка подключения без Usr=/Pwd=: пароль не живёт в файлах состояния."""
+	return ";".join(part for part in connection.split(";")
+	                if part.strip().lower()[:4] not in ("usr=", "pwd="))
 
 
 def _lock_path(connection: str, tree: str) -> Path:
@@ -122,25 +139,26 @@ def _is_stale(lock: dict) -> bool:
 
 
 def _stand_owner_alive(pid) -> bool:
-	"""Живость владельца stand-замка свежей пробой таблицы процессов.
+	"""Живость владельца stand-замка свежей пробой /proc/<pid>/stat.
 
-	Урок этой среды: kill не всегда доставляется, os.kill(pid, 0) верит
-	зомби — живость решает свежий запуск пробы. pgrep по pid здесь не умеет
-	(procps: «неверный ключ — „p“»), проба — ps -p; нет ps — /proc.
-	Проба не удалась — владелец считается живым: не угадывать смерть живого
-	стенда. Битый pid в записи — замок мёртв.
+	Урок этой среды: kill не всегда доставляется. Зомби верят и os.kill(pid, 0),
+	и ps -p, и наличие /proc/<pid> — состояние Z читается из stat, зомби
+	считается мёртвым: базу он не держит. Процесса нет — мёртв; /proc не
+	читается (не Linux, hidepid) — владелец считается живым: не угадывать
+	смерть живого стенда. Битый pid в записи — замок мёртв.
 	"""
 	try:
 		number = int(pid)
 	except (TypeError, ValueError):
 		return False
 	try:
-		probe = subprocess.run(["ps", "-p", str(number)],
-		                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-		                       timeout=10)
-	except (OSError, subprocess.SubprocessError):
-		return Path(f"/proc/{number}").exists()
-	return probe.returncode == 0
+		stat = Path(f"/proc/{number}/stat").read_text(encoding="utf-8")
+	except FileNotFoundError:
+		return False
+	except OSError:
+		return True
+	fields = stat.rsplit(")", 1)[-1].split()
+	return bool(fields) and fields[0] != "Z"
 
 
 def acquire_base_lock(tree: str, connection: str, operation: str, sid: str,
@@ -184,29 +202,46 @@ def release_base_lock(tree: str, connection: str, sid: str) -> None:
 def acquire_stand_lock(tree: str, connection: str, pid: int, operation: str = "start_client"):
 	"""Берёт stand-замок: ('ok', None) — захвачен или уже этого pid; ('busy', lock) — живой чужой.
 
-	Без TTL: владелец — pid клиента, мёртвый владелец освобождает замок —
-	взятие подчищает stale по пробе процесса.
+	Без TTL: владелец — pid клиента; мёртвый владелец (включая зомби)
+	освобождает замок — взятие подчищает stale. Занятие атомарное: готовый
+	файл замка появляется жёсткой ссылкой tmp→замок (занято — EEXIST);
+	при проигранной гонке — перечитать владельца, stale или битую запись
+	заменить.
 	"""
+	if not connection:
+		raise ValueError("пустая строка подключения")
+	pid = int(pid)
 	path = _stand_lock_path(connection, tree)
-	existing = _read_lock(path)
-	if existing and _stand_owner_alive(existing.get("pid")):
-		if existing.get("pid") == pid:
-			return "ok", None
-		return "busy", existing
 	lock = {
 		"kind": "stand",
-		"connection": connection,
+		"connection": _without_credentials(connection),
 		"tree": tree,
 		"pid": pid,
 		"operation": operation,
 		"started_at": datetime_iso(),
 	}
+	payload = json.dumps(lock, ensure_ascii=False, indent=2)
+	tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
 	try:
 		path.parent.mkdir(parents=True, exist_ok=True)
-		path.write_text(json.dumps(lock, ensure_ascii=False, indent=2), encoding="utf-8")
+		tmp.write_text(payload, encoding="utf-8")
 	except OSError:
 		# нет доступа к каталогу состояния — из-за этого работу не блокируем
-		pass
+		return "ok", None
+	try:
+		os.link(tmp, path)  # атомарное занятие: замок либо отсутствует, либо целый
+	except FileExistsError:
+		existing = _read_lock(path)
+		if existing and _stand_owner_alive(existing.get("pid")):
+			if existing.get("pid") == pid:
+				return "ok", None
+			return "busy", existing
+		os.replace(tmp, path)  # stale или битая запись — атомарная замена
+	finally:
+		try:
+			tmp.unlink(missing_ok=True)
+		except OSError:
+			pass
 	return "ok", None
 
 
@@ -214,7 +249,7 @@ def release_stand_lock(tree: str, connection: str, pid: int) -> None:
 	"""Отпускает stand-замок, если владелец — этот pid."""
 	path = _stand_lock_path(connection, tree)
 	lock = _read_lock(path)
-	if lock and lock.get("pid") == pid:
+	if lock and lock.get("pid") == int(pid):
 		try:
 			path.unlink(missing_ok=True)
 		except OSError:
@@ -252,6 +287,8 @@ def describe_holder(lock: dict) -> str:
 	"""Описание держателя для сообщения о блокировке."""
 	started = str(lock.get("started_at") or "?")
 	operation = str(lock.get("operation") or "?")
+	if lock.get("kind") == "stand":
+		return f"{lock.get('tree')} — операция {operation}, с {started}, процесс {lock.get('pid')}"
 	sid = str(lock.get("session_id") or "?")
 	return f"{lock.get('tree')} — операция {operation}, с {started}, сессия {sid}"
 
@@ -265,7 +302,6 @@ if __name__ == "__main__":
 	# Ручная проверка без 1С: захват, повторный захват, конфликт, чистка;
 	# для stand-замка — живой процесс-владелец.
 	import shutil
-	import subprocess
 	import tempfile
 
 	with tempfile.TemporaryDirectory() as tmp:
@@ -287,7 +323,7 @@ if __name__ == "__main__":
 		status, _ = acquire_stand_lock("/tree/a", "Srvr=host;Ref=erp;", owner.pid)
 		print("stand-замок взят:", status)
 		status, holder = acquire_stand_lock("/tree/b", "Srvr=host;Ref=erp;", os.getpid())
-		print("чужой владелец:", status)
+		print("чужой владелец:", status, "—", describe_holder(holder) if holder else "")
 		owner.kill()
 		owner.wait()
 		status, _ = acquire_stand_lock("/tree/b", "Srvr=host;Ref=erp;", os.getpid())
