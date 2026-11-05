@@ -8,12 +8,20 @@
 
 Запуск: python3 tests/test_mcp_gate.py
 """
+import json
+import re
 import sys
 import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _lib import audit_entries, check, run_hook, summary  # noqa: E402
+from _lib import HOOKS, audit_entries, check, run_hook, summary  # noqa: E402
+
+sys.path.insert(0, str(HOOKS))
+try:
+	from mcp_gate import TOOLKIT_MCP_RE  # noqa: E402
+except ImportError:  # базовое дерево: семейства 1c-db-<имя> в гейте ещё нет
+	TOOLKIT_MCP_RE = None
 
 
 def main() -> int:
@@ -86,18 +94,43 @@ def main() -> int:
 		r = call("Bash", {}, command="curl http://127.0.0.1:6010/api/status")
 		check("path-детект без опасного токена проходит", r.returncode == 0, f"exit {r.returncode}")
 
+		# ── регресс форм хоста и порта прежнего детекта (инвариант) ──
+		r = call("Bash", {}, command="curl -X POST http://localhost:6003/api/execute_code -d '{}'")
+		check("curl localhost:6003/api/execute_code блокируется", r.returncode == 2,
+		      f"exit {r.returncode}")
+		r = call("Bash", {}, command="curl -X POST http://[::1]:6003/mcp -d 'restart_1c_session'")
+		check("curl [::1]:6003/mcp с опасным токеном блокируется", r.returncode == 2,
+		      f"exit {r.returncode}")
+		r = call("Bash", {}, command="curl -X POST http://127.0.0.1:6003/sse -d 'close_1c_session'")
+		check("curl 127.0.0.1:6003/sse (путь не /api|/mcp) блокируется портом", r.returncode == 2,
+		      f"exit {r.returncode}")
+		r = call("Bash", {}, command="curl -X POST \\\n  http://10.0.0.5:9000 \\\n  /api/execute_code")
+		check("многострочный curl с /api на пути блокируется", r.returncode == 2,
+		      f"exit {r.returncode}")
+
 		# ── мультистенд: инстансные серверы 1c-db-<имя> ──
 		r = call("mcp__1c-db-base2__execute_code", {"code": "…"})
 		check("инстансный сервер 1c-db-base2 блокируется", r.returncode == 2, f"exit {r.returncode}")
-		r = call("mcp__1c-db-vagonka_2__close_1c_session", {})
-		check("инстанс 1c-db-vagonka_2 (подчёркивание и цифра) блокируется",
+		r = call("mcp__1c-db-base2__close_1c_session", {})
+		check("инстансный сервер: close_1c_session блокируется", r.returncode == 2,
+		      f"exit {r.returncode}")
+		r = call("mcp__1c-db-shop_2__execute_code", {"code": "…"})
+		check("инстанс 1c-db-shop_2 (подчёркивание и цифра) блокируется",
 		      r.returncode == 2, f"exit {r.returncode}")
+		parsed = TOOLKIT_MCP_RE.match("mcp__1c-db-base2__my__tool") if TOOLKIT_MCP_RE else None
+		check("двойное подчёркивание в имени инструмента остаётся в коротком имени",
+		      bool(parsed) and parsed.group(1) == "1c-db-base2" and parsed.group(2) == "my__tool",
+		      "нет TOOLKIT_MCP_RE (базовое дерево)" if not parsed
+		      else str((parsed.group(1), parsed.group(2))))
 		r = call("mcp__1c-db-base2__execute_query", {"query": "ВЫБРАТЬ 1"})
 		check("читающий инструмент инстансного сервера проходит", r.returncode == 0,
 		      f"exit {r.returncode}")
 		r = call("mcp__1c-dbx__execute_code", {})
 		check("1c-dbx — не семейство 1c-db, гейт не блокирует", r.returncode == 0,
 		      f"exit {r.returncode}")
+		instance_audit = [e for e in audit_entries(state, "mcp-unsafe-gate")
+		                  if "1c-db-base2" in str(e.get("action"))]
+		check("инстансное имя сервера попадает в журнал", bool(instance_audit), "нет записи")
 
 		# ── override опасных инструментов через contour.json ──
 		c1dir = zdir / "1c"
@@ -115,6 +148,19 @@ def main() -> int:
 		# ── прочее не задето ──
 		r = call("mcp__unica__code_patch", {})
 		check("unica-вызовы не предмет этого гейта", r.returncode == 0, f"exit {r.returncode}")
+
+		# ── маршрутизация hooks.json: matcher пускает те же имена к гейту ──
+		hooks = json.loads((HOOKS / "hooks.json").read_text(encoding="utf-8"))
+		matchers = [entry["matcher"] for entry in hooks["hooks"]["PreToolUse"]
+		            if any("mcp_gate.py" in str(h.get("args")) for h in entry.get("hooks", []))]
+		check("matcher гейта в hooks.json единственный", len(matchers) == 1, str(matchers))
+		gate_re = re.compile(matchers[0])
+		for name in ("Bash", "mcp__1c-testpilot__tc_execute_code",
+		             "mcp__1c-db__execute_code", "mcp__1c-db-base2__execute_code",
+		             "mcp__1c-db-shop_2__close_1c_session"):
+			check(f"matcher пускает к гейту {name}", gate_re.match(name) is not None, name)
+		check("matcher не пускает 1c-dbx", gate_re.match("mcp__1c-dbx__execute_code") is None,
+		      "неожиданный матч")
 
 		return summary()
 
