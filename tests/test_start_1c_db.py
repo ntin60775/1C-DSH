@@ -100,7 +100,7 @@ try:
     #    проверка стоит ~30 с — счётчик итераций раздувал фазу до ~2 часов.
     harness = f"""set -euo pipefail
 eval "$(sed -n '/^wait_client() {{/,/^}}/p' {SCRIPT})"
-URL="http://127.0.0.1:65535/mcp"; LOG="{tmp}/fake.log"
+URL="http://127.0.0.1:65535/mcp"; PROBE_URL="$URL"; LOG="{tmp}/fake.log"
 client_alive() {{ return 1; }}
 export WAIT_DEADLINE=3
 start=$(date +%s)
@@ -374,12 +374,14 @@ wait_client тест2 && echo "ok=$n"
         "    display: 98\n"
         "    publish_port: 6011\n")
     r = run_instance(proj, "--instance", "base2")
-    _lib.check("Т4: годная запись — громкая остановка «рантайм — Т5», не main",
-               r.returncode == 2 and "Т5" in r.stderr,
+    _lib.check("Т4/Т5: годная запись — print-config проходит (рантайм Т5 не блокирует)",
+               r.returncode == 0 and len(r.stdout.split()) == 5
+               and r.stdout.split()[4] == "base2",
                f"rc={r.returncode}, out={r.stdout!r}, err={r.stderr[:300]!r}")
     r = run_instance(proj, "--instance=base2")
-    _lib.check("Т4: форма --instance=base2 распознаётся",
-               r.returncode == 2 and "Т5" in r.stderr,
+    _lib.check("Т4/Т5: форма --instance=base2 распознаётся (канал в print-config)",
+               r.returncode == 0 and len(r.stdout.split()) == 5
+               and r.stdout.split()[4] == "base2",
                f"rc={r.returncode}, err={r.stderr[:300]!r}")
     r = run_instance(proj, "--instance", "")
     _lib.check("Т4: пустое имя инстанса — отказ, не тихий main",
@@ -414,6 +416,300 @@ wait_client тест2 && echo "ok=$n"
     _lib.check("Т4: моно-режим (файла нет, --instance нет) — прежний путь",
                r.returncode == 0 and expected_os_epf() in r.stdout,
                f"rc={r.returncode}, out={r.stdout!r}")
+
+    # 8. Т5 рантайм --instance: клиент/Xvfb/WM — ключи от (корень|инстанс),
+    #    pid/лог прокси — общие от корня; print-config несёт канал инстанса;
+    #    связь собирается из записи (абсолютный File=, Usr/Pwd); дисплей —
+    #    поле → пул 97/98/99 с пропуском занятых → исчерпание exit 2.
+    #    Всё через prelude-гарнесс (до контурного чтения — стенда нет),
+    #    print-config и извлекаемые pick_display/instances_py.
+    rt = tmp / "rt"
+    rt.mkdir()
+    (rt / "v8project.local.yaml").write_text(
+        'infobases:\n  origin:\n    connection: File=build/ib\n', encoding="utf-8")
+    (rt / ".zcode" / "1c").mkdir(parents=True)
+    (rt / ".zcode" / "1c" / "db-instances.yaml").write_text(
+        "instances:\n"
+        "  base2:\n"
+        "    channel: ch2\n"
+        "    connection: File=build/ib/base2\n"
+        "    user: u2\n"
+        "    password: p2\n"
+        "    display: 98\n"
+        "    publish_port: 6011\n"
+        "  base3:\n"
+        "    connection: File=build/ib/base3\n"
+        "    user: u3\n"
+        "    password: p3\n",
+        encoding="utf-8")
+
+    # prelude скрипта до контурного чтения: разбор args + все рантайм-пути
+    txt = SCRIPT.read_text(encoding="utf-8")
+    marker = "# ── контурные url"
+    if marker not in txt:
+        raise AssertionError("маркер prelude исчез из скрипта — поправь тест")
+    prelude = txt[: txt.index(marker)]
+    hpath = tmp / "rt-prelude.sh"
+    hpath.write_text(prelude + (
+        '\nprintf \'PID=%s\\nLOG=%s\\nXVFB=%s\\nWM=%s\\nXLOG=%s\\nWMLOG=%s\\n'
+        'PPID_=%s\\nPLOG=%s\\n\' '
+        '"$PIDFILE" "$LOG" "$XVFB_PIDFILE" "$WM_PIDFILE" "$XVFB_LOG" "$WM_LOG" '
+        '"$PROXY_PIDFILE" "$PROXY_LOG"\n'), encoding="utf-8")
+
+    def prelude_paths(root, *args):
+        r = subprocess.run(["bash", str(hpath), str(root), *args],
+                           capture_output=True, text=True, env=dict(os.environ))
+        kv = {}
+        for ln in r.stdout.splitlines():
+            if "=" in ln:
+                k, _, v = ln.partition("=")
+                kv[k] = v
+        return r, kv
+
+    r1, kv1 = prelude_paths(rt, "--instance", "base2")
+    r2, kv2 = prelude_paths(rt, "--instance", "base3")
+    r3, kv3 = prelude_paths(rt)
+    # тот же инстанс в другом проекте: ключ обязан зависеть и от корня
+    other_proj = tmp / "rt2"
+    other_proj.mkdir()
+    (other_proj / ".zcode" / "1c").mkdir(parents=True)
+    (other_proj / ".zcode" / "1c" / "db-instances.yaml").write_text(
+        "instances:\n  base2:\n    connection: File=build/ib\n"
+        "    user: u\n    password: p\n", encoding="utf-8")
+    _, kv4 = prelude_paths(other_proj, "--instance", "base2")
+    client_keys = ("PID", "LOG", "XVFB", "WM", "XLOG", "WMLOG")
+    _lib.check("Т5: prelude прошёл для двух инстансов и mono",
+               r1.returncode == 0 and r2.returncode == 0 and r3.returncode == 0,
+               f"rc1={r1.returncode}, rc2={r2.returncode}, rc3={r3.returncode}, "
+               f"err1={r1.stderr[:200]!r}, err2={r2.stderr[:200]!r}, err3={r3.stderr[:200]!r}")
+    _lib.check("Т5: клиентские пути (pid/лог/xvfb/wm+логи) различны по инстансам",
+               all(all(k in kv for k in client_keys + ("PPID_", "PLOG"))
+                   for kv in (kv1, kv2, kv3))
+               and all(kv1[k] != kv2[k] and kv2[k] != kv3[k] and kv1[k] != kv3[k]
+                       for k in client_keys),
+               f"kv1={kv1}, kv2={kv2}, kv3={kv3}")
+    _lib.check("Т5: pid-файл и лог прокси общие на все инстансы и mono",
+               all(all(k in kv for k in ("PPID_", "PLOG")) for kv in (kv1, kv2, kv3))
+               and all(kv1[k] == kv2[k] == kv3[k] for k in ("PPID_", "PLOG")),
+               f"kv1={kv1}, kv2={kv2}, kv3={kv3}")
+    _lib.check("Т5: ключ инстанса зависит от корня (одинаковое имя в другом проекте)",
+               bool(kv4) and all(kv4[k] != kv1[k] for k in client_keys),
+               f"kv1={kv1}, kv4={kv4}")
+
+    # print-config несёт канал инстанса (перекрытие contour.json), дефолт — имя
+    (rt / ".zcode" / "1c" / "contour.json").write_text(
+        '{"1c_db": {"url": "http://127.0.0.1:6123/mcp", "channel": "mn"}}',
+        encoding="utf-8")
+    fields = run_instance(rt, "--instance", "base2").stdout.split()
+    _lib.check("Т5: print-config учитывает инстанс — канал из записи",
+               len(fields) == 5 and fields[4] == "ch2" and fields[1] == "6123",
+               f"fields={fields}")
+    fields = run_instance(rt, "--instance", "base3").stdout.split()
+    _lib.check("Т5: канал без поля — имя инстанса",
+               len(fields) == 5 and fields[4] == "base3",
+               f"fields={fields}")
+    fields = subprocess.run(
+        ["bash", str(SCRIPT), str(rt), "--print-config"],
+        capture_output=True, text=True, env=dict(os.environ)).stdout.split()
+    _lib.check("Т5: mono print-config — канал из contour.json",
+               len(fields) == 5 and fields[4] == "mn",
+               f"fields={fields}")
+
+    # связь из записи: абсолютный File= от корня, Usr/Pwd из полей
+    func = subprocess.run(
+        ["bash", "-c", f"sed -n '/^instances_py()/,/^}}/p' {SCRIPT}"],
+        capture_output=True, text=True).stdout
+    iharness = (f"set -uo pipefail\n"
+                f"ROOT={shlex.quote(str(rt))}\n"
+                f"{func}\n"
+                f"instances_py \"$@\"\n")
+    ipath = tmp / "rt-instances.sh"
+    ipath.write_text(iharness, encoding="utf-8")
+    r = subprocess.run(["bash", str(ipath), "base2"],
+                       capture_output=True, text=True, env=dict(os.environ))
+    want_conn = f'File={rt.resolve()}/build/ib/base2;Usr="u2";Pwd="p2"'
+    _lib.check("Т5: связь base2 — абсолютный File= + Usr/Pwd из записи",
+               r.returncode == 0 and f"connection\t{want_conn}" in r.stdout
+               and "channel\tch2" in r.stdout and "display\t98" in r.stdout,
+               f"rc={r.returncode}, out={r.stdout!r}, err={r.stderr[:200]!r}")
+    r = subprocess.run(["bash", str(ipath), "base3"],
+                       capture_output=True, text=True, env=dict(os.environ))
+    want3 = f'File={rt.resolve()}/build/ib/base3;Usr="u3";Pwd="p3"'
+    _lib.check("Т5: связь base3 — полная строка своя, канал — имя, display пуст",
+               r.returncode == 0 and f"connection\t{want3}" in r.stdout
+               and "channel\tbase3" in r.stdout and "display\t" in r.stdout
+               and not any(ln.startswith("display\t") and ln != "display\t" for ln in r.stdout.splitlines()),
+               f"rc={r.returncode}, out={r.stdout!r}, err={r.stderr[:200]!r}")
+    # канал/дисплей валидируются: недопустимый канал схлопывает инстансы
+    # в default у прокси (изоляция ломается), display с двоеточием ломает путь
+    (rt / ".zcode" / "1c" / "db-instances.yaml").write_text(
+        "instances:\n  base2:\n    connection: File=build/ib/base2\n"
+        "    user: u\n    password: p\n    channel: База2\n",
+        encoding="utf-8")
+    r = subprocess.run(["bash", str(ipath), "base2"],
+                       capture_output=True, text=True, env=dict(os.environ))
+    _lib.check("Т5: кириллический канал — отказ (не тихий default)",
+               r.returncode == 2 and "channel" in r.stderr and "default" in r.stderr,
+               f"rc={r.returncode}, err={r.stderr[:300]!r}")
+    (rt / ".zcode" / "1c" / "db-instances.yaml").write_text(
+        "instances:\n  base2:\n    connection: File=build/ib/base2\n"
+        "    user: u\n    password: p\n    display: :98\n",
+        encoding="utf-8")
+    r = subprocess.run(["bash", str(ipath), "base2"],
+                       capture_output=True, text=True, env=dict(os.environ))
+    _lib.check("Т5: display с двоеточием — отказ с подсказкой формата",
+               r.returncode == 2 and "без двоеточия" in r.stderr,
+               f"rc={r.returncode}, err={r.stderr[:300]!r}")
+    # восстановить полную запись для последующих проверок
+    (rt / ".zcode" / "1c" / "db-instances.yaml").write_text(
+        "instances:\n"
+        "  base2:\n"
+        "    channel: ch2\n"
+        "    connection: File=build/ib/base2\n"
+        "    user: u2\n"
+        "    password: p2\n"
+        "    display: 98\n"
+        "    publish_port: 6011\n"
+        "  base3:\n"
+        "    connection: File=build/ib/base3\n"
+        "    user: u3\n"
+        "    password: p3\n",
+        encoding="utf-8")
+
+    # mono-связь: main наследует user/password из local-оверлея (критерий 3,
+    # половина main) — процессный прогон mono-блока CONN (тело heredoc)
+    mono_body = subprocess.run(
+        ["bash", "-c",
+         f"sed -n '/python3 - \"$ROOT\" \"$HOOKS_DIR\" <</,/^PY$/p' {SCRIPT} "
+         f"| sed '1d;$d'"],
+        capture_output=True, text=True).stdout
+    mc = tmp / "mono-conn"
+    mc.mkdir()
+    (mc / "v8project.local.yaml").write_text(
+        'infobases:\n  origin:\n    connection: File=build/ib\n'
+        'user: mu\npassword: mp\n', encoding="utf-8")
+    mharness = (f"ROOT={shlex.quote(str(mc))}\n"
+                f"HOOKS_DIR={shlex.quote(str(REPO / 'hooks'))}\n"
+                f"CONN=\"$(python3 - \"$ROOT\" \"$HOOKS_DIR\" <<'PY'\n"
+                f"{mono_body}"
+                f"PY\n)\"\n"
+                f'printf \'%s\\n\' "$CONN"\n')
+    mpath = tmp / "rt-mono-conn.sh"
+    mpath.write_text(mharness, encoding="utf-8")
+    r = subprocess.run(["bash", str(mpath)], capture_output=True, text=True,
+                       env=dict(os.environ))
+    want_mono = f'File={mc.resolve()}/build/ib;Usr="mu";Pwd="mp"'
+    _lib.check("Т5: mono-связь — резолв origin + Usr/Pwd из local",
+               r.returncode == 0 and r.stdout.strip() == want_mono,
+               f"rc={r.returncode}, out={r.stdout!r}, err={r.stderr[:300]!r}")
+
+    # дисплей: поле → пул (занят = живой Xvfb; stale-сокет не отнимает слот)
+    # → исчерпание exit 2. Занятость на машине внешняя: живые Xvfb'ы других
+    # стендов учатся списком pgrep — ожидание выводится из системного
+    # состояния, не из кода pick_display
+    pd = subprocess.run(
+        ["bash", "-c", f"sed -n '/^pick_display()/,/^}}/p' {SCRIPT}"],
+        capture_output=True, text=True).stdout
+    xunix = tmp / "xunix"
+    xunix.mkdir()
+    dh = (f"{pd}\npick_display \"$@\"\n")
+    dpath = tmp / "rt-pick.sh"
+    dpath.write_text(dh, encoding="utf-8")
+    denv = dict(os.environ)
+    denv["XUNIX_DIR"] = str(xunix)
+    holders = []
+
+    def xvfb_alive(d: int) -> bool:
+        return subprocess.run(
+            ["pgrep", "-f", f"X[v]fb :{d}"],
+            capture_output=True).returncode == 0
+
+    def pick_expect():
+        r = subprocess.run(["bash", str(dpath)],
+                           capture_output=True, text=True, env=denv)
+        return r
+
+    def fake_xvfb(display: int):
+        # живой процесс с cmdline «Xvfb :N …» — так его видит pgrep пула
+        holders.append(subprocess.Popen(
+            ["bash", "-c", f"exec -a 'Xvfb :{display}' sleep 60"]))
+
+    try:
+        for d in (97, 98, 99):
+            (xunix / f"X{d}").touch()  # сокеты без процесса — stale, слот не отнимают
+        occupied = {d for d in (97, 98, 99) if xvfb_alive(d)}
+        free = [d for d in (97, 98, 99) if d not in occupied]
+        r = pick_expect()
+        if free:
+            _lib.check("Т5: stale-сокеты не занятие — пул даёт первый свободный",
+                       r.returncode == 0 and r.stdout.strip() == str(free[0]),
+                       f"free={free}, rc={r.returncode}, out={r.stdout!r}")
+        else:
+            _lib.check("Т5: все дисплеи машины заняты — исчерпание exit 2",
+                       r.returncode == 2 and "97–99" in r.stderr,
+                       f"rc={r.returncode}, err={r.stderr[:200]!r}")
+        # занять живыми фейками остальные слоты → исчерпание; освободить
+        # первый → он возвращается несмотря на stale-сокеты
+        for d in free:
+            fake_xvfb(d)
+        r = pick_expect()
+        _lib.check("Т5: исчерпание пула живыми Xvfb'ами — exit 2 с подсказкой",
+                   r.returncode == 2 and "display" in r.stderr and "97–99" in r.stderr,
+                   f"rc={r.returncode}, err={r.stderr[:200]!r}")
+        if holders:
+            holders.pop(0).terminate()
+            import time
+            time.sleep(0.3)
+        r = pick_expect()
+        _lib.check("Т5: после освобождения слот возвращается (stale не мешает)",
+                   r.returncode == 0 and r.stdout.strip() == str(free[0])
+                   if free else r.returncode == 2,
+                   f"free={free}, rc={r.returncode}, out={r.stdout!r}")
+    finally:
+        for proc in holders:
+            proc.kill()
+        for proc in holders:
+            proc.wait()
+    r = subprocess.run(["bash", str(dpath), "95"],
+                       capture_output=True, text=True, env=denv)
+    _lib.check("Т5: заданное поле display берётся как есть",
+               r.returncode == 0 and r.stdout.strip() == "95",
+               f"rc={r.returncode}, out={r.stdout!r}")
+
+    # проводка в потоке скрипта: канал инстанса до print-config, пробы и
+    # прогрев — по PROBE_URL, замок — на связь инстанса
+    take_at = txt.find('STAND_CONN="$INST_CONN" stand_lock_py take')
+    launch_at = txt.find('launch_client "$CARG"')
+    transfer_at = txt.find('STAND_CONN="$INST_CONN" stand_lock_py transfer')
+    release_at = txt.find('STAND_CONN="$INST_CONN" stand_lock_py release')
+    stop_at = txt.find("MODE == stop")
+    _lib.check("Т5: проводка take→launch→transfer на связи инстанса",
+               0 < take_at < launch_at < transfer_at,
+               f"take={take_at}, launch={launch_at}, transfer={transfer_at}")
+    _lib.check("Т5: release на связи инстанса внутри stop-ветки",
+               stop_at != -1 and release_at > stop_at,
+               f"stop={stop_at}, release={release_at}")
+    probe_at = txt.find("PROBE_URL=\"$URL\"")
+    chan_at = txt.find('CHANNEL="$INST_CHANNEL"')
+    pc_at = txt.find("MODE == print_config")
+    _lib.check("Т5: канал инстанса применяется до print-config",
+               0 < chan_at < pc_at, f"chan={chan_at}, print={pc_at}")
+    _lib.check("Т5: client_alive и прогрев бьют в PROBE_URL, не в общий URL",
+               probe_at != -1
+               and txt.count('python3 - "$PROBE_URL"') >= 2
+               and 'python3 - "$URL" <<' not in txt[txt.index("client_alive()"):],
+               f"probe={probe_at}, probe_calls={txt.count('python3 - \"$PROBE_URL\"')}")
+    _lib.check("Т5: связь инстанса идёт в CONN, mono-блок сохранён",
+               'if [[ $INSTANCE_SET -eq 1 ]]; then\n\tCONN="$INST_CONN"' in txt
+               and "resolve_infobase_connection" in txt,
+               "инстанс-ветка CONN или mono-резолв не найдены")
+    _lib.check("Т5: проводка дисплея — pick_display с полем записи, exit при исчерпании",
+               'DISPLAY_NUM="$(pick_display "$INST_DISPLAY")" || exit 2' in txt
+               and 'CHILD_ENV+=(DISPLAY=":$DISPLAY_NUM")' in txt,
+               "инстанс-ветка выбора дисплея не найдена")
+    _lib.check("Т5: mono-дисплей жёсткий :97 (поведение сегодняшнего дня)",
+               'DISPLAY_NUM="97"' in txt,
+               "mono-ветка :97 не найдена")
 
 finally:
     import shutil
