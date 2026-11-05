@@ -3,7 +3,8 @@
 (порт mcp-gate.ts дона 1c-omp; стек MCP_Сервер заменён на новый тест-контур).
 
 Тест-контур даёт агенту доступ к живой базе: 1c-testpilot (UI-автоматизация,
-execute-группы инструментов) и 1c-db = 1c-mcp-toolkit (запросы/код/ЖР через
+execute-группы инструментов) и семейство 1c-db = 1c-mcp-toolkit (базовый
+сервер 1c-db и инстансные 1c-db-<имя> мультистенда — запросы/код/ЖР через
 .epf в сессии 1С). Читающие инструменты безопасны, а меняющие данные или
 состояние сессии могут базу повредить. Поэтому:
 
@@ -23,8 +24,9 @@ execute-группы инструментов) и 1c-db = 1c-mcp-toolkit (зап
   1c-db:        execute_code, submit_for_deanonymization,
                 restart_1c_session, close_1c_session
 
-Распознаются нативные вызовы MCP (mcp__<server>__<tool>) и обращения к REST
-toolkit через bash (curl в /api/ или на порт 6003 с опасным токеном).
+Распознаются нативные вызовы MCP (mcp__<server>__<tool>; для 1c-db — и
+инстансные серверы 1c-db-<имя>) и обращения к REST toolkit через bash
+(curl на 127.0.0.1 с путём /mcp или /api с опасным токеном).
 
 Эскалация — файл .zcode/mcp-write-allow.txt: строка = короткое имя
 инструмента либо `*`. Комментарии — `#`. Каждое решение пишется в журнал.
@@ -60,8 +62,13 @@ DEFAULT_DANGEROUS = {
 }
 
 CONTOUR_KEY_RE = re.compile(r"^\s*contour\s*:\s*['\"]?([A-Za-zА-Яа-я]+)", re.M)
-# REST-toolkit в bash: url/порт сервиса + опасный токен в том же вызове.
-TOOLKIT_REST_RE = re.compile(r"(:6003|/api/|/mcp\b)")
+# REST-toolkit в bash: сервис 127.0.0.1 с путём /mcp или /api + опасный
+# токен в том же вызове. Порт в признак не входит: порт машино-локален,
+# мультистенд подбирает его от 6003. Зазор — URL без этих путей.
+TOOLKIT_REST_RE = re.compile(r"127\.0\.0\.1.*(/mcp\b|/api\b)")
+# Нативный вызов MCP сервера семейства 1c-db: имя сервера в группе 1,
+# короткое имя инструмента в группе 2.
+TOOLKIT_MCP_RE = re.compile(r"^mcp__(1c-db(?:-[a-z0-9_-]+)?)__(.+)$")
 
 
 # ── контур проекта ───────────────────────────────────────────────────────────
@@ -131,12 +138,22 @@ def escalations(root: str):
 # ── распознавание вызова ─────────────────────────────────────────────────────
 
 def mutating_via_mcp(tool_name: str, root: str):
-	"""(server, short) опасного инструмента из нативного вызова MCP, иначе None."""
+	"""(server, short) опасного инструмента из нативного вызова MCP, иначе None.
+
+	Семейство 1c-db — базовый сервер и инстансные 1c-db-<имя> мультистенда:
+	список опасных инструментов у них общий.
+	"""
 	tools = dangerous_tools(root)
-	for server in tools:
-		short = mcp_short_name(tool_name, server)
-		if short and short in tools[server]:
-			return server, short
+	for server, names in tools.items():
+		if server == "1c-db":
+			match = TOOLKIT_MCP_RE.match(tool_name)
+			if not match:
+				continue
+			hit_server, short = match.group(1), match.group(2)
+		else:
+			hit_server, short = server, mcp_short_name(tool_name, server)
+		if short and short in names:
+			return hit_server, short
 	return None
 
 

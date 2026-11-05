@@ -2,8 +2,9 @@
 """Тесты mcp_gate.py: изменяющие инструменты тест-контура в прод — блок.
 
 Прод-контур fail-closed: без явного признака test всё считается продом.
-Распознаются нативные MCP-вызовы (1c-testpilot, 1c-db) и REST-toolkit
-через bash.
+Распознаются нативные MCP-вызовы (1c-testpilot, семейство 1c-db с
+инстансными серверами 1c-db-<имя>) и REST-toolkit через bash
+(path-детект: 127.0.0.1 с путём /mcp или /api, порт не входит в признак).
 
 Запуск: python3 tests/test_mcp_gate.py
 """
@@ -75,6 +76,29 @@ def main() -> int:
 		r = call("Bash", {}, command="curl http://127.0.0.1:6003/api/execute_query?text=ВЫБРАТЬ")
 		check("REST execute_query проходит", r.returncode == 0, f"exit {r.returncode}")
 
+		# ── path-детект REST: порт не входит в признак (мультистенд) ──
+		r = call("Bash", {}, command="curl -X POST http://127.0.0.1:6010/api -d '{\"method\": \"execute_code\"}'")
+		check("curl 127.0.0.1:6010/api без слэша с execute_code блокируется",
+		      r.returncode == 2, f"exit {r.returncode}")
+		r = call("Bash", {}, command="curl -X POST http://127.0.0.1:6010/mcp -d 'restart_1c_session'")
+		check("curl 127.0.0.1:6010/mcp с restart_1c_session блокируется",
+		      r.returncode == 2, f"exit {r.returncode}")
+		r = call("Bash", {}, command="curl http://127.0.0.1:6010/api/status")
+		check("path-детект без опасного токена проходит", r.returncode == 0, f"exit {r.returncode}")
+
+		# ── мультистенд: инстансные серверы 1c-db-<имя> ──
+		r = call("mcp__1c-db-base2__execute_code", {"code": "…"})
+		check("инстансный сервер 1c-db-base2 блокируется", r.returncode == 2, f"exit {r.returncode}")
+		r = call("mcp__1c-db-vagonka_2__close_1c_session", {})
+		check("инстанс 1c-db-vagonka_2 (подчёркивание и цифра) блокируется",
+		      r.returncode == 2, f"exit {r.returncode}")
+		r = call("mcp__1c-db-base2__execute_query", {"query": "ВЫБРАТЬ 1"})
+		check("читающий инструмент инстансного сервера проходит", r.returncode == 0,
+		      f"exit {r.returncode}")
+		r = call("mcp__1c-dbx__execute_code", {})
+		check("1c-dbx — не семейство 1c-db, гейт не блокирует", r.returncode == 0,
+		      f"exit {r.returncode}")
+
 		# ── override опасных инструментов через contour.json ──
 		c1dir = zdir / "1c"
 		c1dir.mkdir(exist_ok=True)
@@ -83,6 +107,8 @@ def main() -> int:
 			encoding="utf-8")
 		r = call("mcp__1c-db__my_dangerous_tool", {})
 		check("инструмент из override блокируется", r.returncode == 2, f"exit {r.returncode}")
+		r = call("mcp__1c-db-base2__my_dangerous_tool", {})
+		check("override покрывает инстансные серверы", r.returncode == 2, f"exit {r.returncode}")
 		r = call("mcp__1c-db__submit_for_deanonymization", {})
 		check("дефолтный список перекрыт (не блокируется)", r.returncode == 0, f"exit {r.returncode}")
 
