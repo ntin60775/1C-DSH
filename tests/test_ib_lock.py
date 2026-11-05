@@ -5,6 +5,7 @@
 """
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -67,6 +68,77 @@ def main() -> int:
 		ib_lock.acquire_base_lock("/tree/old", 'Srvr="h";Ref="old";', "build", "s-old", ttl_s=-1)
 		status, _ = ib_lock.acquire_base_lock("/tree/new", 'Srvr="h";Ref="old";', "build", "s-new")
 		check("просроченный замок не держит базу", status == "ok", status)
+
+		# ── stand-замок: цикл жизни, живость свежей pgrep (мультистенд Т2) ──
+		owner = subprocess.Popen(["sleep", "30"])
+		second = subprocess.Popen(["sleep", "30"])
+		try:
+			if hasattr(ib_lock, "acquire_stand_lock"):
+				status, _ = ib_lock.acquire_stand_lock("/tree/a", CONN, owner.pid, "start_client")
+				check("stand-замок взят живым владельцем", status == "ok", status)
+				status, _ = ib_lock.acquire_stand_lock("/tree/c", CONN, owner.pid, "load_client")
+				check("повторное взятие своим pid — ок", status == "ok", status)
+				held = ib_lock.stand_lock_status("/tree/a", CONN)
+				check("статус показывает pid владельца", bool(held) and held.get("pid") == owner.pid,
+				      str(held))
+				status, holder = ib_lock.acquire_stand_lock("/tree/b", CONN, second.pid, "start_client")
+				check("второй владелец — busy", status == "busy", status)
+				check("держатель назван с pid", bool(holder) and holder.get("pid") == owner.pid,
+				      str(holder))
+				ib_lock.acquire_stand_lock("/tree/keep", 'Srvr="h";Ref="keep";', owner.pid, "start_client")
+				ib_lock.purge_stale_locks()
+				keep_key = ib_lock.stand_lock_key('Srvr="h";Ref="keep";', "/tree/keep")
+				check("TTL-выметка не трогает stand-замки",
+				      (Path(state) / "state" / "1c" / "stand-locks" / f"{keep_key}.json").exists(),
+				      "stand-замок выметен")
+				owner.kill()
+				owner.wait()
+				check("владелец мёртв по свежей пробе ps",
+				      subprocess.run(["ps", "-p", str(owner.pid)],
+				                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0,
+				      "ps нашёл убитый процесс")
+				status, _ = ib_lock.acquire_stand_lock("/tree/b", CONN, second.pid, "start_client")
+				check("мёртвый владелец освобождает замок", status == "ok", status)
+				ib_lock.release_stand_lock("/tree/b", CONN, second.pid)
+				check("после выпуска статус пуст",
+				      ib_lock.stand_lock_status("/tree/b", CONN) is None,
+				      str(ib_lock.stand_lock_status("/tree/b", CONN)))
+				status, _ = ib_lock.acquire_stand_lock("/tree/d", "File=build/ib", second.pid, "start_client")
+				check("файловая база — stand-ключ от дерева", status == "ok", status)
+				check("stand-ключ не пересекается с ключом код-замка",
+				      ib_lock.stand_lock_key("File=build/ib", "/tree/d")
+				      != ib_lock.lock_key("File=build/ib", "/tree/d"),
+				      "ключи совпали")
+			else:
+				check("stand-API в ib_lock присутствует", False,
+				      "нет acquire_stand_lock (базовое дерево)")
+		finally:
+			for proc in (owner, second):
+				proc.kill()
+				proc.wait()
+
+		# ── код-замок и stand-замок на одной базе не блокируют друг друга ──
+		indep = subprocess.Popen(["sleep", "30"])
+		try:
+			if hasattr(ib_lock, "acquire_stand_lock"):
+				status, _ = ib_lock.acquire_base_lock("/tree/a", 'Srvr="h";Ref="dual";', "build", "s-dual")
+				check("код-замок взят", status == "ok", status)
+				status, _ = ib_lock.acquire_stand_lock("/tree/a", 'Srvr="h";Ref="dual";',
+				                                       indep.pid, "start_client")
+				check("stand-замок на той же базе не видел код-замок", status == "ok", status)
+				status, _ = ib_lock.acquire_base_lock("/tree/other", 'Srvr="h";Ref="dual";',
+				                                      "build", "s-dual2")
+				check("код-замок по-прежнему держит базу", status == "busy", status)
+				ib_lock.release_stand_lock("/tree/a", 'Srvr="h";Ref="dual";', indep.pid)
+				status, _ = ib_lock.acquire_base_lock("/tree/other2", 'Srvr="h";Ref="dual";',
+				                                      "build", "s-dual3")
+				check("stand-выпуск не тронул код-замок", status == "busy", status)
+			else:
+				check("stand-API независим от код-замка", False,
+				      "нет acquire_stand_lock (базовое дерево)")
+		finally:
+			indep.kill()
+			indep.wait()
 
 		# ── session_clean: выметает просроченные замки и старое состояние ──
 		ib_lock.acquire_base_lock("/tree/expired", 'Srvr="h";Ref="gone";', "build", "s-x", ttl_s=-1)
