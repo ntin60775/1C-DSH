@@ -22,6 +22,8 @@
 #   start_1c_db.sh <project-root> --stop     # погасить клиент и прокси (свои)
 #   start_1c_db.sh <project-root> --proxy-only / --stop-proxy
 #   start_1c_db.sh <project-root> --print-config  # url порт epf mode channel — и выход
+#   start_1c_db.sh <project-root> --instance base2  # валидация записи instances.X
+#                   # из .zcode/1c/db-instances.yaml; рантайм инстанса — Т5
 #
 # Конфиг (.zcode/1c/contour.json → "1c_db"):
 #   url      — MCP-endpoint (по умолчанию http://127.0.0.1:6003/mcp)
@@ -36,6 +38,15 @@
 #   mode     — "proxy" (Linux, по умолчанию) | "embedded" (Windows)
 #   channel  — канал изоляции прокси (опционально, ?channel=)
 #
+# Инстансы (.zcode/1c/db-instances.yaml, машино-локальный; образец —
+# .zcode/1c/templates/db-instances.example.yaml): --instance X проверяет
+# запись instances.X. Файла штатно может не быть — моно-режим (main из
+# v8project.local.yaml). Рантайм инстанса (связь, канал, дисплей) — следующий
+# тикет мультистенда (Т5): на текущем шаге --instance либо отказывает с
+# причиной (нет файла/инстанса, битый YAML, неполные поля), либо после
+# успешной проверки останавливается громко — фолбэк на main запрещён
+# (мультистенд #37 Готово 1).
+#
 # Зависимости: install_1c_mcp_proxy.sh (один раз; venv ~/.local/venvs/
 # 1c-mcp-proxy, путь к клону тулкита — $ONEC_MCP_TOOLKIT_DIR или аргумент).
 # Строка подключения и пароли не печатаются (но видны в cmdline клиента —
@@ -45,16 +56,49 @@ set -euo pipefail
 MODE="start"
 HEADLESS=0
 ROOT=""
+INSTANCE=""
+INSTANCE_SET=0
+_instance_next=0
+_instance_fail=""
 for arg in "$@"; do
+	if [[ $_instance_next -eq 1 ]]; then
+		_instance_next=0
+		if [[ "$arg" == -* ]]; then
+			# значение флага не может начинаться с тире: --instance --headless
+			# иначе съело бы соседний флаг
+			_instance_fail="--instance требует имя инстанса"
+		elif [[ -z "$arg" ]]; then
+			_instance_fail="--instance получил пустое имя инстанса"
+		else
+			INSTANCE="$arg"
+		fi
+		continue
+	fi
 	case "$arg" in
 	--headless) HEADLESS=1 ;;
 	--stop) MODE="stop" ;;
 	--proxy-only) MODE="proxy_only" ;;
 	--stop-proxy) MODE="stop_proxy" ;;
 	--print-config) MODE="print_config" ;;
+	--instance)
+		if [[ $INSTANCE_SET -eq 1 ]]; then
+			_instance_fail="--instance указан повторно"
+		fi
+		INSTANCE_SET=1; _instance_next=1 ;;
+	--instance=*)
+		if [[ $INSTANCE_SET -eq 1 ]]; then
+			_instance_fail="--instance указан повторно"
+		fi
+		INSTANCE_SET=1
+		INSTANCE="${arg#--instance=}"
+		[[ -z "$INSTANCE" ]] && _instance_fail="--instance получил пустое имя инстанса" ;;
 	*) [ -z "$ROOT" ] && ROOT="$arg" ;;
 	esac
 done
+if [[ -n "$_instance_fail" ]]; then
+	echo "✗ $_instance_fail: start_1c_db.sh <корень> --instance <имя>" >&2
+	exit 2
+fi
 [ -n "$ROOT" ] || ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 ROOT="$(cd "$ROOT" && pwd)"
 
@@ -121,6 +165,139 @@ elif mode == "release":
     ib_lock.release_stand_lock(root, conn, pid)
 PY
 }
+
+# ── инстансы 1c-db: чтение .zcode/1c/db-instances.yaml, fail-loud (мультистенд,
+# #37 Готово 1) ──
+# Разбор минимальный построчный (верхний instances:, имя инстанса, поля) с
+# отказом на табах, посторонних ключах, скалярах вместо словарей и непоследовательном
+# отступе — тихой деградации конфига нет. Пароль не печатается: в сообщениях
+# только имена инстансов и полей.
+instances_py() { # $1 — имя инстанса; годная запись — молчаливый выход 0
+	python3 - "$ROOT" "$1" <<'PY'
+import sys, pathlib
+
+SAMPLE = ".zcode/1c/templates/db-instances.example.yaml"
+FIELDS = {"channel", "connection", "user", "password", "display", "publish_port"}
+
+def fail(msg):
+    print(f"✗ {msg}", file=sys.stderr)
+    sys.exit(2)
+
+def unquote(val, lineno):
+    # кавычки снимаются; после закрывающей — только inline-комментарий.
+    # Незакрытая кавычка — отказ: значение с ней почти наверняка не то,
+    # что написал автор (пароль «p» против «"p»)
+    q = val[0]
+    end = val.find(q, 1)
+    if end < 0:
+        fail(f"{rel}: строка {lineno}: незакрытая кавычка в значении; образец: {SAMPLE}")
+    tail = val[end + 1:].strip()
+    if tail and not tail.startswith("#"):
+        fail(f"{rel}: строка {lineno}: мусор после закрывающей кавычки «{tail}»; образец: {SAMPLE}")
+    return val[1:end]
+
+def strip_comment(val):
+    # YAML: вне кавычек « #» начинает inline-комментарий; внутри значения
+    # пароля # законен, поэтому режем только по « #» вне кавычек
+    out = ""
+    in_q = None
+    for i, ch in enumerate(val):
+        if in_q:
+            out += ch
+            if ch == in_q:
+                in_q = None
+            continue
+        if ch in "'\"":
+            in_q = ch
+        elif ch == "#" and out.endswith(" "):
+            return out.rstrip()
+        out += ch
+    return out.rstrip()
+
+root = pathlib.Path(sys.argv[1])
+name = sys.argv[2]
+cfg = root / ".zcode" / "1c" / "db-instances.yaml"
+rel = cfg.relative_to(root)
+if not cfg.is_file():
+    what = f"нет {rel}" if not cfg.exists() else f"{rel} — не файл, а каталог"
+    fail(f"--instance {name}: {what} — скопируй образец {SAMPLE} в {rel} и опиши "
+         f"инстанс {name}: обязательны connection, user, password; channel, "
+         f"display, publish_port — по необходимости")
+try:
+    text = cfg.read_text(encoding="utf-8-sig")  # utf-8-sig снимает BOM редактора
+except UnicodeDecodeError as e:
+    fail(f"{rel}: не читается как UTF-8 ({e}) — образец: {SAMPLE}")
+except OSError as e:
+    fail(f"{rel}: не читается ({e}) — проверь права; образец: {SAMPLE}")
+
+entries = {}
+cur = None
+name_indent = field_indent = None
+seen_instances = False
+for lineno, raw in enumerate(text.splitlines(), 1):
+    line = raw.rstrip()
+    if not line.strip() or line.strip().startswith("#") or line.strip() == "---":
+        continue  # пустая, комментарий или маркер начала документа
+    lead = line[: len(line) - len(line.lstrip())]
+    if "\t" in lead:
+        fail(f"{rel}: строка {lineno}: таб в отступе — YAML табов не допускает; образец: {SAMPLE}")
+    indent = len(lead)
+    body = line.strip()
+    if ":" not in body:
+        fail(f"{rel}: строка {lineno}: ожидался ключ «ключ: значение»; образец: {SAMPLE}")
+    key, _, val = body.partition(":")
+    key, val = key.strip(), strip_comment(val.strip())
+    if len(key) >= 2 and key[0] == key[-1] and key[0] in "'\"":
+        key = key[1:-1]
+    if val and val[0] in "'\"":
+        val = unquote(val, lineno)
+    if indent == 0:
+        if seen_instances or key != "instances" or val:
+            fail(f"{rel}: строка {lineno}: верхний ключ — ровно один «instances:»; образец: {SAMPLE}")
+        seen_instances = True
+        continue
+    if name_indent is None:
+        name_indent = indent
+    elif field_indent is None and indent > name_indent:
+        field_indent = indent
+    if indent == name_indent:
+        if val:
+            fail(f"{rel}: строка {lineno}: инстанс «{key}:» — ожидался вложенный список полей; образец: {SAMPLE}")
+        if key in entries:
+            fail(f"{rel}: строка {lineno}: инстанс «{key}:» объявлен повторно; образец: {SAMPLE}")
+        cur = key
+        entries[cur] = {}
+    elif indent == field_indent:
+        if key not in FIELDS:
+            fail(f"{rel}: строка {lineno}: неизвестное поле «{key}» (поля: "
+                 f"{'/'.join(sorted(FIELDS))}); образец: {SAMPLE}")
+        if key in entries[cur]:
+            fail(f"{rel}: строка {lineno}: поле «{key}» в инстансе «{cur}» задано повторно; образец: {SAMPLE}")
+        entries[cur][key] = val
+    else:
+        fail(f"{rel}: строка {lineno}: непоследовательный отступ; образец: {SAMPLE}")
+
+if not seen_instances:
+    fail(f"{rel}: нет ключа instances: — образец: {SAMPLE}")
+if name not in entries:
+    known = ", ".join(sorted(entries)) or "записей нет"
+    fail(f"--instance {name}: инстанса {name} нет в {rel} (есть: {known}) — образец: {SAMPLE}")
+missing = [f for f in ("connection", "user", "password") if not entries[name].get(f)]
+if missing:
+    fail(f"--instance {name}: в {rel} не заполнены поля {', '.join(missing)} — образец: {SAMPLE}")
+PY
+}
+
+# Рантайм инстанса (связь/канал/дисплей из записи) — Т5 мультистенда; на
+# текущем шаге --instance после успешной проверки останавливается громко:
+# тихий запуск main-стенда под видом инстанса запрещён («фолбэк на main
+# запрещён», #37 Готово 1).
+if [[ $INSTANCE_SET -eq 1 ]]; then
+	instances_py "$INSTANCE"
+	echo "✗ --instance $INSTANCE: запись годна, но рантайм инстанса появится в" >&2
+	echo "  следующем тикете мультистенда (Т5) — стенд не запускаю" >&2
+	exit 2
+fi
 
 # ── контурные url/порт/epf/mode/channel ──
 read -r URL PORT EPF_REL DBMODE CHANNEL < <(python3 - "$ROOT" <<'PY'

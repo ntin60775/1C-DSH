@@ -53,6 +53,8 @@ when_to_use: "Проект 1С подключается к контуру (вп�
 6. **`.gitignore`** — строки контура (если нет):
    `.zcode/testpilot/profiles.local.yaml`, `tools/VAParams.json`,
    `tools/va-env.local.json`, `v8project.local.yaml`, `build/`,
+   `.zcode/1c/db-instances.yaml` (креды инстансов 1c-db),
+   `.zcode/1c/contour.local.json` (локальный оверлей контура),
    `.zcode/contour` (если помечаешь деревья по месту). Сами `.zcode/`
    (скиллы, hooks, config.json, workflows, журнал deploy) — в git.
 7. **Признак контура**: тестовое дерево — файл `.zcode/contour` со словом

@@ -134,4 +134,5 @@ python3 "$SKILL_DIR/scripts/scaffold.py" all \
    `1c-project-bootstrap` — `.zcode`-строки.
 5. Секреты (креды ИБ) — только в `v8project.local.yaml`; общий
    `v8project.yaml` кредов не содержит. Каркас пишет строку подключения в
-   local-слой; `user`/`password` — отдельными полями там же.
+   local-слой; `user`/`password` — отдельными полями там же. Креды инстансов
+   1c-db — только в `.zcode/1c/db-instances.yaml`; оба файла вне git.
