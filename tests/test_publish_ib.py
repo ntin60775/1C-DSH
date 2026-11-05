@@ -184,6 +184,27 @@ def main():
 			and text.count("publish: true") == 2,
 			f"text={text[-400:]!r}, stderr={r.stderr[:120]!r}",
 		)
+
+		# 9. issue #45: сторож допускает uid окружения ibsrv (в distrobox это
+		#    гостевой uid того же пользователя) и 1c.publish.allow_uid /
+		#    PUBLISH_ALLOW_UID; диагностика называет найденный uid — root там
+		#    может не участвовать. Чужой uid без root не воспроизвести —
+		#    негативный кейс проверяется чтением скрипта.
+		body = (REPO / "scripts" / "publish_ib.sh").read_text(encoding="utf-8")
+		_lib.check(
+			"сторож: allowlist = uid хоста + uid контейнера ibsrv + allow_uid",
+			'ALLOW_UIDS="$(id -u)"' in body
+			and "distrobox enter" in body and "id -u" in body
+			and "allow_uid" in body and "PUBLISH_ALLOW_UID" in body,
+			"нет ключевых строк allowlist'а",
+		)
+		echo_text = "\n".join(ln for ln in body.splitlines()
+		                      if ln.lstrip().startswith("echo"))
+		_lib.check(
+			"сторож: диагностика называет найденный uid, обобщение «root-прогон» снято",
+			"root-прогон" not in echo_text and "stat -c %u" in body,
+			"старое обобщение осталось или uid не называется",
+		)
 	finally:
 		shutil.rmtree(tmp, ignore_errors=True)
 	sys.exit(_lib.summary())

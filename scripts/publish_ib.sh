@@ -14,7 +14,8 @@
 # Сервер слушает только 127.0.0.1; регламентные задания выключены.
 # Грабли молчаливого отказа ibsrv (issue #12) закрыты скриптом: IPC-каталог
 # /tmp/<user>.<uid> предсоздаётся с 700, infobase.id берётся настоящий
-# (DoNotCopy.txt базы), старт с чужими uid в базе громко отказывает.
+# (DoNotCopy.txt базы), старт с uid вне допущенных (хост, окружение запуска
+# ibsrv, 1c.publish.allow_uid) громко отказывает.
 set -euo pipefail
 
 CMD="${1:-status}"
@@ -131,13 +132,33 @@ start)
 		exit 0
 	fi
 	[ -d "$BASE" ] || { echo "✗ нет каталога базы: $BASE" >&2; exit 2; }
-	# Чужой uid в каталоге базы = отравленный root-прогоном: ibsrv и клиенты
-	# потом молча не открывают базу («Ошибка открытия файла блокировок»).
-	# Громкий отказ с рецептом лечения, удалением не занимаемся (issue #12).
-	POISON="$(find "$BASE" ! -uid "$(id -u)" -print -quit 2>/dev/null || true)"
+	# Чужой uid в каталоге базы: ibsrv и клиенты потом молча не открывают
+	# базу («Ошибка открытия файла блокировок»). Громкий отказ с рецептом
+	# лечения, удалением не занимаемся (issue #12). Допущены uid хоста, uid
+	# окружения запуска ibsrv (в distrobox он работает гостевым uid того же
+	# пользователя — файлы от него не отравление) и 1c.publish.allow_uid /
+	# env PUBLISH_ALLOW_UID. Диагностика называет найденный uid: владелец
+	# чужих файлов бывает не root, обобщение «root-прогон» вводит в
+	# заблуждение (issue #45).
+	ALLOW_UIDS="$(id -u)"
+	case "$IBSRV_LINE" in
+	"distrobox enter "*)
+		PBOX="${IBSRV_LINE#distrobox enter }"; PBOX="${PBOX%% --*}"
+		BOX_UID="$(distrobox enter "$PBOX" -- id -u 2>/dev/null || true)"
+		[ -n "$BOX_UID" ] && ALLOW_UIDS="$ALLOW_UIDS $BOX_UID"
+		;;
+	esac
+	ALLOW_EXTRA="${PUBLISH_ALLOW_UID:-$(read_setting allow_uid)}"
+	ALLOW_EXTRA="${ALLOW_EXTRA//,/ }"
+	for U in $ALLOW_EXTRA; do ALLOW_UIDS="$ALLOW_UIDS $U"; done
+	EXCL=()
+	for U in $ALLOW_UIDS; do EXCL+=(! -uid "$U"); done
+	POISON="$(find "$BASE" "${EXCL[@]}" -print -quit 2>/dev/null || true)"
 	if [ -n "$POISON" ]; then
-		echo "✗ в базе $BASE есть файлы чужого владельца (root-прогон отравил базу): $POISON" >&2
-		echo "  лечение: find '$BASE' ! -uid $(id -u) -delete — и root-прогонов не делать" >&2
+		FUID="$(stat -c %u "$POISON" 2>/dev/null || echo '?')"
+		echo "✗ в базе $BASE есть файлы с владельцем вне допущенных (найден uid $FUID; допущены: $(echo "$ALLOW_UIDS" | tr ' ' ',')): $POISON" >&2
+		echo "  такие файлы блокируют открытие базы (блокировки, журнал) — прогоны шли из другого окружения" >&2
+		echo "  лечение: chown на допущенный uid или find '$BASE' ! -uid $(id -u) -delete; клиенты платформы и ibsrv держи в одном окружении (хост или один distrobox)" >&2
 		exit 2
 	fi
 	mkdir -p "$WORK/data"
