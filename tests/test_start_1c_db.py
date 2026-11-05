@@ -1010,6 +1010,215 @@ wait_client тест2 && echo "ok=$n"
         for root in cleanup_pids:
             Path(f"/tmp/1c-mcp-proxy-{root_hash(root)}.pid").unlink(missing_ok=True)
 
+    # 10. Т7 kill-маркер per-instance. cmdline клиента несёт путь копии
+    #     обработки в build/.1c-db-autostart-<имя>/ (критерий 1);
+    #     --stop --instance гасит только своего клиента, общий прокси
+    #     переживает инстансный стоп и гасится mono-стопом (критерий 2);
+    #     mono несёт прежний маркер (критерий 3, инвариант); имя инстанса
+    #     в путь маркера валидируется. Старты — полные прогоны на мок-прокси
+    #     (инфра секции 9), гашения — фейк-клиенты с маркерным cmdline
+    #     (у настоящего клиента путь обработки — тоже часть cmdline).
+    fake_client = tmp / "fake_client.sh"
+    fake_client.write_text(
+        '#!/bin/sh\nprintf \'%s\\n\' "$@" > "$FAKE_ARGS_FILE"\nsleep 300\n',
+        encoding="utf-8")
+    fake_client.chmod(0o755)
+
+    def contour_t7(root, port):
+        root.mkdir(parents=True, exist_ok=True)
+        (root / ".zcode" / "1c").mkdir(parents=True, exist_ok=True)
+        (root / "tools" / "mcp").mkdir(parents=True, exist_ok=True)
+        (root / ".zcode" / "1c" / "contour.json").write_text(
+            f'{{"1c_db": {{"epf_path": "tools/mcp/Mock.epf",'
+            f' "url": "http://127.0.0.1:{port}/mcp"}}}}',
+            encoding="utf-8")
+        (root / "tools" / "mcp" / "Mock.epf").write_text("mock", encoding="utf-8")
+
+    def write_t7_instances(root, names):
+        (root / ".zcode" / "1c" / "db-instances.yaml").write_text(
+            "instances:\n" + "".join(
+                f"  {n}:\n    connection: File=build/ib/{n}\n"
+                f"    user: u\n    password: p\n" for n in names),
+            encoding="utf-8")
+
+    def kill_by_pidfile(pf):
+        try:
+            pid = int(pf.read_text().strip())
+        except Exception:
+            return None
+        subprocess.run(["kill", str(pid)], capture_output=True)
+        for _ in range(20):
+            if not Path(f"/proc/{pid}/stat").exists():
+                break
+            time.sleep(0.1)
+        return pid
+
+    def instance_pidfile(root, inst):
+        import hashlib
+        h = hashlib.sha1(f"{root.resolve()}|{inst}".encode()).hexdigest()[:8]
+        return Path(f"/tmp/1c-db-{h}.pid")
+
+    env7 = dict(env6)
+    env7["ZCODE_1C_STATE_DIR"] = str(state_dir)  # stand-замки стартов — в tmp
+    env7["WAIT_DEADLINE"] = "2"
+    env7["ONEC_PLATFORM"] = str(fake_client)
+
+    t7_pids = []   # фейк-«клиенты» интеграционного юнита
+    t7_files = []  # клиентские pid-файлы к подчистке
+
+    # ── критерий 1: маркер инстанса в cmdline (полный старт на мок-прокси)
+    WP2 = free_port()
+    t7a = tmp / "t7a"
+    contour_t7(t7a, WP2)
+    write_t7_instances(t7a, ["base2"])
+    argsfile = tmp / "args-base2.txt"
+    env_a = dict(env7)
+    env_a["FAKE_ARGS_FILE"] = str(argsfile)
+    ra = subprocess.run(
+        ["bash", str(SCRIPT), str(t7a), "--instance", "base2"],
+        capture_output=True, text=True, env=env_a, timeout=180)
+    pf_a = instance_pidfile(t7a, "base2")
+    t7_files.append(pf_a)
+    _lib.check("Т7: старт инстанса дошёл до запуска клиента (rc 1 по дедлайну)",
+               ra.returncode == 1 and pf_a.exists(),
+               f"rc={ra.returncode}, out={ra.stdout[-300:]!r}, err={ra.stderr[-200:]!r}")
+    args = argsfile.read_text(encoding="utf-8") if argsfile.exists() else ""
+    _lib.check("Т7: cmdline клиента несёт путь копии обработки инстанса",
+               ".1c-db-autostart-base2/Mock.epf" in args,
+               f"args={args!r}")
+    _lib.check("Т7: канал инстанса в той же cmdline (изоляция в маркерной строке)",
+               "channel=base2" in args,
+               f"args={args!r}")
+    copy_epf = t7a / "build" / ".1c-db-autostart-base2" / "Mock.epf"
+    _lib.check("Т7: копия обработки легла в per-instance каталог",
+               copy_epf.is_file() and copy_epf.read_text(encoding="utf-8") == "mock",
+               f"exists={copy_epf.exists()}")
+    kill_by_pidfile(pf_a)
+    kill_mocks()
+
+    # ── критерий 2: интеграционный юнит «два инстанса, разные операции»:
+    # гашения независимы, префиксное имя (base20) не ловится маркером base2,
+    # общий прокси переживает инстансный стоп
+    WP3 = free_port()
+    t7b = tmp / "t7b"
+    contour_t7(t7b, WP3)
+    write_t7_instances(t7b, ["base2", "base20", "base3"])
+
+    def fake_standin(root, inst):
+        d = root / "build" / f".1c-db-autostart-{inst}"
+        d.mkdir(parents=True, exist_ok=True)
+        f = d / "Mock.epf"
+        f.write_text("#!/bin/sh\nsleep 300\n", encoding="utf-8")
+        return subprocess.Popen(["bash", str(f)])
+
+    t7_pids += [fake_standin(t7b, n) for n in ("base2", "base20", "base3")]
+    holder3 = subprocess.Popen(
+        [sys.executable, str(mock)],
+        env={**env6, "PORT": str(WP3)},
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    holders.append(holder3)
+    for _ in range(50):
+        if port_responds(WP3):
+            break
+        time.sleep(0.1)
+
+    def stop_inst(root, *args):
+        return subprocess.run(
+            ["bash", str(SCRIPT), str(root), "--stop", *args],
+            capture_output=True, text=True, env=env7, timeout=120)
+
+    rb = stop_inst(t7b, "--instance", "base2")
+    _lib.check("Т7: --stop --instance base2 — свой клиент погашен",
+               rb.returncode == 0 and t7_pids[0].poll() is not None,
+               f"rc={rb.returncode}, out={rb.stdout[-200:]!r}, err={rb.stderr[-200:]!r}")
+    _lib.check("Т7: гашение base2 не трогает base20 и base3 (маркер по файлу, не префиксу)",
+               t7_pids[1].poll() is None and t7_pids[2].poll() is None,
+               f"base20={t7_pids[1].poll()}, base3={t7_pids[2].poll()}")
+    _lib.check("Т7: инстансный стоп оставляет общий прокси живым",
+               "оставлен живым" in rb.stdout and port_responds(WP3),
+               f"out={rb.stdout[-200:]!r}")
+    rc20 = stop_inst(t7b, "--instance", "base20")
+    _lib.check("Т7: --stop --instance base20 гасит только себя",
+               rc20.returncode == 0 and t7_pids[1].poll() is not None
+               and t7_pids[2].poll() is None,
+               f"rc={rc20.returncode}, base20={t7_pids[1].poll()}, "
+               f"base3={t7_pids[2].poll()}")
+    rc3 = stop_inst(t7b, "--instance", "base3")
+    _lib.check("Т7: --stop --instance base3 — последний клиент погашен",
+               rc3.returncode == 0 and t7_pids[2].poll() is not None,
+               f"rc={rc3.returncode}")
+    holders.remove(holder3)
+    holder3.kill()
+    holder3.wait()
+
+    # ── имя инстанса в путь kill-маркера: «/», «\», начало с «.» — отказ.
+    # Канал в записях валидный явно: на базовом дереве отказов имени нет и
+    # запись проходит (rc 0) — кейс различает деревья именно по имени
+    def write_bad_name(name: str):
+        (t7b / ".zcode" / "1c" / "db-instances.yaml").write_text(
+            "instances:\n"
+            f"  {name}:\n"
+            "    channel: ch1\n"
+            "    connection: File=build/ib/x\n"
+            "    user: u\n"
+            "    password: p\n",
+            encoding="utf-8")
+
+    write_bad_name("sub/dir")
+    rd = run_instance(t7b, "--instance", "sub/dir")
+    _lib.check("Т7: имя инстанса с «/» — отказ (путь маркера)",
+               rd.returncode == 2 and "kill-маркера" in rd.stderr,
+               f"rc={rd.returncode}, err={rd.stderr[:200]!r}")
+    write_bad_name(".dot")
+    rd = run_instance(t7b, "--instance", ".dot")
+    _lib.check("Т7: имя инстанса с началом «.» — отказ",
+               rd.returncode == 2 and "kill-маркера" in rd.stderr,
+               f"rc={rd.returncode}, err={rd.stderr[:200]!r}")
+
+    # ── критерий 3: mono — прежний маркер (инвариант) и mono-стоп с прокси
+    WP4 = free_port()
+    t7c = tmp / "t7c"
+    t7c.mkdir()
+    (t7c / "v8project.local.yaml").write_text(
+        'infobases:\n  origin:\n    connection: File=build/ib\n', encoding="utf-8")
+    contour_t7(t7c, WP4)
+    args_mono = tmp / "args-mono.txt"
+    env_c = dict(env7)
+    env_c["FAKE_ARGS_FILE"] = str(args_mono)
+    rcm = subprocess.run(
+        ["bash", str(SCRIPT), str(t7c)],
+        capture_output=True, text=True, env=env_c, timeout=180)
+    args_m = args_mono.read_text(encoding="utf-8") if args_mono.exists() else ""
+    _lib.check("Т7 mono: cmdline несёт прежний маркер — путь общей обработки",
+               rcm.returncode == 1
+               and str(t7c.resolve() / "tools" / "mcp" / "Mock.epf") in args_m
+               and ".1c-db-autostart-" not in args_m,
+               f"rc={rcm.returncode}, args={args_m!r}")
+    pf_m = Path(f"/tmp/1c-db-{root_hash(t7c)}.pid")
+    t7_files.append(pf_m)
+    pid_m = int(pf_m.read_text()) if pf_m.exists() else -1
+    alive_before = Path(f"/proc/{pid_m}/stat").exists()
+    rsm = subprocess.run(
+        ["bash", str(SCRIPT), str(t7c), "--stop"],
+        capture_output=True, text=True, env=env7, timeout=120)
+    alive_after = Path(f"/proc/{pid_m}/stat").exists()
+    _lib.check("Т7 mono: mono-стоп гасит клиента по общему маркеру и прокси",
+               rsm.returncode == 0 and alive_before and not alive_after
+               and "прокси остановлен" in rsm.stdout
+               and not port_responds(WP4),
+               f"rc={rsm.returncode}, alive={alive_before}/{alive_after}, "
+               f"out={rsm.stdout[-300:]!r}")
+
+    # подчистка фейк-«клиентов» и клиентских pid-файлов Т7
+    for proc in t7_pids:
+        if proc.poll() is None:
+            proc.kill()
+    for proc in t7_pids:
+        proc.wait()
+    for pf in t7_files:
+        pf.unlink(missing_ok=True)
+    kill_mocks()
+
 finally:
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)

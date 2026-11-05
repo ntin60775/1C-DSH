@@ -48,9 +48,11 @@
 # битый YAML, неполные поля, канал вне [A-Za-z0-9_-]{1,64}) — exit 2,
 # фолбэк на main запрещён (мультистенд #37 Готово 2). Файла штатно может
 # не быть — моно-режим (main из v8project.local.yaml, дисплей :97).
-# Границы следующего тикета: kill-маркер per-instance — Т7 (--stop
-# по-прежнему гасит клиентов всех инстансов по общему маркеру обработки
-# и общий прокси).
+# Kill-маркер (мультистенд Т7): инстанс запускается с копией обработки в
+# build/.1c-db-autostart-<имя>/ — путь копии в cmdline различает инстансы,
+# --stop --instance X гасит только клиента X (mono — прежний общий маркер).
+# Прокси общий: инстансный стоп его не гасит — гасят mono-стоп и
+# --stop-proxy. Гашение — короткие одиночные kill + перепроверка pgrep.
 #
 # Порт (мультистенд Т6): желаемый — 1c_db.url из contour.json; фактический
 # — машино-локальный факт в .zcode/1c/contour.local.json (url + желаемый
@@ -330,6 +332,14 @@ display = entries[name].get("display") or ""
 if display and not re.match(r"^[0-9]+$", display):
     fail(f"--instance {name}: display «{display}» — нужен номер дисплея без "
          f"двоеточия, например 98 — образец: {SAMPLE}")
+# Имя инстанса входит в путь kill-маркера (build/.1c-db-autostart-<имя>) и
+# в cmdline клиента: «/» сломал бы путь маркера, имя с «.» — скрытый/вне
+# build/ каталог. Локальная защита пути; charset имён для сервера — слово
+# оператора (хвост Т4).
+if "/" in name or name.startswith(".") or "\\" in name:
+    fail(f"--instance {name}: имя не годится в путь kill-маркера "
+         f"build/.1c-db-autostart-<имя> (нельзя «/», «\\», начало с «.») — "
+         f"переименуй инстанс — образец: {SAMPLE}")
 print(f"connection\t{conn}")
 print(f"channel\t{channel}")
 print(f"display\t{display}")
@@ -465,6 +475,16 @@ build_probe_url() {
 }
 build_probe_url
 
+# Kill-маркер per-instance (мультистенд Т7): cmdline клиента несёт путь
+# КОПИИ обработки в каталоге инстанса — путь различает инстансы (общий
+# путь обработки гасил бы клиентов всех инстансов разом). Матч — по файлу
+# в каталоге, не по каталогу: имя base2 не должно ловить cmdline base20
+# (префиксные имена). Mono — прежний маркер, путь общей обработки.
+KILL_MARKER="$ROOT/$EPF_REL"
+if [[ $INSTANCE_SET -eq 1 ]]; then
+	KILL_MARKER="$ROOT/build/.1c-db-autostart-$INSTANCE/$(basename "$EPF_REL")"
+fi
+
 if [[ $MODE == print_config ]]; then
 	echo "$URL $PORT $EPF_REL $DBMODE $CHANNEL"
 	exit 0
@@ -487,11 +507,12 @@ if isinstance(l1c, dict):
 PY
 }
 
-# Гасим клиента по уникальному маркеру обработки в cmdline: реальный ELF может
+# Гасим клиента по уникальному kill-маркеру в cmdline: реальный ELF может
 # жить за shim-обёрткой (podman/distrobox-exec), pidfile указывает лишь на
-# обёртку. Используется в --stop.
+# обёртку. Инстанс — путь своей копии обработки (Т7), mono — общий путь.
+# Используется в --stop.
 kill_client() {
-	local MARKER="$ROOT/$EPF_REL"
+	local MARKER="$KILL_MARKER"
 	pkill -f -- "$MARKER" 2>/dev/null || true
 	for _ in 1 2 3 4 5 6 7 8; do
 		pgrep -f -- "$MARKER" >/dev/null || return 0
@@ -735,13 +756,11 @@ if [[ $MODE == proxy_only ]]; then
 fi
 
 if [[ $MODE == stop ]]; then
-	# Клиент гасим по маркеру обработки в cmdline (pidfile указывает лишь на
-	# shim-обёртку — см. kill_client). Радиус: маркер общий на проект —
-	# гасятся клиенты всех инстансов; прокси ниже тоже общий. Per-instance
-	# гашение — Т7 мультистенда.
-	if [[ $INSTANCE_SET -eq 1 ]]; then
-		echo "⚠ --stop --instance $INSTANCE гасит клиентов ВСЕХ инстансов (маркер общий) и общий прокси — per-instance гашение — Т7" >&2
-	fi
+	# Клиент гасим по своему kill-маркеру в cmdline (pidfile указывает лишь на
+	# shim-обёртку — см. kill_client): инстанс — путь своей копии обработки,
+	# mono — путь общей обработки (поведение сегодняшнего дня). Гашение
+	# одного инстанса второго не трогает — каждый гасится своим --stop
+	# (мультистенд Т7).
 	kill_client
 	# stand-замок выпуска: владелец — pid из pidfile; нет pidfile — замок
 	# подчистится взятием по пробе процесса. Связь — STAND_CONN (инстанс Т5),
@@ -764,7 +783,13 @@ if [[ $MODE == stop ]]; then
 		echo "• Xvfb остановлен"
 	fi
 	rm -f "$XVFB_PIDFILE"
-	stop_proxy
+	# Прокси общий на проект (Т6): инстансный стоп оставляет его живым —
+	# канал нужен остальным инстансам; гасят его mono-стоп и --stop-proxy.
+	if [[ $INSTANCE_SET -eq 1 ]]; then
+		echo "• прокси оставлен живым (общий на проект) — гасится --stop-proxy"
+	else
+		stop_proxy
+	fi
 	exit 0
 fi
 
@@ -866,6 +891,21 @@ if [[ ! -f "$EPF" ]]; then
 	} >&2
 	{ ls "$ROOT/tools/mcp/" 2>/dev/null | sed 's/^/  в tools\/mcp\/: /'; } || true
 	exit 2
+fi
+
+# Per-instance копия обработки (мультистенд Т7): cmdline клиента несёт путь
+# копии в каталоге инстанса — kill-маркер различает инстансы. Копия не
+# перезаписывается: замена живой обработки сбрасывает доверие платформы к
+# пути (диалог безопасности — канон навыка 1c-db-data).
+if [[ $INSTANCE_SET -eq 1 ]]; then
+	AUTOSTART_DIR="$ROOT/build/.1c-db-autostart-$INSTANCE"
+	AUTOSTART_EPF="$AUTOSTART_DIR/$(basename "$EPF")"
+	mkdir -p "$AUTOSTART_DIR"
+	if [[ ! -f "$AUTOSTART_EPF" ]]; then
+		cp "$EPF" "$AUTOSTART_EPF"
+		echo "• обработка скопирована для инстанса: ${AUTOSTART_EPF#"$ROOT"/}"
+	fi
+	EPF="$AUTOSTART_EPF"
 fi
 
 # ── платформа ──
