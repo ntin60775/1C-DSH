@@ -222,6 +222,8 @@ def main() -> None:
 		           "contour.local.json вне git",
 		           ".zcode/1c/db-instances.yaml" in gi_tpl
 		           and ".zcode/1c/contour.local.json" in gi_tpl)
+		_lib.check("Т6: gitignore-шаблон держит tmp-файл local-записи вне git",
+		           ".zcode/1c/contour.local.json.tmp" in gi_tpl)
 
 		# ── 11. check: детектор обязательного минимума ──
 		p9 = os.path.join(tmp, "bare")
