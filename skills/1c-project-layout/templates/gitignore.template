@@ -18,6 +18,12 @@ v8project.local.yaml
 # Реестр потребителей контура (машино-локальный, схема в .zcode/1c/templates)
 .zcode/1c/registry.local.json
 
+# Инстансы 1c-db (машино-локальный, креды баз) — никогда в git.
+.zcode/1c/db-instances.yaml
+
+# Локальный оверлей контура (фактический порт стенда) — никогда в git.
+.zcode/1c/contour.local.json
+
 # Артефакты e2e-прогонов и байткод pytest (run_e2e.sh, junit/сводки).
 test-results/
 __pycache__/

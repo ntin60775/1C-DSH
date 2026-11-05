@@ -239,6 +239,86 @@ wait_client тест2 && echo "ok=$n"
         if pidfile is not None:
             pidfile.unlink(missing_ok=True)
 
+    # 7. Т4 fail-loud db-instances.yaml: --instance X без файла / без инстанса /
+    #    с битым YAML / с неполными полями — exit 2 с перечнем недостающего и
+    #    путём к образцу; валидная запись не блокируется; моно-режим (файла нет,
+    #    --instance нет) живёт как раньше. Все вызовы идут через --print-config:
+    #    валидация стоит до контурного чтения, а на базовом дереве --instance
+    #    игнорируется и print-config отвечает 0 — краснота без подъёма стенда.
+    proj = tmp / "instances"
+    proj.mkdir()
+
+    def run_instance(*args):
+        return subprocess.run(
+            ["bash", str(SCRIPT), str(proj), "--print-config", *args],
+            capture_output=True, text=True, env=dict(os.environ),
+        )
+
+    r = run_instance("--instance", "base2")
+    _lib.check("Т4: --instance без db-instances.yaml — exit 2",
+               r.returncode == 2, f"rc={r.returncode}, err={r.stderr[:300]!r}")
+    _lib.check("Т4: отказ называет файл и путь к образцу",
+               "db-instances.yaml" in r.stderr
+               and "db-instances.example.yaml" in r.stderr,
+               f"err={r.stderr[:300]!r}")
+
+    cfg_dir = proj / ".zcode" / "1c"
+    cfg_dir.mkdir(parents=True)
+    cfg = cfg_dir / "db-instances.yaml"
+
+    def write_instances(text: str):
+        cfg.write_text(text, encoding="utf-8")
+
+    write_instances(
+        "instances:\n"
+        "  other:\n"
+        "    connection: File=build/ib\n"
+        "    user: u\n"
+        "    password: p\n")
+    r = run_instance("--instance", "base2")
+    _lib.check("Т4: чужой инстанс — exit 2 с перечнем имеющихся",
+               r.returncode == 2 and "base2" in r.stderr and "other" in r.stderr,
+               f"rc={r.returncode}, err={r.stderr[:300]!r}")
+
+    write_instances("instances:\n\tbase2:\n")
+    r = run_instance("--instance", "base2")
+    _lib.check("Т4: битый YAML (таб в отступе) — exit 2 со строкой файла",
+               r.returncode == 2 and "строка 2" in r.stderr,
+               f"rc={r.returncode}, err={r.stderr[:300]!r}")
+
+    write_instances("instances:\n  base2:\n    connection: File=build/ib\n")
+    r = run_instance("--instance", "base2")
+    _lib.check("Т4: неполные поля — exit 2 с перечнем user, password",
+               r.returncode == 2 and "не заполнены поля user, password" in r.stderr,
+               f"rc={r.returncode}, err={r.stderr[:300]!r}")
+    _lib.check("Т4: пароль не печатается в отказе",
+               "pw" not in r.stderr,
+               f"err={r.stderr[:300]!r}")
+
+    write_instances(
+        "instances:\n"
+        "  base2:\n"
+        "    channel: base2\n"
+        "    connection: File=build/ib/base2\n"
+        "    user: u\n"
+        "    password: p\n"
+        "    display: 98\n"
+        "    publish_port: 6011\n")
+    r = run_instance("--instance", "base2")
+    _lib.check("Т4: валидная запись — print-config проходит (не блокируется)",
+               r.returncode == 0 and expected_os_epf() in r.stdout,
+               f"rc={r.returncode}, out={r.stdout!r}, err={r.stderr[:200]!r}")
+
+    mono = tmp / "mono"
+    mono.mkdir()
+    r = subprocess.run(
+        ["bash", str(SCRIPT), str(mono), "--print-config"],
+        capture_output=True, text=True, env=dict(os.environ),
+    )
+    _lib.check("Т4: моно-режим (файла нет, --instance нет) — прежний путь",
+               r.returncode == 0 and expected_os_epf() in r.stdout,
+               f"rc={r.returncode}, out={r.stdout!r}")
+
 finally:
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)

@@ -1,0 +1,25 @@
+# db-instances.yaml — инстансы 1c-db одного проекта (машино-локальный файл,
+# держится вне git). Файл необязателен: без него start_1c_db.sh работает в
+# моно-режиме (связь из v8project.local.yaml). Каждый инстанс — второй
+# параллельный стенд: start_1c_db.sh <корень> --instance <имя>.
+#
+# Скопируй в .zcode/1c/db-instances.yaml и заполни по инстансу:
+#   channel      — канал изоляции прокси (?channel=; не задан — имя инстанса)
+#   connection   — строка подключения 1С (файловая база: File=…)
+#   user         — пользователь базы
+#   password     — пароль базы (только здесь; в лог и чат не печатается)
+#   display      — X-дисплей для --headless (:97…); не задан — свободный из
+#                  пула 97/98/99
+#   publish_port — порт публикации (хранится здесь, обрабатывается отдельным
+#                  инструментом публикации)
+#
+# start_1c_db.sh --instance X отказывает (exit 2), пока в записи нет
+# connection, user и password — фолбэка на main нет.
+instances:
+  base2:
+    channel: base2
+    connection: File=build/ib/base2
+    user: ""
+    password: ""
+    display: 98
+    publish_port: 6011

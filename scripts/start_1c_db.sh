@@ -22,6 +22,7 @@
 #   start_1c_db.sh <project-root> --stop     # погасить клиент и прокси (свои)
 #   start_1c_db.sh <project-root> --proxy-only / --stop-proxy
 #   start_1c_db.sh <project-root> --print-config  # url порт epf mode channel — и выход
+#   start_1c_db.sh <project-root> --instance base2  # инстанс из .zcode/1c/db-instances.yaml
 #
 # Конфиг (.zcode/1c/contour.json → "1c_db"):
 #   url      — MCP-endpoint (по умолчанию http://127.0.0.1:6003/mcp)
@@ -36,6 +37,12 @@
 #   mode     — "proxy" (Linux, по умолчанию) | "embedded" (Windows)
 #   channel  — канал изоляции прокси (опционально, ?channel=)
 #
+# Инстансы (.zcode/1c/db-instances.yaml, машино-локальный; образец —
+# .zcode/1c/templates/db-instances.example.yaml): --instance X выбирает
+# запись instances.X. Файла штатно может не быть — моно-режим (main из
+# v8project.local.yaml); явный --instance без годного конфига — exit 2,
+# фолбэк на main запрещён (мультистенд #37 Готово 1).
+#
 # Зависимости: install_1c_mcp_proxy.sh (один раз; venv ~/.local/venvs/
 # 1c-mcp-proxy, путь к клону тулкита — $ONEC_MCP_TOOLKIT_DIR или аргумент).
 # Строка подключения и пароли не печатаются (но видны в cmdline клиента —
@@ -45,16 +52,27 @@ set -euo pipefail
 MODE="start"
 HEADLESS=0
 ROOT=""
+INSTANCE=""
+_instance_next=0
 for arg in "$@"; do
+	if [[ $_instance_next -eq 1 ]]; then
+		INSTANCE="$arg"; _instance_next=0
+		continue
+	fi
 	case "$arg" in
 	--headless) HEADLESS=1 ;;
 	--stop) MODE="stop" ;;
 	--proxy-only) MODE="proxy_only" ;;
 	--stop-proxy) MODE="stop_proxy" ;;
 	--print-config) MODE="print_config" ;;
+	--instance) _instance_next=1 ;;
 	*) [ -z "$ROOT" ] && ROOT="$arg" ;;
 	esac
 done
+if [[ $_instance_next -eq 1 ]]; then
+	echo "✗ --instance требует имя инстанса: start_1c_db.sh <корень> --instance <имя>" >&2
+	exit 2
+fi
 [ -n "$ROOT" ] || ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 ROOT="$(cd "$ROOT" && pwd)"
 
@@ -121,6 +139,91 @@ elif mode == "release":
     ib_lock.release_stand_lock(root, conn, pid)
 PY
 }
+
+# ── инстансы 1c-db: чтение .zcode/1c/db-instances.yaml, fail-loud (мультистенд,
+# #37 Готово 1) ──
+# Разбор минимальный line-based (верхний instances:, имя инстанса, поля) с
+# отказом на табах, посторонних ключах, скалярах вместо словарей и непоследо-
+# вательном отступе — тихой деградации конфига нет. Пароль не печатается:
+# в сообщениях только имена инстансов и полей.
+instances_py() { # $1 — имя инстанса; годная запись — молчаливый выход 0
+	python3 - "$ROOT" "$1" <<'PY'
+import sys, pathlib
+
+SAMPLE = ".zcode/1c/templates/db-instances.example.yaml"
+
+def fail(msg):
+    print(f"✗ {msg}", file=sys.stderr)
+    sys.exit(2)
+
+root = pathlib.Path(sys.argv[1])
+name = sys.argv[2]
+cfg = root / ".zcode" / "1c" / "db-instances.yaml"
+rel = cfg.relative_to(root)
+if not cfg.is_file():
+    fail(f"--instance {name}: нет {rel} — скопируй образец {SAMPLE} в {rel} "
+         f"и опиши инстанс {name} (channel/connection/user/password/display/publish_port)")
+try:
+    text = cfg.read_text(encoding="utf-8")
+except UnicodeDecodeError as e:
+    fail(f"{rel}: не читается как UTF-8 ({e}) — образец: {SAMPLE}")
+
+entries = {}
+cur = None
+name_indent = field_indent = None
+seen_instances = False
+for lineno, raw in enumerate(text.splitlines(), 1):
+    line = raw.rstrip()
+    if not line.strip() or line.strip().startswith("#"):
+        continue
+    lead = line[: len(line) - len(line.lstrip())]
+    if "\t" in lead:
+        fail(f"{rel}: строка {lineno}: таб в отступе — YAML табов не допускает; образец: {SAMPLE}")
+    indent = len(lead)
+    body = line.strip()
+    if ":" not in body:
+        fail(f"{rel}: строка {lineno}: ожидался ключ «ключ: значение»; образец: {SAMPLE}")
+    key, _, val = body.partition(":")
+    key, val = key.strip(), val.strip()
+    if len(val) >= 2 and val[0] == val[-1] and val[0] in "'\"":
+        val = val[1:-1]
+    if indent == 0:
+        if seen_instances or key != "instances" or val:
+            fail(f"{rel}: строка {lineno}: верхний ключ — ровно один «instances:»; образец: {SAMPLE}")
+        seen_instances = True
+        continue
+    if name_indent is None:
+        name_indent = indent
+    elif field_indent is None and indent > name_indent:
+        field_indent = indent
+    if indent == name_indent:
+        if val:
+            fail(f"{rel}: строка {lineno}: инстанс «{key}:» — ожидался вложенный список полей; образец: {SAMPLE}")
+        if key in entries:
+            fail(f"{rel}: строка {lineno}: инстанс «{key}:» объявлен повторно; образец: {SAMPLE}")
+        cur = key
+        entries[cur] = {}
+    elif indent == field_indent:
+        if cur is None:
+            fail(f"{rel}: строка {lineno}: поле до объявления инстанса; образец: {SAMPLE}")
+        entries[cur][key] = val
+    else:
+        fail(f"{rel}: строка {lineno}: непоследовательный отступ; образец: {SAMPLE}")
+
+if not seen_instances:
+    fail(f"{rel}: нет ключа instances: — образец: {SAMPLE}")
+if name not in entries:
+    known = ", ".join(sorted(entries)) or "записей нет"
+    fail(f"--instance {name}: инстанса {name} нет в {rel} (есть: {known}) — образец: {SAMPLE}")
+missing = [f for f in ("connection", "user", "password") if not entries[name].get(f)]
+if missing:
+    fail(f"--instance {name}: в {rel} не заполнены поля {', '.join(missing)} — образец: {SAMPLE}")
+PY
+}
+
+if [[ -n "$INSTANCE" ]]; then
+	instances_py "$INSTANCE"
+fi
 
 # ── контурные url/порт/epf/mode/channel ──
 read -r URL PORT EPF_REL DBMODE CHANNEL < <(python3 - "$ROOT" <<'PY'
