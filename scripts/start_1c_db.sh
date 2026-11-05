@@ -77,6 +77,37 @@ for rel in "../../hooks" "../hooks"; do
 	[[ -f "$cand/ib_lock.py" ]] && { HOOKS_DIR="$cand"; break; }
 done
 
+# ── stand-замок: один клиент на файловую базу (мультистенд, #37 Готово 4) ──
+# take — замком процесса скрипта ДО запуска клиента (отказ exit 2 с pid
+# владельца); transfer — владение клиенту сразу после запуска (скрипт после
+# прогрева выходит, замок на $$ умер бы раньше клиента); release — при
+# остановке стенда по pid из pidfile. python/hooks недоступны или связь не
+# нашлась — старт не блокируем (политика код-замка, граница Т2).
+stand_lock_py() { # $1 — take|transfer|release; остальные — аргументы режима
+	python3 - "$ROOT" "$HOOKS_DIR" "$@" <<'PY'
+import sys
+root, hooks, mode = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    sys.path.insert(0, hooks)
+    import ib_lock
+except (ImportError, OSError):
+    sys.exit(0)  # гард недоступен — работу не блокируем
+conn = ib_lock.resolve_infobase_connection(root)
+if not conn:
+    sys.exit(0)
+if mode == "take":
+    status, holder = ib_lock.acquire_stand_lock(root, conn, int(sys.argv[4]))
+    if status == "busy":
+        print(f"✗ база занята stand-замком: {ib_lock.describe_holder(holder)}",
+              file=sys.stderr)
+        sys.exit(2)
+elif mode == "transfer":
+    ib_lock.transfer_stand_lock(root, conn, int(sys.argv[4]), int(sys.argv[5]))
+elif mode == "release":
+    ib_lock.release_stand_lock(root, conn, int(sys.argv[4]))
+PY
+}
+
 # ── контурные url/порт/epf/mode/channel ──
 read -r URL PORT EPF_REL DBMODE CHANNEL < <(python3 - "$ROOT" <<'PY'
 import json, sys, pathlib
@@ -258,6 +289,11 @@ if [[ $MODE == stop ]]; then
 	# Клиент гасим по маркеру обработки в cmdline (pidfile указывает лишь на
 	# shim-обёртку — см. kill_client).
 	kill_client
+	# stand-замок выпуска: владелец — pid из pidfile; нет pidfile — замок
+	# подчистится взятием по пробе процесса.
+	if [[ -f "$PIDFILE" ]]; then
+		stand_lock_py release "$(cat "$PIDFILE")"
+	fi
 	rm -f "$PIDFILE"
 	echo "• клиент 1С остановлен"
 	# WM невидимого дисплея (ишью #40) — тоже ресурс стенда, гасим по pidfile.
@@ -559,7 +595,9 @@ else
 	CARG="startup;mode=embedded;port=$PORT"
 fi
 CARG="$CARG;danger_auto_write=1;danger_auto_priv=1;danger_confirm=1"
+stand_lock_py take "$$" || exit 2
 launch_client "$CARG"
+stand_lock_py transfer "$$" "$(cat "$PIDFILE")" || true
 if ! wait_client 1; then
 	echo "  сначала: база НОВАЯ или перезалитая (dt, пересоздан build/ib)?" >&2
 	echo "  → разовое подтверждение диалогов платформы (NativeAPI-компонента," >&2
