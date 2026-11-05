@@ -23,6 +23,7 @@ v8project.local.yaml
 
 # Локальный оверлей контура (фактический url стенда) — никогда в git.
 .zcode/1c/contour.local.json
+.zcode/1c/contour.local.json.tmp
 
 # Артефакты e2e-прогонов и байткод pytest (run_e2e.sh, junit/сводки).
 test-results/

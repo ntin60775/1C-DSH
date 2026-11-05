@@ -17,7 +17,7 @@
 # но прокси не нужен (mode=embedded поднимет сервер внутри клиента).
 #
 # Использование:
-#   start_1c_db.sh <project-root>            # прокси (если надо) + клиент, ждать :6003
+#   start_1c_db.sh <project-root>            # прокси (если надо) + клиент, ждать подключения
 #   start_1c_db.sh <project-root> --headless # клиент под Xvfb (среда без GUI)
 #   start_1c_db.sh <project-root> --stop     # погасить клиент и прокси (свои)
 #   start_1c_db.sh <project-root> --proxy-only / --stop-proxy
@@ -52,18 +52,23 @@
 # по-прежнему гасит клиентов всех инстансов по общему маркеру обработки
 # и общий прокси).
 #
-# Порт (мультистенд Т6): желаемый — 1c_db.url из contour.json, фактический
-# — машино-локальный факт в .zcode/1c/contour.local.json (читается
-# поверх contour.json, пишется арбитражем после подъёма). Арбитраж —
-# атомарная пара «проверил — занял» flock'ом на per-port замок, поднятый
-# прокси наследует fd замка; живой прокси проекта переиспользуется,
-# занятый/чужой порт → первый свободный от желаемого (6003 → 6004, …).
-# HTTP-проба и ss-владелец порта — только выбор кандидата и диагностика.
-# Смена порта на живой ZCode-сессии = переподключение MCP (wire_config
-# читает local — следующий юнит мультистенда).
+# Порт (мультистенд Т6): желаемый — 1c_db.url из contour.json; фактический
+# — машино-локальный факт в .zcode/1c/contour.local.json (url + желаемый
+# desired_url; local применяется, пока желаемый в contour не изменился —
+# смена url снимает дрейф порта). Арбитраж — атомарная пара «проверил —
+# занял» flock'ом на pid-файле прокси: победитель поднимает прокси на
+# первом свободном порту от желаемого (6003 → 6004 → … до +9; живой на
+# кандидате при свободном замке — чужой), прокси наследует fd pid-файла;
+# проигравший гонку старт ждёт факта победителя (local) и переиспользует
+# — второго процесса прокси у проекта не бывает. HTTP-проба и ss-владелец
+# — только выбор кандидата и диагностика, арбитраж — только замок. Окно
+# 10 портов; исчерпание — exit 2. Смена порта на живой ZCode-сессии:
+# перенеси фактический url в 1c_db.url contour.json и перегенерируй config
+# (чтение local wire_config'ом — следующий юнит мультистенда).
 #
 # Зависимости: install_1c_mcp_proxy.sh (один раз; venv ~/.local/venvs/
-# 1c-mcp-proxy, путь к клону тулкита — $ONEC_MCP_TOOLKIT_DIR или аргумент).
+# 1c-mcp-proxy, путь к клону тулкита — $ONEC_MCP_TOOLKIT_DIR или аргумент);
+# flock (util-linux) — арбитраж порта; ss (iproute2) — диагностика/гашение.
 # Строка подключения и пароли не печатаются (но видны в cmdline клиента —
 # известное ограничение /IBConnectionString; при выпуске stand-замка связь
 # инстанса передаётся python-процессу через env STAND_CONN — вне cmdline).
@@ -381,7 +386,7 @@ WM_PIDFILE="/tmp/1c-db-wm-$IHASH.pid"
 WM_LOG="/tmp/1c-db-wm-$IHASH.log"
 
 # ── контурные url/порт/epf/mode/channel ──
-read -r URL PORT EPF_REL DBMODE CHANNEL < <(python3 - "$ROOT" <<'PY'
+read -r URL PORT EPF_REL DBMODE CHANNEL WANTED_URL < <(python3 - "$ROOT" <<'PY'
 import json, sys, pathlib
 root = pathlib.Path(sys.argv[1])
 url = "http://127.0.0.1:6003/mcp"
@@ -405,22 +410,27 @@ try:
     mode = db.get("mode") or mode
 except Exception:
     pass
-# Фактический порт стенда — машино-локальный факт (мультистенд Т6): local
-# поверх contour.json. Файла может не быть (первый старт) — желаемый порт
-# из contour.json. Пишет его арбитраж порта после подъёма прокси.
+# желаемый оператором url: local применяется, только пока не разошёлся с ним
+wanted_url = url
 loc = root / ".zcode" / "1c" / "contour.local.json"
 try:
-    l1c = json.loads(loc.read_text(encoding="utf-8")).get("1c_db") or {}
-    url = l1c.get("url") or url
+    raw = json.loads(loc.read_text(encoding="utf-8"))
+    l1c = raw.get("1c_db") if isinstance(raw, dict) else {}
+    if isinstance(l1c, dict) and l1c.get("desired_url") == url:
+        url = l1c.get("url") or url
 except Exception:
     pass
 tail = url.split("//", 1)[-1]
 port = tail.split(":", 1)[1].split("/", 1)[0] if ":" in tail else "6003"
-print(url, port, epf, mode, db.get("channel") or "")
+# пустое поле в read-строке схлопывается по IFS и сдвигает хвост —
+# канал пустым печатается маркером «-», после read маркер снимается
+print(url, port, epf, mode, db.get("channel") or "-", wanted_url)
 PY
 )
-
-# ── канал и пробы инстанса (Т5) ──
+[[ "$CHANNEL" == "-" ]] && CHANNEL=""
+# желаемый оператором url — в local-запись (desired_url: смена url в
+# contour.json снимает дрейф порта)
+LOCAL_DESIRED_URL="$WANTED_URL"
 # Канал записи перекрывает 1c_db.channel из contour.json; дефолт — имя
 # инстанса (в instances_py). Пробы/прогрев бьют в конкретный канал: без
 # ?channel= execute_code может уйти в дефолтный канал чужого инстанса и
@@ -430,12 +440,30 @@ PY
 if [[ $INSTANCE_SET -eq 1 ]]; then
 	CHANNEL="$INST_CHANNEL"
 fi
-PROBE_URL="$URL"
-if [[ "$DBMODE" == "proxy" && -n "$CHANNEL" ]]; then
-	sep="?"
-	[[ "$URL" == *\?* ]] && sep="&"
-	PROBE_URL="$URL${sep}channel=$CHANNEL"
+
+# Порт валиден? (мультистенд Т6: арбитраж — арифметика по портам, url
+# обязан нести числовой порт, иначе замена :$PORT невозможна)
+if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then
+	echo "✗ 1c_db.url: нечисловой порт «$PORT» — исправь url в .zcode/1c/contour.json" >&2
+	exit 2
 fi
+if [[ "$URL" != *":$PORT"* ]]; then
+	echo "✗ 1c_db.url: порт $PORT не входит в url — арбитраж порта невозможен" >&2
+	exit 2
+fi
+
+# PROBE_URL — url проб готовности/прогрева. Пересчитывается после
+# арбитража порта (build_probe_url): без пересчёта пробы били бы в
+# прежний порт, пока стенд живёт на переезде
+build_probe_url() {
+	PROBE_URL="$URL"
+	if [[ "$DBMODE" == "proxy" && -n "$CHANNEL" ]]; then
+		sep="?"
+		[[ "$URL" == *\?* ]] && sep="&"
+		PROBE_URL="$URL${sep}channel=$CHANNEL"
+	fi
+}
+build_probe_url
 
 if [[ $MODE == print_config ]]; then
 	echo "$URL $PORT $EPF_REL $DBMODE $CHANNEL"
@@ -443,6 +471,21 @@ if [[ $MODE == print_config ]]; then
 fi
 
 alive() { curl -so /dev/null --max-time 3 -w '%{http_code}' "$URL" 2>/dev/null | grep -qE '^[1-5]'; }
+
+# Фактический url из local-слоя (пишет арбитраж после подъёма); пусто —
+# файла нет или не читается. Используется веткой ожидания арбитража.
+# || true обязателен: присваивание _lu="$(local_db_url)" при set -e
+# умирало бы от статуса python на отсутствующем файле
+local_db_url() {
+	python3 - "$ROOT" <<'PY' 2>/dev/null || true
+import json, sys, pathlib
+p = pathlib.Path(sys.argv[1]) / ".zcode" / "1c" / "contour.local.json"
+raw = json.loads(p.read_text(encoding="utf-8"))
+l1c = raw.get("1c_db") if isinstance(raw, dict) else {}
+if isinstance(l1c, dict):
+    print(l1c.get("url") or "")
+PY
+}
 
 # Гасим клиента по уникальному маркеру обработки в cmdline: реальный ELF может
 # жить за shim-обёрткой (podman/distrobox-exec), pidfile указывает лишь на
@@ -473,13 +516,17 @@ stop_proxy() {
 	fi
 	# pidfile может указывать на обёртку setsid, а не на python (наблюдение
 	# 2026-10-11: --stop промахивался, прокси переживал остановку и держал
-	# порт) — добиваем по владельцу порта; каналы делят :PORT, чужих там быть
-	# не должно.
+	# порт) — добиваем по владельцу порта; гасим только процесс тулкита:
+	# посторонний владелец порта усыновлению и гашению не подлежит (Т6).
 	local PP
 	PP=$(ss -tlnp 2>/dev/null | grep ":$PORT " | grep -oP 'pid=\K[0-9]+' | head -1) || true
 	if [[ -n "$PP" ]]; then
-		kill "$PP" 2>/dev/null || true
-		KILLED=1
+		if [[ "$(ps -o args= -p "$PP" 2>/dev/null)" == *onec_mcp_toolkit_proxy* ]]; then
+			kill "$PP" 2>/dev/null || true
+			KILLED=1
+		else
+			echo "  порт $PORT держит посторонний процесс (pid $PP) — не гашу" >&2
+		fi
 	fi
 	if [[ $KILLED -eq 1 ]]; then
 		for _ in 1 2 3 4 5; do
@@ -488,7 +535,11 @@ stop_proxy() {
 		done
 		echo "• прокси остановлен"
 	fi
-	rm -f "$PROXY_PIDFILE"
+	# pid-файл держит flock арбитража (Т6): стираем только stale — живой
+	# прокси (и его замок) должен пережить чтение файла
+	if [[ -f "$PROXY_PIDFILE" ]] && ! kill -0 "$(cat "$PROXY_PIDFILE" 2>/dev/null)" 2>/dev/null; then
+		rm -f "$PROXY_PIDFILE"
+	fi
 	[[ $KILLED -eq 0 ]] && echo "• прокси не поднимался этим скриптом"
 	return 0
 }
@@ -504,33 +555,21 @@ fi
 
 # ── прокси (нужен только в режиме proxy) ──
 if [[ $DBMODE == proxy && $MODE != stop ]]; then
-	# ── порт-арбитраж (мультистенд Т6): атомарная пара «проверил — занял»
-	# через flock на per-port замок; поднятый прокси наследует fd замка —
-	# пока жив, порт наш, умирание освобождает ядром. Живой на кандидате —
-	# свой (pidfile жив) → переиспользуем; чужой → следующий. HTTP-проба и
-	# ss-владелец — выбор кандидата и диагностика, арбитраж — только flock.
-	PORT_LOCKED=0
-	for _cand in $(seq "$PORT" $((PORT + 9))); do
-		_curl_url="${URL/:$PORT/:$_cand}"
-		if curl -so /dev/null --max-time 3 "$_curl_url" 2>/dev/null; then
-			if [[ -f "$PROXY_PIDFILE" ]] && kill -0 "$(cat "$PROXY_PIDFILE" 2>/dev/null)" 2>/dev/null; then
-				PORT="$_cand"; URL="$_curl_url"; PORT_LOCKED=1; break
-			fi
-			echo "• :$_cand отвечает чужому процессу — пробую следующий порт" >&2
-			continue
-		fi
-		exec {PORT_LOCK_FD}>>"/tmp/1c-mcp-proxy-$HASH-$_cand.lock"
-		if flock -n "$PORT_LOCK_FD" 2>/dev/null; then
-			PORT="$_cand"; URL="$_curl_url"; PORT_LOCKED=1; break
-		fi
-		exec {PORT_LOCK_FD}>&-
-		echo "• :$_cand забран параллельным стартом — пробую следующий порт" >&2
-	done
-	if [[ $PORT_LOCKED -eq 0 ]]; then
-		echo "✗ свободного порта нет: $PORT–$((PORT + 9)) заняты — расчисти или задай 1c_db.url в .zcode/1c/contour.json" >&2
+	# ── порт-арбитраж (мультистенд Т6): владение — flock на pid-файле
+	# прокси, атомарная пара «проверил — занял». Победитель замка выбирает
+	# первый свободный порт и поднимает прокси; прокси наследует fd
+	# pid-файла — пока жив, замок занят, а проигравший гонку старт ждёт его
+	# факта (local) и переиспользует; прокси умер — ядро освободило замок.
+	# Второго процесса прокси проект не поднимает («один прокси на проект»).
+	# HTTP-проба и ss-владелец — выбор кандидата и диагностика, арбитраж —
+	# только замок. Замок на кандидате не проверяется: живой на порту при
+	# свободном замке — чужой (свой живой держал бы замок).
+	if ! command -v flock >/dev/null 2>&1; then
+		echo "✗ нужен flock (util-linux) — арбитраж порта без него невозможен" >&2
 		exit 2
 	fi
-	if ! alive; then
+	exec {PORT_LOCK_FD}>>"$PROXY_PIDFILE"
+	if flock -n "$PORT_LOCK_FD" 2>/dev/null; then
 		if [[ ! -x "$VENV/bin/python" ]]; then
 			echo "✗ нет $VENV — один раз выполни:" >&2
 			echo "  $(dirname "${BASH_SOURCE[0]}")/install_1c_mcp_proxy.sh $TOOLKIT" >&2
@@ -575,46 +614,110 @@ if [[ $DBMODE == proxy && $MODE != stop ]]; then
 			ANON_ENV=(ANONYMIZATION_ENABLED=false)
 			echo "WARN: анонимизация канала 1c-db ВЫКЛЮЧЕНА (CONTOUR_ANON=off) — данные базы идут в ответах как есть" >&2
 		fi
-		# nohup вместо subshell+setsid: subshell-обёртка оставляла живой bash
-		# (wait4 на дочернем прокси) — скрипт «зависал» после «✓ готов», а
-		# pidfile ловил pid обёртки, не python (наблюдение 2026-10-12).
-		# cd нужен python -m (пакет ищется по cwd); клиент позже сам делает
-		# cd "$ROOT".
-		cd "$TOOLKIT"
-		nohup env PORT="$PORT" DANGEROUS_KEYWORDS="$DANGER_KEEP" \
-			"${ANON_ENV[@]}" \
-			"$VENV/bin/python" -m onec_mcp_toolkit_proxy \
-			>"$PROXY_LOG" 2>&1 </dev/null &
-		echo $! > "$PROXY_PIDFILE"
-		disown 2>/dev/null || true
-		echo "• прокси поднят (pid $(cat "$PROXY_PIDFILE")); лог: $PROXY_LOG"
-		for _ in $(seq 1 20); do
-			alive && break
-			sleep 1
+		# Выбор порта и подъём: живой на кандидате — чужой (свой держал бы
+		# замок, а замок у нас) → следующий; bind перехвачен другим проектом
+		# между пробой и стартом → ретрай следующим кандидатом.
+		_cand="$PORT"
+		_ok=0
+		while (( _cand <= PORT + 9 )); do
+			_curl_url="${URL/:$PORT/:$_cand}"
+			if curl -so /dev/null --max-time 3 "$_curl_url" 2>/dev/null; then
+				echo "• :$_cand отвечает чужому процессу — пробую следующий порт" >&2
+				_cand=$((_cand + 1))
+				continue
+			fi
+			# nohup вместо subshell+setsid: subshell-обёртка оставляла живой
+			# bash (wait4 на дочернем прокси) — скрипт «зависал» после
+			# «✓ готов», а pidfile ловил pid обёртки, не python (наблюдение
+			# 2026-10-12). cd нужен python -m (пакет ищется по cwd); клиент
+			# позже сам делает cd "$ROOT".
+			cd "$TOOLKIT"
+			nohup env PORT="$_cand" DANGEROUS_KEYWORDS="$DANGER_KEEP" \
+				"${ANON_ENV[@]}" \
+				"$VENV/bin/python" -m onec_mcp_toolkit_proxy \
+				>"$PROXY_LOG" 2>&1 </dev/null &
+			echo $! > "$PROXY_PIDFILE"
+			disown 2>/dev/null || true
+			PORT="$_cand"; URL="$_curl_url"
+			for _ in $(seq 1 20); do
+				if alive; then _ok=1; break; fi
+				sleep 1
+			done
+			if [[ $_ok -eq 1 ]]; then
+				echo "• прокси поднят (pid $(cat "$PROXY_PIDFILE")); лог: $PROXY_LOG"
+				break
+			fi
+			echo "• :$_cand не поднялся за 20с (перехвачен между пробой и bind?) — пробую следующий порт; лог: $PROXY_LOG" >&2
+			_cand=$((_cand + 1))
 		done
+		if [[ $_ok -eq 0 ]]; then
+			echo "✗ свободного порта нет: $PORT–$((PORT + 9)) заняты — расчисти или задай 1c_db.url в .zcode/1c/contour.json (смена порта снимает дрейф local)" >&2
+			exit 2
+		fi
+		# fd замка закрываем себе: у прокси наследованная копия держит
+		# замок; без закрытия клиент 1С/Xvfb/WM унаследовали бы тоже и
+		# держали бы порт «навечно» после смерти прокси
+		exec {PORT_LOCK_FD}>&-
+	else
+		# Замок занят — параллельный старт нашего проекта поднимает прокси:
+		# ждём ЕГО факт — url из local (победитель пишет всегда; ответ на
+		# желаемом порту не годится: там может отвечать чужой процесс).
+		echo "• параллельный старт поднимает прокси — жду его факта (до 60с)"
+		_waited=0
+		while (( _waited < 60 )); do
+			_lu="$(local_db_url)"
+			if [[ -n "$_lu" ]] && curl -so /dev/null --max-time 2 "$_lu" 2>/dev/null; then
+				PORT="${_lu##*:}"; PORT="${PORT%%/*}"; URL="$_lu"
+				break
+			fi
+			sleep 1
+			_waited=$((_waited + 1))
+		done
+		if (( _waited >= 60 )); then
+			echo "✗ параллельный старт не поднял прокси за 60с; смотри $PROXY_LOG" >&2
+			exit 1
+		fi
+		echo "• прокси параллельного старта готов: $URL"
 	fi
+	build_probe_url
 	if alive; then
-		# pid в pidfile чиним по факту — владельцу порта (обёртки nohup/env
-		# могли сместить pid); stop_proxy дополнительно добивает по порту.
+		# pid в pidfile чиним по факту — но только подтверждённым владельцем
+		# тулкита: живой посторонний процесс на порту усыновлять нельзя
+		# (его pid в pidfile означал бы гашение постороннего в --stop)
 		PP=$(ss -tlnp 2>/dev/null | grep ":$PORT " | grep -oP 'pid=\K[0-9]+' | head -1) || true
-		[[ -n "$PP" ]] && echo "$PP" > "$PROXY_PIDFILE"
-		echo "✓ прокси отвечает: $URL (pid $(cat "$PROXY_PIDFILE"))"
-		# фактический порт — в local-слой (единственный носитель, Т6;
-		# gitignored по правилу Т4). doctor/wire_config читают его — следующий
-		# юнит; до того ZCode-сессии подключены к прежнему url — смена
-		# порта на живой сессии = переподключение MCP
-		python3 - "$ROOT" "$URL" <<'PY'
-import json, sys, pathlib
+		if [[ -n "$PP" && "$(ps -o args= -p "$PP" 2>/dev/null)" == *onec_mcp_toolkit_proxy* ]]; then
+			echo "$PP" > "$PROXY_PIDFILE"
+		fi
+		echo "✓ прокси отвечает: $URL (pid $(cat "$PROXY_PIDFILE" 2>/dev/null))"
+		# фактический порт — в local-слой (единственный носитель факта, Т6;
+		# gitignored по правилу Т4). Читают его doctor/wire_config — следующий
+		# юнит; до того ZCode-сессии подключены к прежнему url: перенеси
+		# фактический url в 1c_db.url contour.json и перегенерируй config
+		python3 - "$ROOT" "$URL" "${LOCAL_DESIRED_URL:-}" <<'PY'
+import json, os, sys, pathlib
 root, url = pathlib.Path(sys.argv[1]), sys.argv[2]
+desired = sys.argv[3] or url
 p = root / ".zcode" / "1c" / "contour.local.json"
 data = {}
 try:
-    data = json.loads(p.read_text(encoding="utf-8"))
+    raw = json.loads(p.read_text(encoding="utf-8"))
+    if isinstance(raw, dict):
+        data = raw
+    else:
+        print(f"WARN: {p.name}: верхний уровень не словарь — прежние ключи не сохранены",
+              file=sys.stderr)
 except Exception:
     pass
-data.setdefault("1c_db", {})["url"] = url
+db = data.get("1c_db")
+if not isinstance(db, dict):
+    db = {}
+    data["1c_db"] = db
+db["url"] = url
+db["desired_url"] = desired
 p.parent.mkdir(parents=True, exist_ok=True)
-p.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+tmp = p.with_name(p.name + ".tmp")
+tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+os.replace(tmp, p)  # атомарно: читатели (doctor) не видят полуфайл
 PY
 		echo "• порт $PORT зафиксирован в .zcode/1c/contour.local.json"
 	else
@@ -622,7 +725,7 @@ PY
 		# диагностика, не арбитраж: владелец порта, если им оказался
 		# неотвечающий на HTTP процесс
 		PP=$(ss -tlnp 2>/dev/null | grep ":$PORT " | grep -oP 'pid=\K[0-9]+' | head -1) || true
-		[[ -n "$PP" ]] && echo "  порт $PORT держит pid $PP: $(ps -o comm= -p "$PP" 2>/dev/null)" >&2
+		[[ -n "$PP" ]] && echo "  порт $PORT держит pid $PP: $(ps -o args= -p "$PP" 2>/dev/null | cut -c1-80)" >&2
 		exit 1
 	fi
 fi
