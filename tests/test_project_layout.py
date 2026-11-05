@@ -218,6 +218,10 @@ def main() -> None:
 			.read_text(encoding="utf-8")
 		_lib.check("registry: gitignore-шаблон держит файл вне git",
 		           ".zcode/1c/registry.local.json" in gi_tpl)
+		_lib.check("инстансы Т4: gitignore-шаблон держит db-instances.yaml и "
+		           "contour.local.json вне git",
+		           ".zcode/1c/db-instances.yaml" in gi_tpl
+		           and ".zcode/1c/contour.local.json" in gi_tpl)
 
 		# ── 11. check: детектор обязательного минимума ──
 		p9 = os.path.join(tmp, "bare")

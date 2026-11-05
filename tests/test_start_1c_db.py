@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Резолв обработки 1c-db по ОС хоста (v0.4.51, ROCTUP/1c-mcp-toolkit#34).
+"""start_1c_db.sh: резолв обработки по ОС хоста, дедлайн wait_client,
+гард stand-замка (Т3), конфиг инстансов с fail-loud (Т4).
 
-Раннер start_1c_db.sh обязан выбирать файл epf под ОС (Linux →
-MCP_Toolkit_linux.epf и т. д.): раньше всегда брался вин-файл
-MCP_Toolkit.epf — на Linux его Windows-компоненты (QueryLineageAnalyzer)
-молча отсутствовали. Явный 1c_db.epf_path перекрывает детект.
-Проверяется через --print-config (резолв без подъёма канала)."""
+- Резолв epf (v0.4.51, ROCTUP/1c-mcp-toolkit#34): файл под ОС хоста,
+  явный 1c_db.epf_path перекрывает детект — через --print-config.
+- wait_client (#36): выход по стенному дедлайну, не по счётчику итераций.
+- Гард stand-замка (мультистенд Т3): второй старт отказан, владение
+  клиенту, release-on-stop, серверная база не замкивается.
+- Инстансы (мультистенд Т4): --instance X без файла/инстанса, с битым
+  YAML или неполными полями — exit 2 с перечнем и путём к образцу;
+  годная запись останавливается громко (рантайм — Т5); пароль из конфига
+  не печатается; моно-режим без --instance живёт как раньше."""
 import os
 import subprocess
 import sys
@@ -241,25 +246,31 @@ wait_client тест2 && echo "ok=$n"
 
     # 7. Т4 fail-loud db-instances.yaml: --instance X без файла / без инстанса /
     #    с битым YAML / с неполными полями — exit 2 с перечнем недостающего и
-    #    путём к образцу; валидная запись не блокируется; моно-режим (файла нет,
-    #    --instance нет) живёт как раньше. Все вызовы идут через --print-config:
-    #    валидация стоит до контурного чтения, а на базовом дереве --instance
-    #    игнорируется и print-config отвечает 0 — краснота без подъёма стенда.
+    #    путём к образцу; годная запись останавливается громко (рантайм — Т5,
+    #    фолбэк на main запрещён); пароль из конфига не печатается; моно-режим
+    #    (файла нет, --instance нет) живёт как раньше. Все вызовы идут через
+    #    --print-config: валидация стоит до контурного чтения, а на базовом
+    #    дереве --instance игнорируется и print-config отвечает 0 — краснота
+    #    без подъёма стенда. Фикс-проект несёт v8project.local.yaml: отказ при
+    #    наличном main-фолбэке — прямое доказательство его запрета.
     proj = tmp / "instances"
     proj.mkdir()
+    (proj / "v8project.local.yaml").write_text(
+        'infobases:\n  origin:\n    connection: File=build/ib\n', encoding="utf-8")
 
-    def run_instance(*args):
+    def run_instance(root, *args):
         return subprocess.run(
-            ["bash", str(SCRIPT), str(proj), "--print-config", *args],
+            ["bash", str(SCRIPT), str(root), "--print-config", *args],
             capture_output=True, text=True, env=dict(os.environ),
         )
 
-    r = run_instance("--instance", "base2")
+    r = run_instance(proj, "--instance", "base2")
     _lib.check("Т4: --instance без db-instances.yaml — exit 2",
                r.returncode == 2, f"rc={r.returncode}, err={r.stderr[:300]!r}")
-    _lib.check("Т4: отказ называет файл и путь к образцу",
+    _lib.check("Т4: отказ называет файл, образец и перечень полей",
                "db-instances.yaml" in r.stderr
-               and "db-instances.example.yaml" in r.stderr,
+               and "db-instances.example.yaml" in r.stderr
+               and "connection" in r.stderr,
                f"err={r.stderr[:300]!r}")
 
     cfg_dir = proj / ".zcode" / "1c"
@@ -269,30 +280,73 @@ wait_client тест2 && echo "ok=$n"
     def write_instances(text: str):
         cfg.write_text(text, encoding="utf-8")
 
+    # -- Требующие наличия main-связи кейсы не проходят дальше валидации:
+    #    все кейсы этого блока должны падать именно на ветке инстанса.
     write_instances(
         "instances:\n"
         "  other:\n"
         "    connection: File=build/ib\n"
         "    user: u\n"
         "    password: p\n")
-    r = run_instance("--instance", "base2")
+    r = run_instance(proj, "--instance", "base2")
     _lib.check("Т4: чужой инстанс — exit 2 с перечнем имеющихся",
-               r.returncode == 2 and "base2" in r.stderr and "other" in r.stderr,
+               r.returncode == 2 and "other" in r.stderr,
                f"rc={r.returncode}, err={r.stderr[:300]!r}")
 
     write_instances("instances:\n\tbase2:\n")
-    r = run_instance("--instance", "base2")
+    r = run_instance(proj, "--instance", "base2")
     _lib.check("Т4: битый YAML (таб в отступе) — exit 2 со строкой файла",
                r.returncode == 2 and "строка 2" in r.stderr,
                f"rc={r.returncode}, err={r.stderr[:300]!r}")
 
-    write_instances("instances:\n  base2:\n    connection: File=build/ib\n")
-    r = run_instance("--instance", "base2")
-    _lib.check("Т4: неполные поля — exit 2 с перечнем user, password",
-               r.returncode == 2 and "не заполнены поля user, password" in r.stderr,
+    write_instances("")
+    r = run_instance(proj, "--instance", "base2")
+    _lib.check("Т4: пустой файл — exit 2 «нет ключа instances:»",
+               r.returncode == 2 and "instances" in r.stderr,
+               f"rc={r.returncode}, err={r.stderr[:300]!r}")
+
+    write_instances("stnances:\n  base2:\n")
+    r = run_instance(proj, "--instance", "base2")
+    _lib.check("Т4: посторонний верхний ключ — exit 2",
+               r.returncode == 2 and "instances:" in r.stderr,
+               f"rc={r.returncode}, err={r.stderr[:300]!r}")
+
+    write_instances("instances:\n  base2: 5\n")
+    r = run_instance(proj, "--instance", "base2")
+    _lib.check("Т4: скаляр вместо словаря полей — exit 2",
+               r.returncode == 2 and "вложенный" in r.stderr,
+               f"rc={r.returncode}, err={r.stderr[:300]!r}")
+
+    write_instances(
+        "instances:\n  base2:\n    connection: File=build/ib\n"
+        "  base2:\n    connection: File=build/ib2\n")
+    r = run_instance(proj, "--instance", "base2")
+    _lib.check("Т4: повторное имя инстанса — exit 2",
+               r.returncode == 2 and "повторно" in r.stderr,
+               f"rc={r.returncode}, err={r.stderr[:300]!r}")
+
+    write_instances("instances:\n  base2\n    connection: File=build/ib\n")
+    r = run_instance(proj, "--instance", "base2")
+    _lib.check("Т4: ключ без двоеточия — exit 2 со строкой",
+               r.returncode == 2 and "строка 2" in r.stderr,
+               f"rc={r.returncode}, err={r.stderr[:300]!r}")
+
+    cfg.write_bytes("instances:\n  base2:\n    connection: \xff\xfe\n".encode("latin-1"))
+    r = run_instance(proj, "--instance", "base2")
+    _lib.check("Т4: не-UTF-8 байты — exit 2 с причиной",
+               r.returncode == 2 and "UTF-8" in r.stderr,
+               f"rc={r.returncode}, err={r.stderr[:300]!r}")
+
+    # пароль в фикстуре задан и в отказе не фигурирует: перечень — только
+    # имена недостающих полей (граница тикета «пароль в лог и чат не печатается»)
+    write_instances("instances:\n  base2:\n    connection: File=build/ib\n"
+                    "    password: S3cret-PW-z9\n")
+    r = run_instance(proj, "--instance", "base2")
+    _lib.check("Т4: неполные поля — exit 2 с перечнем user",
+               r.returncode == 2 and "не заполнены поля user" in r.stderr,
                f"rc={r.returncode}, err={r.stderr[:300]!r}")
     _lib.check("Т4: пароль не печатается в отказе",
-               "pw" not in r.stderr,
+               "S3cret-PW-z9" not in r.stderr,
                f"err={r.stderr[:300]!r}")
 
     write_instances(
@@ -303,11 +357,53 @@ wait_client тест2 && echo "ok=$n"
         "    user: u\n"
         "    password: p\n"
         "    display: 98\n"
+        "    publish_port: 6011\n"
+        "    chanel: опечатка\n")
+    r = run_instance(proj, "--instance", "base2")
+    _lib.check("Т4: неизвестное поле (опечатка chanel) — exit 2, не тихий пропуск",
+               r.returncode == 2 and "chanel" in r.stderr,
+               f"rc={r.returncode}, err={r.stderr[:300]!r}")
+
+    write_instances(
+        "instances:\n"
+        "  base2:\n"
+        "    channel: base2\n"
+        "    connection: File=build/ib/base2\n"
+        "    user: u\n"
+        "    password: p\n"
+        "    display: 98\n"
         "    publish_port: 6011\n")
-    r = run_instance("--instance", "base2")
-    _lib.check("Т4: валидная запись — print-config проходит (не блокируется)",
-               r.returncode == 0 and expected_os_epf() in r.stdout,
-               f"rc={r.returncode}, out={r.stdout!r}, err={r.stderr[:200]!r}")
+    r = run_instance(proj, "--instance", "base2")
+    _lib.check("Т4: годная запись — громкая остановка «рантайм — Т5», не main",
+               r.returncode == 2 and "Т5" in r.stderr,
+               f"rc={r.returncode}, out={r.stdout!r}, err={r.stderr[:300]!r}")
+    r = run_instance(proj, "--instance=base2")
+    _lib.check("Т4: форма --instance=base2 распознаётся",
+               r.returncode == 2 and "Т5" in r.stderr,
+               f"rc={r.returncode}, err={r.stderr[:300]!r}")
+    r = run_instance(proj, "--instance", "")
+    _lib.check("Т4: пустое имя инстанса — отказ, не тихий main",
+               r.returncode == 2,
+               f"rc={r.returncode}, err={r.stderr[:300]!r}")
+    r = run_instance(proj, "--instance", "a", "--instance", "b")
+    _lib.check("Т4: повторный --instance — отказ",
+               r.returncode == 2,
+               f"rc={r.returncode}, err={r.stderr[:300]!r}")
+    r = run_instance(proj, "--instance", "--print-config")
+    _lib.check("Т4: значение-флаг (--instance --print-config) — отказ",
+               r.returncode == 2,
+               f"rc={r.returncode}, err={r.stderr[:300]!r}")
+
+    # образец копируется как есть → fail-loud направляет на заполнение
+    # user/password (снятие кавычек у пустых значений); образца на базовом
+    # дереве нет — кейс инвариант поставки, не краснота
+    sample = REPO / "templates" / "db-instances.example.yaml"
+    if sample.is_file():
+        write_instances(sample.read_text(encoding="utf-8"))
+        r = run_instance(proj, "--instance", "base2")
+        _lib.check("Т4: образец как есть — exit 2 с перечнем user, password",
+                   r.returncode == 2 and "user" in r.stderr and "password" in r.stderr,
+                   f"rc={r.returncode}, err={r.stderr[:300]!r}")
 
     mono = tmp / "mono"
     mono.mkdir()
