@@ -39,3 +39,94 @@
 запуска в headless — грабля этапа 0); демо-база ERP2 в headless висит
 (ишью #40) — для приёмки брать базы, поднимавшиеся headless штатно. Правило
 гашения — короткие одиночные kill с перепроверкой.
+
+## Протокол живой приёмки (сессия проекта erp-demo)
+
+Исполнитель — сессия ZCode, открытая в `/home/prog7/home/dev/work/erp-demo/`
+(канон «живая база — сессия проекта»); репо контура из неё не править.
+Скрипт — из main репо контура
+(`/home/prog7/home/dev/personal/1c-zcode/scripts/start_1c_db.sh`, коммит
+cb17aad или новее) — развёртка полигона (0.4.91) не несёт Т6/Т7. URL и порт
+— из `.zcode/1c/contour.json` → `1c_db.url`, не из головы. Учётки — из
+`v8project.local.yaml` демо; в протокол, логи и отчёт не копировать.
+Машинные литералы (команды, числа, JSON) — как есть.
+
+Предусловия: mono-стенд демо погашен (`pgrep -f 1cv8` пуст; жив —
+`start_1c_db.sh . --stop` по канону); скрипт из репо отвечает
+`bash -n` чисто.
+
+1. **Копии баз** (диалоги первого запуска унаследуются — канон «подтверждение
+   один раз на базу и наследуется клонами»):
+   `cp -a build/ib build/ib2 && cp -a build/ib build/ib3` (стенд погашен —
+   файлы не пишутся). Зафиксировать размеры 1cv8.1CD копий.
+2. **Конфиг** `.zcode/1c/db-instances.yaml` (машино-локальный, вне git;
+   исходно у демо его нет — до приёмки вернуть состояние сносом):
+   инстансы `inst2` (`connection: File=build/ib2`, `channel: inst2`,
+   `display: 98`) и `inst3` (`connection: File=build/ib3`, `channel: inst3`,
+   `display: 99`); user/password — демо-учётка. Форма записи — образец
+   `.zcode/1c/templates/db-instances.example.yaml`.
+3. **Старт inst2**: `bash <репо>/scripts/start_1c_db.sh . --instance inst2
+   --headless` до «✓ 1c-db готов». Первый старт копии — возможен диалог
+   доверия к пути копии обработки (хвост Т7, «не проверено» — проверить):
+   скрин дисплея 98 (`DISPLAY=:98 import -window root /tmp/t8-98.png`),
+   диалог кликается xdotool'ом, факт диалога — в протокол.
+4. **Старт inst3**: та же команда с `--instance inst3`. Критерий «один
+   прокси на проект»: в выводе старта inst3 прокси уже отвечает на
+   том же url; `pgrep -fc 'onec_mcp_toolkit_proxy'` до и после старта —
+   без прироста.
+5. **Изоляция баз (числовой оракул** — строки токенизируются, числа
+   проходят как есть). RPC в канал (`tools/call execute_code`, сниппет
+   ниже), коды: на inst2 —
+   `Результат = Найти(СтрокаСоединенияИнформационнойБазы(), "ib2");`
+   на inst3 — `Результат = Найти(СтрокаСоединенияИнформационнойБазы(), "ib3");`
+   и кросс-проверки `Найти(…, "ib2")` на inst3 / `Найти(…, "ib3")` на
+   inst2. Ожидание: свой суффикс > 0, чужой = 0; сырые числа — в протокол.
+
+   ```python
+   #!/usr/bin/env python3
+   # python3 mcp_call.py <url-канала> '<код>' — stdout: JSON structuredContent
+   import json, sys, urllib.request
+   url, code = sys.argv[1], sys.argv[2]
+   def rpc(payload, sid=None):
+       req = urllib.request.Request(url, data=json.dumps(payload).encode(),
+           headers={"Content-Type": "application/json",
+                    "Accept": "application/json, text/event-stream",
+                    **({"Mcp-Session-Id": sid} if sid else {})})
+       with urllib.request.urlopen(req, timeout=25) as r:
+           raw = r.read().decode()
+           sid = r.headers.get("Mcp-Session-Id", sid)
+           if "text/event-stream" in r.headers.get("Content-Type", ""):
+               raw = next((ln[5:].strip() for ln in raw.splitlines()
+                           if ln.startswith("data:")), "{}")
+       return sid, (json.loads(raw) if raw.strip() else {})
+   sid, _ = rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+       "params": {"protocolVersion": "2025-03-26", "capabilities": {},
+                  "clientInfo": {"name": "t8", "version": "0"}}})
+   rpc({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid)
+   _, res = rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+       "params": {"name": "execute_code",
+                  "arguments": {"code": code}}}, sid)
+   data = res.get("result", {}).get("structuredContent") or {}
+   print(json.dumps(data.get("result", data), ensure_ascii=False))
+   ```
+   URL канала — `<1c_db.url>?channel=inst2` / `?channel=inst3`.
+6. **Раздельные poll-потоки**: `curl -s "<url>/1c/status?channel=inst2"`
+   и `…?channel=inst3` — оба канала в списке, `last_seen_at` свежие у
+   обоих (JSON — в протокол).
+7. **Погашение одного — сосед жив**: `bash <репо>/scripts/start_1c_db.sh .
+   --stop --instance inst2` → вывод несёт «клиент 1С остановлен» и «прокси
+   не гашу»; `pgrep -af '.1c-db-autostart-inst2/'` пуст, `pgrep -af
+   '.1c-db-autostart-inst3/'` жив, прокси жив (HTTP-проба), execute_code
+   на inst3 отвечает числом (шаг 5). Свежая pgrep — по правилу гашения.
+8. **Уборка**: `--stop --instance inst3`; pgrep маркеров пуст;
+   `--stop-proxy` (прокси поднят приёмкой — стенд демо был погашен);
+   `rm -rf build/ib2 build/ib3` (копии баз) и снос
+   `.zcode/1c/db-instances.yaml` — возврат проекта к исходному состоянию.
+   Дисплеи 98/99 свободны.
+9. **Артефакты**: финальное сообщение сессии erp-demo — факты по шагам
+   3–7 (команды, числа, JSON, pgrep) + факты диалога доверия. Коммент-протокол
+   в #37 — из сессии контура по слову оператора (дисциплина апстримов).
+   Находки/краснота — в отчёт, не чинить молча: живой баг — стоп до разбора.
+
+Перерасход оценки (~60 мин) на живую среду фиксировать в протоколе
+(тикет, «Зачем»).
