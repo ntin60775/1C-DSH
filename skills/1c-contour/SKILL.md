@@ -88,8 +88,9 @@ view/check/diff (перепроверка)`. План `apply` не меняет 
   `infobase` + `infobases` отвергаются.
 - Ключ `builder` отвергается: исполнитель — per-operation `providers`
   (`designer` / `agent` / `ibcmd` / `ibcmd-rs` / `webinst`), по умолчанию
-  его выбирает раннер (v8-runner 0.15). Практика наших проектов: файловая
-  база — ibcmd, серверная — дизайнер; переопределяется в `providers`.
+  его выбирает раннер (v8-runner 0.15). Практика контура: доставка и
+  сборка пинятся на ibcmd (scaffold пишет `providers`); переопределение —
+  только по названной причине.
 - Ключи `basePath`, `execution_timeout`, `push.partialLoadThreshold`
   (и `build.partialLoadThreshold`) отвергаются v8-runner 0.15. Полная
   загрузка — `push full: true`, без порога partial-load.

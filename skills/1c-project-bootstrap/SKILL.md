@@ -131,9 +131,9 @@ when_to_use: "Проект 1С подключается к контуру (вп�
   машинный слой (testpilot, прокси 1c-db, xvfb) — см. «Машинный слой» выше,
   это машина, не проект.
 - Не трогает `v8project.yaml` (внешний контракт v8-runner/unica).
-  Провайдер сборки (`designer` | `ibcmd`) — вопрос ритуала
-  `1c-project-layout`; если блока `providers` в `v8project.yaml` нет, а ИБ
-  серверная — верни владельца к этому вопросу: сборка молча пойдёт
-  designer'ом. При `ibcmd` на серверной ИБ в local нужен каркас
-  `infobases.origin.dbms` (`kind`/`server`/`name`/`user`/`password`).
+  Доставка и сборка пинятся на ibcmd (scaffold пишет блок `providers`);
+  если блока `providers` нет, а ИБ серверная — напомни владельцу про
+  каркас `infobases.origin.dbms` в local (`kind`/`server`/`name`/
+  `user`/`password`): без него ibcmd-путь не поднять (скилл
+  `1c-ibcmd-delivery`).
 - Не пишет креды никуда, кроме поля `password` в profiles.yaml (вне git).

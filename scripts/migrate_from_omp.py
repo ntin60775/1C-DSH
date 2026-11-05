@@ -550,22 +550,22 @@ def main() -> int:
 			v8_lines = remove_block(v8_lines, key)
 			changed.append("привязка ИБ перенесена в v8project.local.yaml (0.15)")
 
-		# Провайдер сборки мигратор не выбирает — решение владельца (#44):
-		# серверная ИБ без providers молча уйдёт в designer, показать в плане.
+		# Провайдер сборки мигратор не выбирает (#44): серверная ИБ без
+		# providers уйдёт в дефолт раннера — показать в плане.
 		if not any(re.match(r"^providers\s*:", ln)
 		           for ln in v8_lines + local_lines):
 			conn = first_connection(local_lines) or first_connection(v8_lines)
 			if conn and conn.startswith("Srvr="):
 				note("v8project.yaml: серверная ИБ без providers — сборка пойдёт "
-				     "через designer (умолчание). Для ibcmd: блок `providers: "
+				     "через раннер юники (умолчание). Для ibcmd: блок `providers: "
 				     "push: ibcmd` в v8project.yaml + каркас "
 				     "infobases.origin.dbms в v8project.local.yaml "
 				     "(kind/server/name/user/password; MSSQLServer ibcmd на "
 				     "Linux/macOS не поддерживает)")
 			elif conn and conn.startswith("File="):
 				# Канон контура: файловая база собирается ibcmd. Каркас пишется
-				# механически; выбор провайдера для серверной базы — вопрос
-				# владельцу (#44), не молчаливый designer.
+				# механически; для серверной базы — каркас dbms в local (#44),
+				# не молчаливый дефолт раннера.
 				if apply:
 					v8_lines = v8_lines + ["", "providers:", "  push: ibcmd"]
 				changed.append("providers: push: ibcmd (канон файловой базы)")
@@ -743,8 +743,8 @@ def main() -> int:
 	print("    после переноса всех проверок — снос source-set «Тесты» и tests/cfe/")
 	print("  - описать каталоги/поиск в AGENTS.md заново: строки с мёртвыми")
 	print("    стеками снесены мигратором (план выше)")
-	print("  - серверная ИБ: выбор провайдера — ритуал #44 (вопрос о провайдере),")
-	print("    не молчаливый designer")
+	print("  - серверная ИБ: каркас infobases.origin.dbms в v8project.local.yaml (#44),")
+	print("    доставка пинится на ibcmd")
 	print()
 	if not apply:
 		print("DRY-RUN завершён. Применить: --apply")

@@ -22,7 +22,7 @@ fs-only: читает файлы проекта, живых проб unica/ст�
   build-artifact   build/tools/*.cfe при живом легаси tests/cfe — дистрибутив
                    тест-стека осиротеет;
   legacy-sourceset source-set с path под tests/cfe/ в v8project.yaml;
-  file-base-designer  файловая база (File=) без providers с ibcmd — канон
+  file-base-no-ibcmd  файловая база (File=) без providers с ibcmd — канон
                    контура: файловая база собирается ibcmd (format: DESIGNER —
                    формат выгрузки исходников, не провайдер, не проверяется);
   dead-tools-va    tools.va в v8project.local.yaml — мёртвый Vanessa-блок.
@@ -59,7 +59,7 @@ RECIPES = {
 	"dead-signal": "правка прозы (мигратор сносит строки по паттерну; dry-run показывает план)",
 	"build-artifact": "снос после переноса проверок (осиротеет вместе с расширением)",
 	"legacy-sourceset": "после конвертации проверок снеси source-set (мигратор помечает «осталось вручную»)",
-	"file-base-designer": "каркас providers: push: ibcmd (мигратор пишет для файловой базы; серверная — ритуал #44)",
+	"file-base-no-ibcmd": "каркас providers: push: ibcmd (мигратор пишет для файловой базы; серверная — каркас dbms в local)",
 	"dead-tools-va": "снос tools.va (мигратор, с бэкапом v8project.local.yaml.bak)",
 }
 
@@ -214,8 +214,8 @@ def find_leftovers(root: Path):
 		if local_lines is not None:
 			providers_lines.extend(local_lines)
 		if not _providers_has_ibcmd(providers_lines):
-			add("file-base-designer", "infobases.origin.connection",
-			    "файловая база без providers с ibcmd — операции уйдут в designer")
+			add("file-base-no-ibcmd", "infobases.origin.connection",
+			    "файловая база без providers с ibcmd — сборка уйдёт в дефолт раннера, пинь push: ibcmd")
 	if local_lines is not None and _local_va_block(local_lines) is not None:
 		add("dead-tools-va", "v8project.local.yaml: tools.va",
 		    "мёртвый Vanessa-блок (epf снесён, ключ остался)")

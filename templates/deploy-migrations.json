@@ -27,9 +27,9 @@
     "since": "0.4.81",
     "note": "anon-gate (#47): CONTOUR_ANON=off гасится на входе; off допустим только по команде оператора в его терминале"
   },
-  "provider-question": {
+  "delivery-ibcmd": {
     "since": "0.4.86",
-    "note": "онбординг спрашивает провайдера сборки (designer|ibcmd); файловая база — ibcmd (#44)"
+    "note": "доставка и сборка пинятся на ibcmd; серверной базе нужен каркас infobases.origin.dbms в v8project.local.yaml (#44)"
   },
   "bsl-module-gate": {
     "since": "0.4.88",

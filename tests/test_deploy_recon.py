@@ -210,12 +210,12 @@ def codes(stdout: str):
 OMP_FULL_EXPECTED = sorted(
 	["omp-alive", "omp-archive", "legacy-extension", "orphan", "dead-prose"]
 	+ ["dead-signal"] * 6
-	+ ["legacy-sourceset", "build-artifact", "file-base-designer", "dead-tools-va"])
+	+ ["legacy-sourceset", "build-artifact", "file-base-no-ibcmd", "dead-tools-va"])
 
 MIGRATED_EXPECTED = sorted(
 	["omp-archive", "legacy-extension", "orphan", "orphan", "dead-prose"]
 	+ ["dead-signal"] * 6
-	+ ["legacy-sourceset", "build-artifact", "file-base-designer", "dead-tools-va"])
+	+ ["legacy-sourceset", "build-artifact", "file-base-no-ibcmd", "dead-tools-va"])
 
 
 def main() -> int:

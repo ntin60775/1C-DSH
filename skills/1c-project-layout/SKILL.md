@@ -103,12 +103,11 @@ python3 "$SKILL_DIR/scripts/scaffold.py" all \
    unica создаст `src/cf` — скелет докинет остальное) / дооснащение
    существующего. Идемпотентность покрывает все три.
 2. Один блок вопросов оператору с дефолтами: имя проекта, kinds,
-   components, remote, провайдер синхронизации (`designer` | `ibcmd`).
-   При `ibcmd` на серверной ИБ — каркас `infobases.origin.dbms` в
-   `v8project.local.yaml` (`kind`, `server`, `name`, `user`, `password`
-   СУБД); файловой базе `dbms` не нужен. Блок `providers` в
+   components, remote. Доставка и сборка — ibcmd: блок `providers` в
    `v8project.yaml` вставляет агент сам — внешний контракт, scaffold его
-   не пишет.
+   не пишет. На серверной ИБ — каркас `infobases.origin.dbms` в
+   `v8project.local.yaml` (`kind`, `server`, `name`, `user`, `password`
+   СУБД); файловой базе `dbms` не нужен.
 3. `--dry-run` → покажи план → запуск.
 4. Первый коммит атомарен: скелет + `v8project.yaml` + `v8project.local.yaml`
    вне git + `.gitignore` + `.gitattributes`.
