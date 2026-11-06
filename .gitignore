@@ -3,3 +3,10 @@ __pycache__/
 *.pyc
 .zcode/
 .zcodeignore
+.zcode/.backup/
+.gitmark/
+*-map.html
+.scratch/
+.agents/skills/
+.zcode/agents/
+.zcode/workflows/
