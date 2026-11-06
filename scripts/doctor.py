@@ -65,6 +65,12 @@ try:
 	import deploy_recon
 except ImportError:  # старая вендоренная раскладка без deploy_recon
 	deploy_recon = None
+# wire_config — сосед: единственный разбор db-instances.yaml и фактического
+# url 1c-db (мультистенд #37); нет в старой раскладке — секция пропускается
+try:
+	import wire_config
+except ImportError:
+	wire_config = None
 
 UNICA_MIN = "0.15.0-rc.1"
 CONTOUR_SKILLS = {"1c-contour", "1c-test-contour", "1c-testpilot", "1c-db-data",
@@ -603,7 +609,36 @@ def main() -> int:
 		fail(".zcode/testpilot/profiles.yaml нет — e2e-контур не поднимется")
 
 	# 1c-db жив? (нужен клиент 1С с открытой MCP_Toolkit.epf)
-	db_url = (contour.get("1c_db") or {}).get("url")
+	# фактический url: contour.json, поверх — local-слой (drift порта Т6,
+	# решение владельца #37 «фактический порт читается doctor»)
+	contour_db_url = (contour.get("1c_db") or {}).get("url")
+	db_url = wire_config.actual_db_url(root) if wire_config and contour_db_url else ""
+	if wire_config and contour_db_url:
+		loc_path = root / ".zcode" / "1c" / "contour.local.json"
+		if loc_path.is_file():
+			try:
+				loc_raw = json.loads(loc_path.read_text(encoding="utf-8"))
+				loc = loc_raw.get("1c_db") if isinstance(loc_raw, dict) else None
+			except Exception:
+				loc = None
+			if isinstance(loc, dict) and loc.get("desired_url"):
+				if loc.get("desired_url") == contour_db_url and loc.get("url"):
+					ok(f"drift порта применён: фактический {loc['url']} "
+					   f"(желаемый {contour_db_url})")
+				else:
+					warn("contour.local.json устарел: желаемый url в contour.json "
+					     "изменился — drift не применяется; снеси файл или обнови "
+					     "desired_url")
+		cfg_path = root / ".zcode" / "config.json"
+		if cfg_path.is_file():
+			try:
+				mcp_url = (json.loads(cfg_path.read_text(encoding="utf-8"))
+				           .get("mcp", {}).get("servers", {}).get("1c-db", {}).get("url"))
+			except Exception:
+				mcp_url = None
+			if mcp_url and mcp_url != db_url:
+				warn(f"MCP-запись 1c-db ({mcp_url}) не совпадает с фактическим url "
+				     f"({db_url}) — прогони wire_config.py")
 	if db_url:
 		try:
 			urllib.request.urlopen(db_url, timeout=3)
@@ -618,6 +653,82 @@ def main() -> int:
 			warn(f"1c-db не отвечает ({db_url}) — подними: bash "
 			     ".zcode/1c/scripts/start_1c_db.sh . (Linux: сам поднимет "
 			     "прокси и клиент с mode=proxy; install_1c_mcp_proxy.sh один раз)")
+
+	# db-instances.yaml (мультистенд #37): файла нет — моно-режим штатно
+	# (ленивый инит, не WARN); есть — состав и коллизии портов/дисплеев.
+	# Поля проверяет старт (exit 2 при неполной записи); doctor повторяет
+	# presence как FAIL — до старта, а не в момент него. Пустой password
+	# валиден (574471e) — нужен сам ключ, не значение.
+	if wire_config:
+		inst_path = root / ".zcode" / "1c" / "db-instances.yaml"
+		if not inst_path.is_file():
+			ok("db-instances.yaml нет — моно-режим 1c-db (штатно)")
+		else:
+			try:
+				instances = wire_config.parse_instances(root)
+			except ValueError as e:
+				fail(f"db-instances.yaml: {e}")
+				instances = []
+			channels: dict = {}
+			displays: dict = {}
+			ports: dict = {}
+			bad = 0
+			main_port = str(((contour.get("1c") or {}).get("publish") or {}).get("port")
+			                or "8414")  # 8414 занят main
+			for it in instances:
+				name = it["name"]
+				channel = it["channel"] or name
+				if channel == "default":
+					fail(f"инстанс {name}: канал default — совпадает с каналом main")
+					bad += 1
+				if channel in channels:
+					fail(f"канал {channel} объявлен дважды ({channels[channel]} и {name})")
+					bad += 1
+				else:
+					channels[channel] = name
+				seen = it.get("_seen") or set()
+				for field in ("connection", "user", "password"):
+					if field not in seen:
+						hint = (' (пустое значение валидно: password: "")'
+						        if field == "password" else "")
+						fail(f"инстанс {name}: нет поля {field}{hint} — "
+						     "старт откажет (exit 2)")
+						bad += 1
+				for field in ("connection", "user"):
+					if field in seen and not (it.get(field) or "").strip():
+						fail(f"инстанс {name}: пусто поле {field} — старт откажет (exit 2)")
+						bad += 1
+				display = it.get("display") or ""
+				if display:
+					if not display.isdigit():
+						fail(f"инстанс {name}: display {display!r} не число — "
+						     "номер X-дисплея без двоеточия (98, 99)")
+						bad += 1
+					elif display in displays:
+						fail(f"дисплей :{display} объявлен дважды "
+						     f"({displays[display]} и {name}) — стенды схлопнутся")
+						bad += 1
+					else:
+						displays[display] = name
+				port = it.get("publish_port") or ""
+				if port:
+					if not port.isdigit():
+						fail(f"инстанс {name}: publish_port {port!r} не число")
+						bad += 1
+					elif port in ports:
+						fail(f"publish_port {port} объявлен дважды "
+						     f"({ports[port]} и {name})")
+						bad += 1
+					elif port == main_port:
+						fail(f"publish_port {port} инстанса {name} совпадает с "
+						     f"портом main ({main_port})")
+						bad += 1
+					else:
+						ports[port] = name
+			if instances and not bad:
+				ok("db-instances.yaml: инстансы "
+				   + ", ".join(it["name"] for it in instances)
+				   + " — коллизий каналов/дисплеев/портов нет")
 
 	# NER-эшелон анонимизации 1c-db (мягкая зависимость, как станция kd):
 	# spacy + модель в venv прокси. Нет — WARN: канал работает, но значения

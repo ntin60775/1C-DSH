@@ -5,6 +5,7 @@ Doctor на tmp-проекте без unica даёт FAIL-строки — те�
 exit, а конкретные строки вывода про contour-ключи. Запуск:
 python3 tests/test_doctor.py
 """
+import json
 import subprocess
 import sys
 import tempfile
@@ -354,6 +355,72 @@ def main() -> int:
 		      "кэш рантаймов юники не создан" in r.stdout, r.stdout[:600])
 		check("без кэша нет FAIL по артефактам",
 		      "отсутствует в кэше" not in r.stdout, r.stdout[:600])
+
+		# ── мультистенд #37: db-instances.yaml и фактический url 1c-db ──
+		# url на порт 1 — проба отказывает мгновенно, детерминированно;
+		# фейковый HOME без venv прокси — без NER-проба (spacy грузится десятки секунд)
+		fast_home = tempfile.mkdtemp(prefix="doctor-fast-home-")
+		fast = {"HOME": fast_home}
+		scaffold(root, '{"1c_db": {"url": "http://127.0.0.1:1/mcp"}, '
+		               '"1c": {"publish": {"ibsrv": "distrobox:auto", "port": 8414}}}')
+		r = run_doctor(root, fast)
+		check("моно: файла нет — OK, не WARN",
+		      "моно-режим 1c-db (штатно)" in r.stdout,
+		      r.stdout[:600])
+
+		def inst_yaml(text: str):
+			(root / ".zcode" / "1c" / "db-instances.yaml").write_text(text, encoding="utf-8")
+			return run_doctor(root, fast)
+
+		r = inst_yaml(
+			"instances:\n  inst2:\n    connection: File=build/ib2\n    user: u\n"
+			'    password: ""\n    display: 98\n    publish_port: 6011\n')
+		check("инстансы: состав зелёный",
+		      "инстансы inst2 — коллизий каналов/дисплеев/портов нет" in r.stdout,
+		      r.stdout[:600])
+
+		r = inst_yaml(
+			"instances:\n  a:\n    channel: same\n    connection: File=x\n    user: u\n"
+			'    password: ""\n    display: 98\n    publish_port: 8414\n'
+			"  b:\n    channel: same\n    connection: File=y\n    user: u\n"
+			"    display: 98\n    publish_port: 8414\n")
+		for needle, label in (
+				("канал same объявлен дважды", "дубль канала пойман"),
+				("дисплей :98 объявлен дважды", "дубль дисплея пойман"),
+				("publish_port 8414 инстанса a совпадает с портом main", "порт main пойман"),
+				("инстанс b: нет поля password", "presence password пойман (пустой валиден)"),
+		):
+			check(label, needle in r.stdout, r.stdout[:600])
+
+		r = inst_yaml("instances:\n  Base2:\n    connection: File=x\n    user: u\n"
+		              '    password: ""\n')
+		check("имя вне matcher — FAIL",
+		      "matcher mcp-гейта" in r.stdout, r.stdout[:600])
+		(root / ".zcode" / "1c" / "db-instances.yaml").unlink()
+
+		# drift порта: local применён — ok; желаемый изменился — WARN
+		loc = root / ".zcode" / "1c" / "contour.local.json"
+		loc.write_text(json.dumps({"1c_db": {"url": "http://127.0.0.1:6004/mcp",
+		                                     "desired_url": "http://127.0.0.1:1/mcp"}}),
+		               encoding="utf-8")
+		r = run_doctor(root, fast)
+		check("drift применён — ok-строка с фактическим url",
+		      "drift порта применён" in r.stdout and "6004" in r.stdout, r.stdout[:600])
+		loc.write_text(json.dumps({"1c_db": {"url": "http://127.0.0.1:6004/mcp",
+		                                     "desired_url": "http://127.0.0.1:9/mcp"}}),
+		               encoding="utf-8")
+		r = run_doctor(root, fast)
+		check("устаревший local — WARN",
+		      "contour.local.json устарел" in r.stdout, r.stdout[:600])
+		loc.unlink()
+
+		# wire-дрейф: MCP-запись не совпадает с фактическим url — WARN
+		(root / ".zcode" / "config.json").write_text(json.dumps(
+			{"mcp": {"servers": {"1c-db": {"url": "http://127.0.0.1:6003/mcp"}}}}),
+			encoding="utf-8")
+		r = run_doctor(root, fast)
+		check("MCP-запись не совпадает с фактическим url — WARN",
+		      "не совпадает с фактическим url" in r.stdout, r.stdout[:600])
 
 		return summary()
 
