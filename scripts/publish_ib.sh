@@ -2,13 +2,19 @@
 # publish_ib.sh — HTTP-публикация тестовой базы для API-контура (автономный
 # сервер 1С ibsrv, без Apache и root).
 #
-# Использование: publish_ib.sh start|stop|status [путь-к-базе]
+# Использование: publish_ib.sh start|stop|status [--instance ИМЯ] [путь-к-базе]
 #   start  — поднять публикацию (идемпотентно: живую не трогает), ждёт
 #            готовности, печатает хвост E2E_PUBLISH_JSON {url, port, pid,
 #            ibsrv_cmd} — его читают API-тесты и агент;
 #   stop   — погасить публикацию; status — exit 0, если жива.
-# База: второй аргумент или build/ib от корня проекта. Порт и команда ibsrv —
-# contour.json (1c.publish.port, 1c.publish.ibsrv) или env PUBLISH_IBSRV;
+#   --instance — инстанс мультистенда из .zcode/1c/db-instances.yaml
+#            (#37): порт — publish_port записи (8414 остаётся за main),
+#            база — File= строки подключения; рабочая каталог
+#            build/.ibsrv-<имя>. Fail-loud: файла/инстанса/порта нет,
+#            связь не File= — exit 2.
+# База: второй аргумент или build/ib от корня проекта (без --instance).
+# Порт и команда ibsrv — contour.json (1c.publish.port, 1c.publish.ibsrv)
+# или env PUBLISH_IBSRV;
 # ibsrv: пусто/путь/готовая команда | distrobox:auto (искать в контейнерах) |
 # distrobox:<имя> (только этот контейнер).
 # Сервер слушает только 127.0.0.1; регламентные задания выключены.
@@ -18,7 +24,16 @@
 # ibsrv, 1c.publish.allow_uid) громко отказывает.
 set -euo pipefail
 
-CMD="${1:-status}"
+INSTANCE=""
+ARGS=()
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--instance) INSTANCE="${2:-}"; shift 2 ;;
+		--instance=*) INSTANCE="${1#--instance=}"; shift ;;
+		*) ARGS+=("$1"); shift ;;
+	esac
+done
+CMD="${ARGS[0]:-status}"
 # ROOT — проект контура, НЕ CWD: вендоренный скрипт живёт в
 # <проект>/.zcode/1c/scripts, корень ищется подъёмом от самого скрипта
 # (вызов абсолютным путём из чужого каталога обязан работать); иначе
@@ -40,7 +55,7 @@ if [ ! -f "$ROOT/v8project.yaml" ] && [ ! -d "$ROOT/.zcode/1c" ]; then
 	echo "✗ корень $ROOT не похож на проект контура (нет v8project.yaml и .zcode/1c/) — запусти из корня проекта" >&2
 	exit 2
 fi
-BASE="${2:-$ROOT/build/ib}"
+BASE="${ARGS[1]:-$ROOT/build/ib}"
 WORK="$ROOT/build/.ibsrv"
 
 # ── настройки из contour.json ──
@@ -58,6 +73,58 @@ PY
 }
 PORT="$(read_setting port)"; PORT="${PORT:-8414}"
 IBSRV_LINE="$(read_setting ibsrv)"; IBSRV_LINE="${PUBLISH_IBSRV:-$IBSRV_LINE}"
+
+# ── инстанс мультистенда (#37): порт — publish_port записи, база — File=
+# её connection, рабочий каталог свой (build/.ibsrv-<имя>). Fail-loud:
+# файла/инстанса нет, publish_port не задан, связь не файловая — exit 2,
+# фолбэка на main нет (запрос ушёл бы в чужую базу).
+if [ -n "$INSTANCE" ]; then
+	eval "$(SELF="$SELF" ROOT="$ROOT" INSTANCE="$INSTANCE" python3 - <<'PY'
+import os, shlex, sys, pathlib
+sys.path.insert(0, os.environ["SELF"])
+import wire_config as wc
+root, name = pathlib.Path(os.environ["ROOT"]), os.environ["INSTANCE"]
+path = root / ".zcode" / "1c" / "db-instances.yaml"
+if not path.is_file():
+    print("PUBLISH_FAIL=" + shlex.quote(f"нет {path} — ленивый инит: создай "
+          "по образцу .zcode/1c/templates/db-instances.example.yaml "
+          "(скилл 1c-db-data)"))
+    sys.exit(0)
+try:
+    rec = {i["name"]: i for i in wc.parse_instances(root)}.get(name)
+except ValueError as e:
+    print("PUBLISH_FAIL=" + shlex.quote(f"db-instances.yaml: {e}"))
+    sys.exit(0)
+if rec is None:
+    print("PUBLISH_FAIL=" + shlex.quote(
+        f"инстанса {name} нет в db-instances.yaml — фолбэка на main нет"))
+    sys.exit(0)
+port = rec.get("publish_port") or ""
+if not port.isdigit():
+    print("PUBLISH_FAIL=" + shlex.quote(
+        f"у инстанса {name} нет publish_port (числа) в db-instances.yaml — "
+        "8414 остаётся за main, инстансу нужен свой"))
+    sys.exit(0)
+conn = rec.get("connection") or ""
+if not conn.startswith("File="):
+    print("PUBLISH_FAIL=" + shlex.quote(
+        f"публикация инстанса поддержана для файловых баз (File=…); "
+        f"у {name}: {conn[:60] or 'связь пуста'}"))
+    sys.exit(0)
+print("PUBLISH_PORT=" + shlex.quote(port))
+print("PUBLISH_BASE=" + shlex.quote(conn[5:].strip()))
+PY
+)"
+	if [ -n "${PUBLISH_FAIL:-}" ]; then
+		echo "✗ инстанс $INSTANCE: $PUBLISH_FAIL" >&2
+		exit 2
+	fi
+	PORT="$PUBLISH_PORT"
+	BASE="$PUBLISH_BASE"
+	case "$BASE" in /*) ;; *) BASE="$ROOT/$BASE" ;; esac
+	WORK="$ROOT/build/.ibsrv-$INSTANCE"
+	echo "→ инстанс $INSTANCE: база $BASE, публикация :$PORT"
+fi
 
 # ── резолв ibsrv: env/contour → режим distrobox:* (только контейнеры) →
 #    хост (пустое значение) → живой distrobox-контейнер ──
@@ -255,7 +322,7 @@ PY
 	print_json "$(pgrep -f -- "--config=$WORK/ibases.json" | head -1)"
 	;;
 *)
-	echo "использование: publish_ib.sh start|stop|status [путь-к-базе]" >&2
+	echo "использование: publish_ib.sh start|stop|status [--instance ИМЯ] [путь-к-базе]" >&2
 	exit 2
 	;;
 esac

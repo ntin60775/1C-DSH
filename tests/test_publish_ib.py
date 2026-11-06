@@ -44,6 +44,8 @@ def vendored(proj: Path) -> Path:
 	sdir.mkdir(parents=True, exist_ok=True)
 	shutil.copy(REPO / "scripts" / "publish_ib.sh", sdir / "publish_ib.sh")
 	shutil.copy(REPO / "scripts" / "run_e2e.sh", sdir / "run_e2e.sh")
+	# путь --instance импортирует wire_config (разбор db-instances.yaml, #37)
+	shutil.copy(REPO / "scripts" / "wire_config.py", sdir / "wire_config.py")
 	return sdir / "publish_ib.sh"
 
 
@@ -205,6 +207,68 @@ def main():
 			"root-прогон" not in echo_text and "stat -c %u" in body,
 			"старое обобщение осталось или uid не называется",
 		)
+
+		# 10. мультистенд #37: публикация инстанса — порт из publish_port
+		#     записи, база из File= её connection, свой рабочий каталог.
+		def inst_yaml(text: str):
+			(proj / ".zcode" / "1c" / "db-instances.yaml").write_text(text, encoding="utf-8")
+
+		r = sh(pub, proj, "status", "--instance", "ib2")
+		_lib.check(
+			"инстанс без db-instances.yaml → exit 2 с ленивым инитом",
+			r.returncode == 2 and "ленивый инит" in r.stderr,
+			f"rc={r.returncode}, stderr={r.stderr[:200]!r}",
+		)
+		inst_yaml("instances:\n  ib2:\n    connection: File=build/ib2\n"
+		          "    user: u\n    password: \"\"\n")
+		r = sh(pub, proj, "status", "--instance", "ib2")
+		_lib.check(
+			"инстанс без publish_port → exit 2 (8414 остаётся за main)",
+			r.returncode == 2 and "publish_port" in r.stderr,
+			f"rc={r.returncode}, stderr={r.stderr[:200]!r}",
+		)
+		inst_yaml("instances:\n  ib2:\n    publish_port: 8498\n"
+		          "    connection: Srvr=srv;Ref=base\n    user: u\n"
+		          "    password: \"\"\n")
+		r = sh(pub, proj, "status", "--instance", "ib2")
+		_lib.check(
+			"серверная связь инстанса → exit 2 (публикация — файловые базы)",
+			r.returncode == 2 and "файловых баз" in r.stderr,
+			f"rc={r.returncode}, stderr={r.stderr[:200]!r}",
+		)
+		ib2 = proj / "build" / "ib2"
+		ib2.mkdir(parents=True)
+		inst_id = "9f31c5aa-2b7e-4c41-a0d3-5e8f1b2c9d70"
+		(ib2 / "DoNotCopy.txt").write_text(f"1С:Предприятие\n{inst_id}\n", encoding="utf-8")
+		inst_yaml("instances:\n  ib2:\n    publish_port: 8498\n"
+		          "    connection: File=build/ib2\n    user: u\n"
+		          "    password: \"\"\n")
+		r = sh(pub, proj, "start", "--instance", "ib2")
+		itext = ""
+		icfg = proj / "build" / ".ibsrv-ib2" / "ibases.json"
+		if icfg.exists():
+			itext = icfg.read_text(encoding="utf-8")
+		_lib.check(
+			"инстанс: свой WORK, свой порт и настоящий id СВОЕЙ базы в ibases.json",
+			r.returncode == 2 and "ibsrv упал" in r.stderr
+			and "port: 8498" in itext and inst_id in itext
+			and "port: %d" % TEST_PORT not in itext,
+			f"rc={r.returncode}, text={itext[:200]!r}, stderr={r.stderr[:120]!r}",
+		)
+		_lib.check(
+			"main-конфиг инстансным стартом не тронут",
+			(proj / "build" / ".ibsrv" / "ibases.json").exists()
+			and f"port: {TEST_PORT}" in (proj / "build" / ".ibsrv" / "ibases.json"
+			                             ).read_text(encoding="utf-8"),
+			"main-конфиг отсутствует или перезаписан",
+		)
+		r = sh(pub, proj, "status", "--instance", "ib2")
+		_lib.check(
+			"status --instance смотрит в свой WORK (не поднята, exit 1)",
+			r.returncode == 1 and "не поднята" in r.stderr,
+			f"rc={r.returncode}, stderr={r.stderr[:120]!r}",
+		)
+		(proj / ".zcode" / "1c" / "db-instances.yaml").unlink()
 	finally:
 		shutil.rmtree(tmp, ignore_errors=True)
 	sys.exit(_lib.summary())
