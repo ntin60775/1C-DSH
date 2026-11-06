@@ -46,8 +46,11 @@
 # клиент/Xvfb/WM — рантайм-ключи от sha1(корень|X) (конфликтов двух
 # инстансов нет), pid-файл и лог прокси — от sha1(корень), общий: прокси
 # один на проект, инстанс = канал. Негодная запись (нет файла/инстанса,
-# битый YAML, неполные поля, канал вне [A-Za-z0-9_-]{1,64}) — exit 2,
-# фолбэк на main запрещён (мультистенд #37 Готово 2). Файла штатно может
+# битый YAML, отсутствующее поле, пустые connection/user, канал вне
+# [A-Za-z0-9_-]{1,64}) — exit 2, фолбэк на main запрещён (мультистенд #37
+# Готово 2); пустой password валиден — база без пароля (решение оператора
+# 06.11, mono-резолв читает пустые кавычки и inline-комментарий так же).
+# Файла штатно может
 # не быть — моно-режим (main из v8project.local.yaml, дисплей :97).
 # Kill-маркер (мультистенд Т7): инстанс запускается с копией обработки в
 # build/.1c-db-autostart-<имя>/ — путь копии в cmdline различает инстансы
@@ -248,7 +251,8 @@ rel = cfg.relative_to(root)
 if not cfg.is_file():
     what = f"нет {rel}" if not cfg.exists() else f"{rel} — не файл, а каталог"
     fail(f"--instance {name}: {what} — скопируй образец {SAMPLE} в {rel} и опиши "
-         f"инстанс {name}: обязательны connection, user, password; channel, "
+         f"инстанс {name}: обязательны connection, user, password "
+         f"(password может быть пустым — база без пароля); channel, "
          f"display, publish_port — по необходимости")
 try:
     text = cfg.read_text(encoding="utf-8-sig")  # utf-8-sig снимает BOM редактора
@@ -309,9 +313,17 @@ if not seen_instances:
 if name not in entries:
     known = ", ".join(sorted(entries)) or "записей нет"
     fail(f"--instance {name}: инстанса {name} нет в {rel} (есть: {known}) — образец: {SAMPLE}")
-missing = [f for f in ("connection", "user", "password") if not entries[name].get(f)]
+# Поля обязаны присутствовать; пустое ЗНАЧЕНИЕ валидно только у password —
+# база без пароля (решение оператора 06.11, приёмка Т8: демо-учётка без
+# пароля). Пустые connection/user — не годятся.
+missing = [f for f in ("connection", "user", "password") if f not in entries[name]]
 if missing:
     fail(f"--instance {name}: в {rel} не заполнены поля {', '.join(missing)} — образец: {SAMPLE}")
+empty = [f for f in ("connection", "user") if not entries[name].get(f)]
+if empty:
+    fail(f"--instance {name}: пустые значения недопустимы для полей "
+         f"{', '.join(empty)} (password может быть пустым — база без пароля) "
+         f"— образец: {SAMPLE}")
 
 # Годная запись: связь собирается здесь — относительный File= абсолютизируется
 # от корня (зеркало mono-пути: СтрокаСоединенияИнформационнойБазы() различает
@@ -1000,13 +1012,38 @@ if conn.startswith("File=") and not conn[5:].lstrip('"').startswith("/"):
 f = root / "v8project.local.yaml"
 if f.is_file():
     text = f.read_text(encoding="utf-8")
-    mu = re.search(r"(?m)^\s*user\s*:\s*['\"]?(.+?)\s*['\"]?\s*$", text)
-    mp = re.search(r"(?m)^\s*password\s*:\s*['\"]?(.+?)\s*['\"]?\s*$", text)
-    # канон строки подключения 1С: Usr= (не User=)
+
+    def yaml_val(raw):
+        # значение до inline-комментария вне кавычек, кавычки снимаются:
+        # «password: ''   # комментарий» — пустой пароль, не мусор-строка
+        # (приёмка Т8 06.11, решение оператора «безпарольное должно работать»)
+        out, in_q = "", None
+        for ch in raw:
+            if in_q:
+                out += ch
+                if ch == in_q:
+                    in_q = None
+                continue
+            if ch in "'\"":
+                in_q = ch
+            elif ch == "#" and out.endswith(" "):
+                return _unq(out.rstrip())
+            out += ch
+        return _unq(out.rstrip())
+
+    def _unq(val):
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in "'\"":
+            return val[1:-1]
+        return val
+
+    mu = re.search(r"(?m)^\s*user\s*:\s*(.+?)\s*$", text)
+    mp = re.search(r"(?m)^\s*password\s*:\s*(.+?)\s*$", text)
+    # канон строки подключения 1С: Usr= (не User=); пустое значение —
+    # явный пустой Pwd (учётка без пароля), не пропуск поля
     if mu and "Usr=" not in conn:
-        conn += f';Usr="{mu.group(1)}"'
+        conn += f';Usr="{yaml_val(mu.group(1))}"'
     if mp and "Pwd=" not in conn:
-        conn += f';Pwd="{mp.group(1)}"'
+        conn += f';Pwd="{yaml_val(mp.group(1))}"'
 print(conn)
 PY
 )"

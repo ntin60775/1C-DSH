@@ -361,6 +361,28 @@ wait_client тест2 && echo "ok=$n"
                "S3cret-PW-z9" not in r.stderr,
                f"err={r.stderr[:300]!r}")
 
+    # пустой password — база без пароля (решение оператора 06.11, приёмка
+    # Т8: демо-учётка была без пароля); поле password обязано присутствовать
+    write_instances("instances:\n  base2:\n    connection: File=build/ib\n"
+                    "    user: u\n    password: \"\"\n")
+    r = run_instance(proj, "--instance", "base2")
+    _lib.check("Т4: пустой password — валидная запись (база без пароля)",
+               r.returncode == 0 and len(r.stdout.split()) == 5,
+               f"rc={r.returncode}, out={r.stdout!r}, err={r.stderr[:300]!r}")
+    write_instances("instances:\n  base2:\n    connection: File=build/ib\n"
+                    "    user: u\n")
+    r = run_instance(proj, "--instance", "base2")
+    _lib.check("Т4: поле password отсутствует — отказ (явный password: \"\" для безпарольной)",
+               r.returncode == 2 and "password" in r.stderr,
+               f"rc={r.returncode}, err={r.stderr[:300]!r}")
+    write_instances("instances:\n  base2:\n    connection: \"\"\n"
+                    "    user: u\n    password: p\n")
+    r = run_instance(proj, "--instance", "base2")
+    _lib.check("Т4: пустой connection — отказ (пустота валидна только у password)",
+               r.returncode == 2 and "connection" in r.stderr
+               and "может быть пустым" in r.stderr,
+               f"rc={r.returncode}, err={r.stderr[:300]!r}")
+
     write_instances(
         "instances:\n"
         "  base2:\n"
@@ -408,15 +430,16 @@ wait_client тест2 && echo "ok=$n"
                r.returncode == 2,
                f"rc={r.returncode}, err={r.stderr[:300]!r}")
 
-    # образец копируется как есть → fail-loud направляет на заполнение
-    # user/password (снятие кавычек у пустых значений); образца на базовом
+    # образец копируется как есть → fail-loud направляет на заполнение user
+    # (password: "" в образце валиден — база без пароля); образца на базовом
     # дереве нет — кейс инвариант поставки, не краснота
     sample = REPO / "templates" / "db-instances.example.yaml"
     if sample.is_file():
         write_instances(sample.read_text(encoding="utf-8"))
         r = run_instance(proj, "--instance", "base2")
-        _lib.check("Т4: образец как есть — exit 2 с перечнем user, password",
-                   r.returncode == 2 and "user" in r.stderr and "password" in r.stderr,
+        _lib.check("Т4: образец как есть — отказ только по пустому user",
+                   r.returncode == 2 and "полей user" in r.stderr
+                   and "полей user, password" not in r.stderr,
                    f"rc={r.returncode}, err={r.stderr[:300]!r}")
 
     mono = tmp / "mono"
@@ -613,6 +636,40 @@ wait_client тест2 && echo "ok=$n"
     want_mono = f'File={mc.resolve()}/build/ib;Usr="mu";Pwd="mp"'
     _lib.check("Т5: mono-связь — резолв origin + Usr/Pwd из local",
                r.returncode == 0 and r.stdout.strip() == want_mono,
+               f"rc={r.returncode}, out={r.stdout!r}, err={r.stderr[:300]!r}")
+
+    # mono с пустым паролем и inline-комментарием — форма local.yaml демо на
+    # приёмке Т8 (06.11): «password: ''   # комментарий» — пустой пароль,
+    # не мусор-строка (решение оператора «безпарольное должно работать»)
+    mc2 = tmp / "mono-conn-empty"
+    mc2.mkdir()
+    (mc2 / "v8project.local.yaml").write_text(
+        'infobases:\n  origin:\n    connection: File=build/ib\n'
+        "user: mu\npassword: ''   # пароль пользователя; файл вне git (канон контура)\n",
+        encoding="utf-8")
+    mharness2 = (f"ROOT={shlex.quote(str(mc2))}\n"
+                 f"HOOKS_DIR={shlex.quote(str(REPO / 'hooks'))}\n"
+                 f"CONN=\"$(python3 - \"$ROOT\" \"$HOOKS_DIR\" <<'PY'\n"
+                 f"{mono_body}"
+                 f"PY\n)\"\n"
+                 f'printf \'%s\\n\' "$CONN"\n')
+    mpath2 = tmp / "rt-mono-conn-empty.sh"
+    mpath2.write_text(mharness2, encoding="utf-8")
+    r = subprocess.run(["bash", str(mpath2)], capture_output=True, text=True,
+                       env=dict(os.environ))
+    want_empty = f'File={mc2.resolve()}/build/ib;Usr="mu";Pwd=""'
+    _lib.check("Т5/Т8: mono с «'' # комментарий» — явный пустой Pwd, без мусора",
+               r.returncode == 0 and r.stdout.strip() == want_empty,
+               f"rc={r.returncode}, out={r.stdout!r}, err={r.stderr[:300]!r}")
+    # пароль с пробелами в кавычках и без комментария — значение целиком
+    (mc2 / "v8project.local.yaml").write_text(
+        'infobases:\n  origin:\n    connection: File=build/ib\n'
+        'user: "mu u"\npassword: "p w"\n', encoding="utf-8")
+    r = subprocess.run(["bash", str(mpath2)], capture_output=True, text=True,
+                       env=dict(os.environ))
+    want_q = f'File={mc2.resolve()}/build/ib;Usr="mu u";Pwd="p w"'
+    _lib.check("Т5/Т8: mono кавычные значения с пробелами — снимаются целиком",
+               r.returncode == 0 and r.stdout.strip() == want_q,
                f"rc={r.returncode}, out={r.stdout!r}, err={r.stderr[:300]!r}")
 
     # дисплей: поле → пул (занят = живой Xvfb; stale-сокет не отнимает слот)
