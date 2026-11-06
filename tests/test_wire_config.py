@@ -247,6 +247,108 @@ def main() -> int:
 		      agents.read_text(encoding="utf-8") == "# Без маркеров\nсвоё\n"
 		      and "маркеров секции контура нет" in r.stdout, r.stdout[-200:])
 
+		# ── мультистенд #37: записи инстансов из db-instances.yaml ──
+		# моно: файла нет — дописей нет (ленивый инит)
+		servers = json.loads((root / ".zcode" / "config.json").read_text(encoding="utf-8")
+		                     )["mcp"]["servers"]
+		check("моно: записей 1c-db-* нет",
+		      not [s for s in servers if s.startswith("1c-db-")], str(list(servers)))
+
+		def wire_instances(text: str):
+			(root / ".zcode" / "1c" / "db-instances.yaml").write_text(text, encoding="utf-8")
+			return run_vendored()
+
+		r = wire_instances(
+			"instances:\n"
+			"  inst2:\n"
+			"    channel: inst2\n"
+			"    connection: File=build/ib2\n"
+			"    user: u\n"
+			'    password: ""\n'
+			"    display: 98\n"
+			"    publish_port: 6011\n"
+			"  main:\n"
+			"    connection: File=build/ib\n"
+			"    user: u\n"
+			"    password: p\n")
+		check("инстансы: wire выходит 0", r.returncode == 0, (r.stdout + r.stderr)[:300])
+		check("инстансы: записи названы в выводе", "1c-db-inst2" in r.stdout, r.stdout[-300:])
+		servers = json.loads((root / ".zcode" / "config.json").read_text(encoding="utf-8")
+		                     )["mcp"]["servers"]
+		check("инстансы: 1c-db-inst2 с каналом",
+		      servers.get("1c-db-inst2", {}).get("url")
+		      == "http://127.0.0.1:6003/mcp?channel=inst2", str(servers.get("1c-db-inst2")))
+		check("инстансы: дубля 1c-db-main нет",
+		      "1c-db-main" not in servers, str([s for s in servers if "1c-db" in s]))
+		check("инстансы: main-запись без канала",
+		      servers.get("1c-db", {}).get("url") == "http://127.0.0.1:6003/mcp",
+		      str(servers.get("1c-db")))
+		check("инстансы: --check зелёный", run_vendored("--check").returncode == 0, "")
+
+		# фактический url из local-слоя (drift Т6) — и main, и инстанс
+		(root / ".zcode" / "1c" / "contour.local.json").write_text(json.dumps(
+			{"1c_db": {"url": "http://127.0.0.1:6004/mcp",
+			           "desired_url": "http://127.0.0.1:6003/mcp"}}), encoding="utf-8")
+		run_vendored()
+		servers = json.loads((root / ".zcode" / "config.json").read_text(encoding="utf-8")
+		                     )["mcp"]["servers"]
+		check("drift: main-запись на фактическом порту",
+		      servers.get("1c-db", {}).get("url") == "http://127.0.0.1:6004/mcp",
+		      str(servers.get("1c-db")))
+		check("drift: инстанс на фактическом порту",
+		      servers.get("1c-db-inst2", {}).get("url")
+		      == "http://127.0.0.1:6004/mcp?channel=inst2", str(servers.get("1c-db-inst2")))
+
+		# желаемый в contour изменился — local снимается (семантика Т6)
+		(root / ".zcode" / "1c" / "contour.json").write_text(
+			json.dumps({"1c_db": {"url": "http://127.0.0.1:6010/mcp"}}), encoding="utf-8")
+		run_vendored()
+		servers = json.loads((root / ".zcode" / "config.json").read_text(encoding="utf-8")
+		                     )["mcp"]["servers"]
+		check("drift снят: url из contour.json",
+		      servers.get("1c-db", {}).get("url") == "http://127.0.0.1:6010/mcp",
+		      str(servers.get("1c-db")))
+		(root / ".zcode" / "1c" / "contour.json").write_text(
+			json.dumps({"1c_db": {"url": "http://127.0.0.1:6003/mcp"}}), encoding="utf-8")
+		(root / ".zcode" / "1c" / "contour.local.json").unlink()
+
+		# fail-loud: имя вне matcher гейта — сервер вне прод-блокировки
+		r = wire_instances(
+			"instances:\n  Base2:\n    connection: File=x\n    user: u\n"
+			'    password: ""\n')
+		check("имя Base2: exit 2 и отсылка к matcher",
+		      r.returncode == 2 and "matcher mcp-гейта" in r.stdout,
+		      (r.stdout + r.stderr)[:300])
+		servers = json.loads((root / ".zcode" / "config.json").read_text(encoding="utf-8")
+		                     )["mcp"]["servers"]
+		check("имя Base2: конфиг не порчен", "1c-db-Base2" not in servers, str(list(servers)))
+
+		# fail-loud: канал вне набора (тулкит молча уводит в default)
+		r = wire_instances(
+			"instances:\n  b2:\n    channel: два\n    connection: File=x\n"
+			"    user: u\n    password: \"\"\n")
+		check("канал кириллицей: exit 2",
+		      r.returncode == 2 and "default" in r.stdout, (r.stdout + r.stderr)[:300])
+
+		# fail-loud: битый yaml (табуляция) — и в --check тоже
+		r = wire_instances("instances:\n\tb2:\n")
+		check("табуляция: exit 2",
+		      r.returncode == 2 and "табуляция" in r.stdout, (r.stdout + r.stderr)[:300])
+		check("--check на бите тоже громкий", run_vendored("--check").returncode == 2, "")
+
+		# пустые значения с inline-комментарием валидны (семантика 574471e)
+		r = wire_instances(
+			"instances:\n  b2:\n    connection: File=x # связь\n    user: u\n"
+			"    password: '' # без пароля\n")
+		check("инлайн-комментарий: wire выходит 0",
+		      r.returncode == 0, (r.stdout + r.stderr)[:300])
+		servers = json.loads((root / ".zcode" / "config.json").read_text(encoding="utf-8")
+		                     )["mcp"]["servers"]
+		check("инлайн-комментарий: запись с каналом по имени",
+		      servers.get("1c-db-b2", {}).get("url")
+		      == "http://127.0.0.1:6003/mcp?channel=b2", str(servers.get("1c-db-b2")))
+		(root / ".zcode" / "1c" / "db-instances.yaml").unlink()
+
 		return summary()
 
 

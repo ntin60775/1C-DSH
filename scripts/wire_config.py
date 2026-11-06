@@ -19,7 +19,15 @@
 2. mcp: вливает фрагменты из scripts/mcp_fragments.json (шаблоны 1c-testpilot,
    1c-db и 1c-kd) в mcp.servers, подставляя url из .zcode/1c/contour.json
    (1c_db.url → {{1c_db_url}}, 1c_kd.url → {{kd_url}}; умолчания —
-   DEFAULT_*_URL ниже).
+   DEFAULT_*_URL ниже). Для 1c-db url берётся фактический: local-слой
+   .zcode/1c/contour.local.json (drift порта Т6) перекрывает contour.json,
+   пока его desired_url совпадает с желаемым. Если в проекте есть
+   .zcode/1c/db-instances.yaml (мультистенд #37), поверх добавляются записи
+   1c-db-<имя> с url ?channel=<канал> — запись 1c-db остаётся за main,
+   дубля 1c-db-main нет. Битый файл, имя вне [a-z0-9_-]{1,64} (сервер не
+   попал бы в matcher mcp-гейта — тихий обход прод-блокировки) или канал
+   вне [A-Za-z0-9_-]{1,64} (тулкит молча уводит его в default) — exit 2,
+   фолбэка нет; файла нет — моно-режим, дописей нет (ленивый инит).
 
 Работает из обеих раскладок: в репо плагина (hooks/hooks.json, scripts/)
 и вендоренно в проекте (.zcode/hooks/hooks.json, .zcode/1c/scripts/) —
@@ -46,11 +54,14 @@ password; файл машинно-локальный, вне git).
 Запуск: python3 wire_config.py <project-root> [--check]
 """
 import json
+import re
 import sys
 from pathlib import Path
 
 CONFIG = ".zcode/config.json"
 CONTOUR = ".zcode/1c/contour.json"
+LOCAL_CONTOUR = ".zcode/1c/contour.local.json"
+DB_INSTANCES = ".zcode/1c/db-instances.yaml"
 AGENTS = "AGENTS.md"
 AGENTS_SECTION = ".zcode/1c/templates/agents-section.md"
 SECTION_BEGIN = "<!-- BEGIN 1C CONTOUR"
@@ -64,6 +75,12 @@ URL_TEMPLATES = {
 }
 HOOK_EVENTS = ("PreToolUse", "PostToolUse", "PostToolUseFailure", "SessionStart",
                "UserPromptSubmit", "PermissionRequest", "Stop")
+# matcher mcp-гейта: ^mcp__1c-db(-[a-z0-9_-]+)?__.* — имя инстанса обязано
+# попадать в него, сервер вне matcher = тихий обход прод-блокировки (хвост Т1)
+INSTANCE_NAME_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
+# канал валидирует start_1c_db.sh ([A-Za-z0-9_-]{1,64}); вне набора тулкит
+# молча уводит канал в default и два инстанса схлопываются (панель Т5)
+CHANNEL_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 def load_json(path: Path, default):
@@ -76,6 +93,110 @@ def load_json(path: Path, default):
 def contour_of(root: Path) -> dict:
 	data = load_json(root / CONTOUR, {})
 	return data if isinstance(data, dict) else {}
+
+
+def actual_db_url(root: Path) -> str:
+	"""Фактический url 1c-db: contour.json, поверх — local-слой (drift Т6).
+
+	local применяется, только пока его desired_url совпадает с желаемым в
+	contour — смена url в contour снимает дрейф (та же семантика, что у
+	start_1c_db.sh; решение владельца #37: фактический порт живёт в local
+	и читается wire_config).
+	"""
+	url = (contour_of(root).get("1c_db") or {}).get("url") or DEFAULT_DB_URL
+	loc = load_json(root / LOCAL_CONTOUR, None)
+	l1c = loc.get("1c_db") if isinstance(loc, dict) else {}
+	if isinstance(l1c, dict) and l1c.get("desired_url") == url:
+		url = l1c.get("url") or url
+	return url
+
+
+def _yaml_scalar(raw: str) -> str:
+	"""Скаляр db-instances.yaml: inline-комментарий снимается только вне
+	кавычек, пара кавычек снимается (семантика yaml_val start_1c_db.sh,
+	правка 574471e — `password: ''   # комментарий` давал мусор)."""
+	raw = raw.strip()
+	if not raw:
+		return ""
+	if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "'\"":
+		return raw[1:-1]
+	in_s = in_d = False
+	for i, ch in enumerate(raw):
+		if ch == "'" and not in_d:
+			in_s = not in_s
+		elif ch == '"' and not in_s:
+			in_d = not in_d
+		elif ch == "#" and not in_s and not in_d and i and raw[i - 1] in " \t":
+			raw = raw[:i].strip()
+			break
+	if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "'\"":
+		raw = raw[1:-1]
+	return raw
+
+
+def parse_instances(root: Path) -> list:
+	"""Разбор db-instances.yaml (минимальный строгий поднабор YAML).
+
+	Возвращает записи {name, channel, display, publish_port, connection,
+	user, password, _seen} в порядке объявления — полный состав, чтобы
+	doctor и рантайм сверяли одни и те же записи; _seen — множество
+	присутствующих ключей (пустой password валиден, отсутствие ключа —
+	нет: гвард Т4). Табуляция, неразбираемая строка, имя вне
+	[a-z0-9_-]{1,64} или канал вне [A-Za-z0-9_-]{1,64} —
+	ValueError с текстом для оператора (fail-loud, тихий фолбэк запрещён).
+	"""
+	path = root / DB_INSTANCES
+	instances: list = []
+	in_block = False
+	current = None
+	for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+		if "\t" in line:
+			raise ValueError(f"{path}:{n}: табуляция в YAML — отбивай пробелами")
+		if not line.strip() or line.lstrip().startswith("#"):
+			continue
+		indent = len(line) - len(line.lstrip(" "))
+		text = line.strip()
+		if indent == 0:
+			if text == "instances:":
+				in_block = True
+			elif in_block:
+				break  # следующий верхнеуровневый ключ — блок кончился
+			continue
+		if not in_block:
+			continue
+		if indent <= 2 and text.endswith(":"):
+			current = {"name": text.rstrip(":").strip(), "channel": "",
+			           "display": "", "publish_port": "", "connection": "",
+			           "user": "", "password": "", "_seen": set()}
+			instances.append(current)
+			continue
+		if current is not None and ":" in text:
+			key, _, raw = text.partition(":")
+			key = key.strip()
+			if key in current:
+				current[key] = _yaml_scalar(raw)
+				current["_seen"].add(key)
+			continue
+		raise ValueError(f"{path}:{n}: не разобрал строку — {text!r}")
+	for it in instances:
+		if not INSTANCE_NAME_RE.match(it["name"]):
+			raise ValueError(
+				f"{path}: имя инстанса {it['name']!r} вне [a-z0-9_-]{{1,64}} — "
+				"сервер 1c-db-<имя> не попал бы в matcher mcp-гейта (тихий "
+				"обход прод-блокировки); переименуй нижним регистром")
+		channel = it["channel"] or it["name"]
+		if not CHANNEL_RE.match(channel):
+			raise ValueError(
+				f"{path}: канал {channel!r} инстанса {it['name']} вне "
+				"[A-Za-z0-9_-]{1,64} — тулкит молча уводит его в default, "
+				"инстансы схлопываются (панель Т5)")
+	return instances
+
+
+def channel_url(url: str, channel: str) -> str:
+	"""url с привязкой MCP-сессии к каналу прокси (?channel=)."""
+	sep = "&" if "?" in url else "?"
+	return f"{url}{sep}channel={channel}"
 
 
 # ── contour.json: каркас env-настроек ────────────────────────────────────────
@@ -196,20 +317,43 @@ def merge_hooks(config: dict, wired: dict) -> None:
 
 # ── mcp ──────────────────────────────────────────────────────────────────────
 
-def merge_mcp(config: dict, root: Path, plugin_root: Path) -> None:
+def merge_mcp(config: dict, root: Path, plugin_root: Path) -> list:
+	"""Влить фрагменты (и инстансы) в mcp.servers; вернуть список имён."""
 	fragments = load_json(plugin_root / "scripts" / "mcp_fragments.json", {})
 	if not isinstance(fragments, dict) or not fragments:
-		return
+		return []
 	contour = contour_of(root)
 	servers = config.setdefault("mcp", {}).setdefault("servers", {})
+	wired = []
 	for name, fragment in fragments.items():
 		server = json.loads(json.dumps(fragment))  # копия шаблона
 		if isinstance(server, dict):
 			templ = server.get("url")
 			if templ in URL_TEMPLATES:
 				key, default = URL_TEMPLATES[templ]
-				server["url"] = (contour.get(key) or {}).get("url") or default
+				# 1c-db — фактический url: local-слой применён (drift Т6);
+				# решение владельца #37 «фактический порт читается wire_config»
+				server["url"] = actual_db_url(root) if key == "1c_db" \
+					else (contour.get(key) or {}).get("url") or default
 		servers[name] = server
+		wired.append(name)
+	# Инстансы (#37): N записей 1c-db-<имя> из машино-локального
+	# db-instances.yaml; файла нет — моно-режим, дописей нет (ленивый инит).
+	inst_path = root / DB_INSTANCES
+	if inst_path.is_file():
+		template = fragments.get("1c-db")
+		if not isinstance(template, dict) or "url" not in template:
+			raise ValueError("в mcp_fragments.json нет образца 1c-db — "
+			                 "записи инстансов не построить")
+		base = actual_db_url(root)
+		for it in parse_instances(root):
+			if it["name"] == "main":
+				continue  # запись 1c-db остаётся за main; дубль 1c-db-main не создаётся
+			entry = json.loads(json.dumps(template))
+			entry["url"] = channel_url(base, it["channel"] or it["name"])
+			servers[f"1c-db-{it['name']}"] = entry
+			wired.append(f"1c-db-{it['name']}")
+	return wired
 
 
 # ── входная точка ────────────────────────────────────────────────────────────
@@ -244,12 +388,16 @@ def sync_agents_section(root: Path, write: bool) -> tuple[str, bool]:
 	return "РАСХОЖДЕНИЕ: секция AGENTS.md не совпадает с шаблоном", True
 
 
-def expected_config(root: Path, current: dict) -> dict:
-	"""Конфиг, который получился бы при wire (на копии текущего)."""
+def expected_config(root: Path, current: dict) -> tuple:
+	"""(Конфиг, который получился бы при wire, имена влитых серверов).
+
+	ValueError от parse_instances (битый db-instances.yaml, имя/канал вне
+	набора) отдаётся вызывающему — fail-loud, тихий фолбэк запрещён.
+	"""
 	config = json.loads(json.dumps(current))
 	merge_hooks(config, plugin_hooks_to_config(root))
-	merge_mcp(config, root, Path(__file__).resolve().parent.parent)
-	return config
+	wired = merge_mcp(config, root, Path(__file__).resolve().parent.parent)
+	return config, wired
 
 
 def main() -> int:
@@ -263,7 +411,12 @@ def main() -> int:
 	current = load_json(root / CONFIG, {})
 	if not isinstance(current, dict):
 		current = {}
-	expect = expected_config(root, current)
+	try:
+		expect, wired = expected_config(root, current)
+	except ValueError as e:
+		print(f"✗ {e}")
+		print("  записи инстансов не разведены — почини db-instances.yaml и запусти снова")
+		return 2
 	expect_dump = json.dumps(expect, sort_keys=True, ensure_ascii=False)
 
 	if "--check" in flags:
@@ -284,6 +437,9 @@ def main() -> int:
 	config_path.write_text(json.dumps(expect, ensure_ascii=False, indent="\t") + "\n",
 	                       encoding="utf-8")
 	print(f"разведено: {config_path}")
+	instances = [n for n in wired if n.startswith("1c-db-")]
+	if instances:
+		print(f"записи инстансов 1c-db: {', '.join(instances)}")
 	print(sync_agents_section(root, write=True)[0])
 	print("перезапусти сессию ZCode, чтобы hooks и MCP вступили в силу")
 	return 0

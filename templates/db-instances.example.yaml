@@ -14,9 +14,9 @@
 #   display      — номер X-дисплея для --headless без двоеточия (98, 99);
 #                  не задан — свободный из пула 97–99; без --headless
 #                  не используется
-#   publish_port — порт публикации; хранится здесь, пока не читается:
-#                  публикация берёт 1c.publish.port из contour.json
-#                  (этап 4 мультистенда)
+#   publish_port — порт публикации инстанса; читает publish_ib.sh
+#                  --instance <имя> (без поля публикация инстанса откажет,
+#                  exit 2); 8414 остаётся за main (1c.publish.port contour)
 #
 # start_1c_db.sh --instance X отказывает (exit 2), пока в записи нет
 # connection, user или password, connection/user пусты, канал вне
