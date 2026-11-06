@@ -69,5 +69,6 @@ push; пропуск любого — отклонение от процедур
 `tests/e2e/`. Юниты покрывают уровень логики 1С (execute_code);
 e2e — поведение: write-first, readback, ЖР-сверка (workflows
 `1c-e2e-author` / `1c-e2e-run`) на уровнях API (HTTP) и GUI
-(testpilot). Данные — MCP `1c-db`.
+(testpilot). Данные — MCP `1c-db`; на второй-третьей базе — инстанс
+(`.zcode/1c/db-instances.yaml`, MCP `1c-db-<имя>`, скилл `1c-db-data`).
 <!-- END 1C CONTOUR -->

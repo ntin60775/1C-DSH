@@ -7,7 +7,9 @@ description: E2E-прогон 1С: workflow 1c-e2e-run с ЖР-сверкой и
 
 1. Аргумент $ARGUMENTS разбери как `сценарий [профиль]`: путь к XML в
    `.zcode/testpilot/scenarios/` (пусто — все сценарии) и имя профиля из
-   profiles.yaml (по умолчанию `main`).
+   profiles.yaml (по умолчанию `main`). Прогон на второй базе — инстанс
+   мультистенда: поле `instance` профиля (или `--instance` в run_e2e.sh)
+   адресует свип и ЖР-сверку в канал инстанса.
 2. Запусти workflow `1c-e2e-run` (CreateWorkflow, source saved/по имени из
    `.zcode/workflows/1c-e2e-run.dwf.ts`) с аргументами `scenario` и `profile`.
 3. Итог доложи по его вердикту: `passed`/`failed`, число проверок, ошибки ЖР;
