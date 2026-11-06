@@ -23,8 +23,10 @@
 #                   # клиенты инстансов не гасятся — поимённо: --stop --instance X
 #   start_1c_db.sh <project-root> --stop --base <строка соединения>
 #                   # гасит всех клиентов базы с File=<путь> в cmdline — и
-#                   # поднятых мимо скрипта (testpilot); прокси/Xvfb/WM не
-#                   # гасятся: File= в их cmdline нет
+#                   # поднятых мимо скрипта (testpilot), и клиентов инстансов
+#                   # той же базы; адрес — та же строка, что в cmdline клиента
+#                   # (File= абсолютный или относительный от корня); прокси/
+#                   # Xvfb/WM и стоп-скрипты не гасятся
 #   start_1c_db.sh <project-root> --proxy-only / --stop-proxy
 #   start_1c_db.sh <project-root> --print-config  # url порт epf mode channel — и выход
 #   start_1c_db.sh <project-root> --instance base2  # стенд инстанса: связь,
@@ -175,7 +177,10 @@ if [[ $BASE_SET -eq 1 ]]; then
 	fi
 fi
 [ -n "$ROOT" ] || ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-ROOT="$(cd "$ROOT" && pwd)"
+ROOT="$(cd "$ROOT" 2>/dev/null && pwd)" || {
+	echo "✗ корень проекта не существует: $ROOT" >&2
+	exit 2
+}
 
 HASH="$(printf '%s' "$ROOT" | sha1sum | cut -c1-8)"
 # Прокси — один на проект (решение «один прокси, инстанс = канал»): его
@@ -197,78 +202,126 @@ done
 # ── --stop --base: гашение всех клиентов базы по признаку File= в cmdline
 # (юнит #56 Т1). Клиенты, поднятые мимо скрипта (testpilot-клиенты), прежним
 # стопам недоступны: их не знают ни pid-файл, ни kill-маркер инстанса. Здесь
-# гасится класс — все процессы, чья строка соединения указывает ту же базу;
-# прокси/Xvfb/WM не несут File= в cmdline и не гасятся (что и нужно
-# соло-фикстуре Т2 и финализации Т3). Cmdline читается из /proc, правило
-# гашения не зависит от pgrep: короткие одиночные kill + перепроверка свежей
-# пробы /proc/<pid>/stat (зомби мёртв), добивание по pid (грабля среды:
-# kill не всегда доставляется). Значение File= сравнивается до «;»/конца
-# аргумента — путь-префикс соседней базы (…/ib/A против …/ib/AB) не гасится;
-# Usr/Pwd в выводе нет (инвариант Т2 мультистенда). Ветка до контурного
-# чтения — самодостаточна: адресуется строкой соединения, конфиги не нужны.
+# гасится класс — все процессы, чья строка соединения указывает ту же базу
+# (включая клиентов инстансов этой базы); прокси/Xvfb/WM не несут File= в
+# cmdline, стоп-скрипты (свой хелпер и параллельные вызовы) различаются по
+# пути start_1c_db.sh и по цепочке предков — их гашение не гашение клиентов.
+# Адрес — строка соединения базы с File=: обе стороны нормализуются
+# resolve'ом (относительное — от корня, канон формы из
+# ib_lock._normalized_connection; скрипт поднимает клиента с абсолютным
+# File=, образец db-instances.example.yaml — с относительным), ключ file=
+# принимается в любом регистре. Значение сравнивается до «;»/конца
+# аргумента — путь-префикс соседней базы (…/ib/A против …/ib/AB) не гасится.
+# Cmdline читается из /proc, правило гашения не зависит от pgrep: короткие
+# одиночные kill + перепроверка свежей пробы /proc/<pid>/stat (зомби мёртв,
+# нечитаемый stat = жив — смерть не угадывается, канон
+# ib_lock._stand_owner_alive), добивание по pid (грабля среды: kill не всегда
+# доставляется). Связь передаётся хелперу через env, не argv (cmdline ps
+# читает Usr/Pwd — канон env-канала STAND_CONN). Usr/Pwd в выводе нет
+# (инвариант Т2 мультистенда). Ветка до контурного чтения — конфиги не нужны.
 stop_base_py() { # $1 — строка соединения базы (File=…;Usr=…;Pwd=… или File=…)
-	python3 - "$1" <<'PY'
+	STOP_BASE_CONN="$1" python3 - "$ROOT" <<'PY'
 import os, signal, sys, time
 
 def fail(msg):
     print(f"✗ {msg}", file=sys.stderr)
     sys.exit(2)
 
-seg = sys.argv[1].split(";", 1)[0].strip()
-if not seg.startswith("File="):
-    fail("--base: гашение по базе поддержано для файловых баз (строка с File=); "
-         "серверную гаси поимённо: --stop --instance <имя>")
-target = seg[len("File="):].strip().strip('"')
-if not target:
-    fail("--base: пустой путь в File=")
+root = sys.argv[1]
+conn = os.environ.get("STOP_BASE_CONN", "")
+seg = conn.split(";", 1)[0].strip()
+low = seg.lower()
+if low.startswith("srvr="):
+    fail("--base: строка обязана нести File=<путь> — серверную базу по строке "
+         "не гасят: main гасится mono-стопом (--stop), инстанс — поимённо "
+         "(--stop --instance <имя>)")
+if not low.startswith("file="):
+    fail("--base: строка соединения обязана начинаться с File=<путь> "
+         "(гашение по базе поддержано для файловых баз)")
+
+def file_value(raw):
+    # канон формы: кавычки прочь, относительное — от корня, realpath снимает
+    # хвостовой слэш и symlinks (тот же realpath, что pathlib.resolve при
+    # абсолютизации старта)
+    val = raw[5:].strip().strip('"')
+    if not val:
+        fail("--base: пустой путь в File=")
+    return os.path.realpath(val if val.startswith("/") else os.path.join(root, val))
+
+target = file_value(seg)
 
 def alive(pid):
-    # /proc/<pid>/stat есть и у зомби (канон ib_lock): жив = состояние не Z
+    # /proc/<pid>/stat есть и у зомби (канон ib_lock._stand_owner_alive):
+    # нет файла = мёртв; прочий нечитаемый (hidepid и т. п.) = жив
     try:
         st = open(f"/proc/{pid}/stat", encoding="utf-8").read()
-    except OSError:
+    except FileNotFoundError:
         return False
-    return st.split(") ", 1)[-1].split()[0] != "Z"
+    except OSError:
+        return True
+    return st.rsplit(")", 1)[-1].split()[0] != "Z"
 
 def send(pid, sig):
     try:
         os.kill(pid, sig)
+        return None
     except ProcessLookupError:
-        pass
+        return None
     except PermissionError:
-        print(f"✗ pid {pid}: kill не доставлен (чужой процесс)", file=sys.stderr)
-        sys.exit(1)
+        return f"pid {pid}: kill не доставлен (чужой процесс)"
 
-# Себя и родителя не сканируем: строка соединения в cmdline самого вызова
-# (--base …) сматчилась бы — стоп погасил бы собственный скрипт
-me, parent = os.getpid(), os.getppid()
+# Себя и всю цепочку предков не сканируем: строка соединения в argv любого
+# предка (обёртка вызова, runner финализатора) — это управление гашением,
+# не клиент базы
+ancestors = set()
+pid = os.getpid()
+while pid > 1:
+    ancestors.add(pid)
+    try:
+        pid = int(open(f"/proc/{pid}/stat", encoding="utf-8")
+                  .read().rsplit(")", 1)[-1].split()[1])
+    except (OSError, IndexError, ValueError):
+        break
+
 found = []
 for name in os.listdir("/proc"):
     if not name.isdigit():
         continue
-    pid = int(name)
-    if pid in (me, parent):
+    proc = int(name)
+    if proc in ancestors:
         continue
     try:
-        raw = open(f"/proc/{pid}/cmdline", "rb").read()
+        raw = open(f"/proc/{proc}/cmdline", "rb").read()
+    except FileNotFoundError:
+        continue  # процесс исчез до чтения — не кандидат
     except OSError:
+        print(f"⚠ pid {proc}: cmdline не читается — пропущен", file=sys.stderr)
         continue
-    for arg in raw.split(b"\0"):
-        hit = False
+    args = raw.split(b"\0")
+    if any(b"start_1c_db.sh" in a for a in args):
+        continue  # стоп-скрипт (свой или параллельный) — не клиент базы
+    hit = False
+    for arg in args:
         for part in arg.decode("utf-8", "replace").split(";"):
-            if part.startswith("File="):
-                if part[5:].strip().strip('"') == target:
+            if part.lower().startswith("file="):
+                if file_value(part) == target:
                     hit = True
                 break  # File= один на аргумент; хвост строки соединения не сканируем
         if hit:
-            found.append(pid)
             break
+    if hit:
+        found.append(proc)
 if not found:
     print("• клиентов базы не найдено")
+    print("  адрес — та же строка, что в cmdline клиента: File= абсолютным "
+          "путём или от корня проекта (скрипт поднимает клиента с "
+          "абсолютным File=)")
     sys.exit(0)
 for pid in found:
     print(f"• гашение по базе: pid {pid}")
-    send(pid, signal.SIGTERM)
+    err = send(pid, signal.SIGTERM)
+    if err:
+        print(f"✗ {err}", file=sys.stderr)
 deadline = time.time() + 8
 while time.time() < deadline and any(alive(p) for p in found):
     time.sleep(1)
@@ -276,7 +329,9 @@ left = [p for p in found if alive(p)]
 if left:
     for pid in left:
         print(f"• pid {pid} пережил SIGTERM — добиваю", file=sys.stderr)
-        send(pid, signal.SIGKILL)
+        err = send(pid, signal.SIGKILL)
+        if err:
+            print(f"✗ {err}", file=sys.stderr)
     deadline = time.time() + 5
     while time.time() < deadline and any(alive(p) for p in left):
         time.sleep(1)
