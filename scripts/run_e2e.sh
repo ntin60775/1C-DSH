@@ -1,9 +1,18 @@
 #!/usr/bin/env bash
 # run_e2e.sh — автономный e2e-прогон 1С: pytest + Python API 1c-testpilot.
 #
-# Использование: run_e2e.sh [профиль] [каталог-тестов]
-#   профиль — имя из .zcode/testpilot/profiles.yaml (по умолчанию main);
-#   каталог — по умолчанию tests/e2e.
+# Использование: run_e2e.sh [--instance ИМЯ] [профиль] [каталог-тестов]
+#   --instance — инстанс мультистенда из .zcode/1c/db-instances.yaml
+#                (мультистенд #37); без флага берётся из env E2E_INSTANCE
+#                или поля instance профиля; нет нигде — main;
+#   профиль    — имя из .zcode/testpilot/profiles.yaml (по умолчанию main);
+#   каталог    — по умолчанию tests/e2e.
+#
+# Инстанс адресует постпроверку и ЖР-сверку в его канал: свип получает
+# --url с ?channel=<канал> (фактический url из contour.local.json — drift
+# Т6). Fail-loud: файла/инстанса нет, битый yaml — exit 2, фолбэка на
+# main нет (запрос ушёл бы в чужую базу). Тест-клиент поднимает testpilot
+# по профилю, его слой инстанс не меняет.
 #
 # Тест-клиент testpilot поднимает сам (профиль с base; desktop: isolated —
 # приватный Xvfb на Linux) и сам гасит после прогона. Модель в прогоне не
@@ -21,8 +30,18 @@ if [ ! -f "$ROOT/v8project.yaml" ] && [ ! -d "$ROOT/.zcode/1c" ]; then
 	echo "✗ корень $ROOT не похож на проект контура (нет v8project.yaml и .zcode/1c/) — запусти из корня проекта" >&2
 	exit 2
 fi
-PROFILE="${1:-${E2E_PROFILE:-main}}"
-TESTS="${2:-tests/e2e}"
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+INSTANCE_FLAG=""
+ARGS=()
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--instance) INSTANCE_FLAG="${2:-}"; shift 2 ;;
+		--instance=*) INSTANCE_FLAG="${1#--instance=}"; shift ;;
+		*) ARGS+=("$1"); shift ;;
+	esac
+done
+PROFILE="${ARGS[0]:-${E2E_PROFILE:-main}}"
+TESTS="${ARGS[1]:-tests/e2e}"
 
 # ── окружение testpilot ──
 PY="${TESTPILOT_PYTHON:-}"
@@ -71,6 +90,9 @@ for i, line in enumerate(lines):
                 break
         break
 text = "\n".join(block)
+inst = re.search(r"(?m)^\s+instance:\s*['\"]?([\w-]+)", text)
+if inst:
+    print(f"E2E_PROFILE_INSTANCE='{inst.group(1)}'")
 if re.search(r"(?m)^\s+password:\s*\S", text):
     pass  # литеральный пароль в профиле: testpilot читает его сам
 else:
@@ -95,6 +117,43 @@ PY
 )"
 
 export TC1C_PROFILES_FILE="$PROFILES"
+
+# ── инстанс мультистенда (#37): флаг > env > поле instance профиля.
+# Fail-loud: файла/инстанса нет, битый yaml — exit 2 (тихий фолбэк на main
+# запрещён: свип вычистил бы чужую базу). Фактический url — local-слой.
+INSTANCE="${INSTANCE_FLAG:-${E2E_INSTANCE:-${E2E_PROFILE_INSTANCE:-}}}"
+if [ -n "$INSTANCE" ]; then
+	eval "$(SELF="$SELF_DIR" ROOT="$ROOT" INSTANCE="$INSTANCE" python3 - <<'PY'
+import os, shlex, sys, pathlib
+sys.path.insert(0, os.environ["SELF"])
+import wire_config as wc
+root, name = pathlib.Path(os.environ["ROOT"]), os.environ["INSTANCE"]
+path = root / ".zcode" / "1c" / "db-instances.yaml"
+if not path.is_file():
+    print("E2E_INSTANCE_FAIL=" + shlex.quote(f"нет {path} — ленивый инит: "
+          "создай по образцу .zcode/1c/templates/db-instances.example.yaml "
+          "(скилл 1c-db-data)"))
+    sys.exit(0)
+try:
+    rec = {i["name"]: i for i in wc.parse_instances(root)}.get(name)
+except ValueError as e:
+    print("E2E_INSTANCE_FAIL=" + shlex.quote(f"db-instances.yaml: {e}"))
+    sys.exit(0)
+if rec is None:
+    print("E2E_INSTANCE_FAIL=" + shlex.quote(
+        f"инстанса {name} нет в db-instances.yaml — фолбэка на main нет"))
+    sys.exit(0)
+channel = rec["channel"] or rec["name"]
+print("E2E_CHANNEL=" + shlex.quote(channel))
+print("E2E_DB_URL=" + shlex.quote(wc.channel_url(wc.actual_db_url(root), channel)))
+PY
+)"
+	if [ -n "${E2E_INSTANCE_FAIL:-}" ]; then
+		echo "✗ инстанс $INSTANCE: $E2E_INSTANCE_FAIL" >&2
+		exit 2
+	fi
+	echo "→ инстанс $INSTANCE: канал $E2E_CHANNEL, свип уйдёт в $E2E_DB_URL" >&2
+fi
 # Прогоны идут на анонимизированном канале 1c-db — анонимизация не
 # отключается ни скриптом, ни окружением: это граница, а не параметр
 # стенда. Оракулы — токен-базированные: сырые справочные значения в
@@ -148,10 +207,13 @@ PY
 # Изоляция без транзакционного отката (см. scripts/e2e_sweep.py): тестовые
 # данные носят маркер, sweep находит остатки, удаляет и красит прогон,
 # если вычистить не удалось. Прокси недоступен — WARN, прогон не портим.
-SWEEP="$(cd "$(dirname "$0")" && pwd)/e2e_sweep.py"
+# С инстансом свип идёт в канал инстанса (--url с ?channel=).
+SWEEP="$SELF_DIR/e2e_sweep.py"
 if [ -f "$SWEEP" ]; then
+	SWEEP_URL=()
+	[ -z "${INSTANCE:-}" ] || SWEEP_URL=(--url "$E2E_DB_URL")
 	set +e
-	python3 "$SWEEP" "$ROOT" --apply --json \
+	python3 "$SWEEP" "$ROOT" --apply --json "${SWEEP_URL[@]}" \
 		> "$ROOT/test-results/e2e-sweep.json" 2> "$ROOT/test-results/e2e-sweep.err"
 	SRC=$?
 	set -e

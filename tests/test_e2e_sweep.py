@@ -158,6 +158,15 @@ def main() -> int:
 		check("apply json: deleted=3, found_after=0",
 		      data.get("deleted") == 3 and data.get("found_after") == 0, str(data))
 
+		# ── url с каналом инстанса (мультистенд #37): query не мешает ──
+		srv.cleaned = False
+		srv.deleted_calls = 0
+		r = run_sweep("/tmp/nowhere", "--url", f"{url}?channel=inst2", "--apply", "--json")
+		data = json.loads(r.stdout.strip().splitlines()[-1])
+		check("url с ?channel=: apply работает в канал",
+		      r.returncode == 0 and data.get("deleted") == 3 and srv.deleted_calls == 1,
+		      str(data) + f", calls={srv.deleted_calls}")
+
 		# ── apply: не удаляется → exit 3, неудачи названы ──
 		srv.cleaned = False
 		srv.clean_after_apply = False

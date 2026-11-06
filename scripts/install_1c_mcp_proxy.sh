@@ -67,5 +67,7 @@ cat <<FIN
 NER:     spacy $SPACY_VER + модель ru_core_news_md
 
 проверка:   cd "$TOOLKIT" && PORT=6003 timeout 5 "$VENV/bin/python" -m onec_mcp_toolkit_proxy
+            (6003 — пример: боевой порт выбирает start_1c_db.sh — первый
+             свободный от желаемого, фактический уходит в contour.local.json)
 подъём:     bash <контур>/scripts/start_1c_db.sh <проект>     (сам поднимет прокси и клиент)
 FIN

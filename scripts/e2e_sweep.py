@@ -24,13 +24,17 @@ run_e2e.sh сам находит остатки по маркеру, удаля�
                   клиент не подключен.
 
 Опции: --marker S (по умолчанию Е2Е-), --url U (по умолчанию из
-.zcode/1c/contour.json 1c_db.url, иначе http://127.0.0.1:6003/mcp),
+.zcode/1c/contour.json 1c_db.url, иначе http://127.0.0.1:6003/mcp; url
+может нести ?channel=<канал> — мультистенд #37: прогон на инстансе
+идёт в его канал, run_e2e.sh --instance передаёт такой url сам, ЖР-сверка
+workflow идёт в тот же канал),
 --timeout SEC (общий бюджет всех вызовов, по умолчанию 120; socket-timeout
 не спасает — прокси в long-poll без клиента капает SSE keep-alive),
 --json (машинный вывод {found_before, deleted, found_after, failed}; при
 недоступности {"error": "client-unavailable"|"proxy", ...}).
 
 Запуск: python3 e2e_sweep.py <project-root> [--apply] [--json]
+[--url http://127.0.0.1:6003/mcp?channel=<канал>]
 """
 import json
 import signal
