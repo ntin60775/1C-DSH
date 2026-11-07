@@ -6,6 +6,7 @@ exit, а конкретные строки вывода про contour-ключ�
 python3 tests/test_doctor.py
 """
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -91,6 +92,52 @@ def main() -> int:
 		      "bash .zcode/1c/scripts/start_1c_db.sh" in r.stdout, r.stdout[:400])
 		check("python3 перед bash-скриптом не советуется",
 		      "python3 .zcode/1c/scripts/start_1c_db.sh" not in r.stdout, r.stdout[:400])
+
+		# ── build/out: свалка в корне — WARN; канон и отсутствие — молчание ──
+		# Юнит build-out-canon, тикет Т1, критерии К1/К6
+		# (docs/plans/build-out-canon.md): WARN строго мягкий (FAIL нет),
+		# перечень усекается до 8, канонное имя обязано носить каталог.
+		scaffold(root, "{}")
+		out = root / "build" / "out"
+		out.mkdir(parents=True)
+		(out / "va-run.log").write_text("log", encoding="utf-8")
+		(out / "pilot-50").mkdir()
+		r = run_doctor(root)
+		check("свалка build/out — WARN с перечнем чужого",
+		      "WARN build/out:" in r.stdout
+		      and "вне канонных каталогов (2)" in r.stdout
+		      and "pilot-50, va-run.log" in r.stdout, r.stdout[:1200])
+		check("свалка build/out не даёт FAIL (каталог опционален)",
+		      "FAIL build/out" not in r.stdout and "distrobox:<имя>" in r.stdout,
+		      r.stdout[:1200])
+		for i in range(10):
+			(out / f"junk-{i:02d}.log").write_text("x", encoding="utf-8")
+		r = run_doctor(root)
+		check("длинный перечень усечён до 8 с многоточием",
+		      "вне канонных каталогов (12)" in r.stdout
+		      and ", …" in r.stdout and "junk-07.log" in r.stdout
+		      and "junk-08.log" not in r.stdout, r.stdout[:1200])
+		for i in range(10):
+			(out / f"junk-{i:02d}.log").unlink()
+		(out / "cfe").write_text("файл с канонным именем", encoding="utf-8")
+		r = run_doctor(root)
+		check("файл с канонным именем — тоже чужое",
+		      "вне канонных каталогов (3)" in r.stdout and "cfe" in r.stdout,
+		      r.stdout[:1200])
+		(out / "cfe").unlink()
+		for name in ("cf", "cfe", "epf", "erf", "reports", "tmp"):
+			(out / name).mkdir()
+		(out / "va-run.log").unlink()
+		(out / "pilot-50").rmdir()
+		r = run_doctor(root)
+		check("шесть канонных каталогов — молчание",
+		      "вне канонных каталогов" not in r.stdout
+		      and "distrobox:<имя>" in r.stdout, r.stdout[:1200])
+		shutil.rmtree(out)
+		r = run_doctor(root)
+		check("build/out отсутствует — молчание",
+		      "вне канонных каталогов" not in r.stdout
+		      and "distrobox:<имя>" in r.stdout, r.stdout[:1200])
 
 		# ── NER-эшелон анонимизации: мягкая зависимость в venv прокси ──
 		def fake_venv(state: str) -> Path:

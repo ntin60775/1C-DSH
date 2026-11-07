@@ -503,6 +503,27 @@ def main() -> int:
 			fail(f"scaffold check упал (exit {done.returncode}): "
 			     f"{done.stderr.strip()[:120]}")
 
+	# ── 3b-bis. build/out: раскладка артефактов сборки и прогона ──
+	# Канон — скилл 1c-project-layout: верхний уровень строгий (cf/cfe/epf/erf
+	# — зеркало src, reports — выводы прогонов, tmp — служебное со сносом в
+	# том же заходе). Каталог опционален: отсутствует или чист — молчание;
+	# свалка в корне — WARN, fail не делаем. Канонное имя обязан носить
+	# каталог: файл с именем cf — тоже чужое.
+	out_dir = root / "build" / "out"
+	if out_dir.is_dir():
+		out_canon = {"cf", "cfe", "epf", "erf", "reports", "tmp"}
+		try:
+			foreign = sorted(p.name for p in out_dir.iterdir()
+			                 if not (p.is_dir() and p.name in out_canon))
+		except OSError:
+			warn("build/out не читается — проверь права, раскладка не сверялась")
+		else:
+			if foreign:
+				shown = ", ".join(foreign[:8]) + (", …" if len(foreign) > 8 else "")
+				warn(f"build/out: вне канонных каталогов ({len(foreign)}): "
+				     f"{shown} — правило: {'/'.join(sorted(out_canon))}; "
+				     "чужое снести или перенести (скилл 1c-project-layout)")
+
 	# ── 3d. Остатки прежнего/чужого контура (разведка deploy_recon) ──
 	# Намеренно жёстче recon: doctor — точка лечения, не разведки (recon в
 	# post_update только предупреждает и всегда exit 0).
