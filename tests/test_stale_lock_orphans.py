@@ -1,28 +1,34 @@
 #!/usr/bin/env python3
 """Т5 «Мёртвый лок и сироты на старте» (юнит #56): старт чистит последствия
-аварии без ручного ритуала 40-3 «stop → pkill → rm → старт».
+аварии без ручного ритуала «stop → pkill → rm → старт».
 
 - Критерий 1: файл лока 1Cv8.1CL есть, живых процессов на базе нет — старт
   снимает лок со статьёй и поднимает стенд (фейк-клиент запущен). На
-  базовом дереве лок остаётся, статьи нет — падает.
+  базовом дереве лок остаётся, статьи нет — падает. Фиделити мока: клиент
+  платформы лок не читает — «рестарт без ручных команд» доказан фактом
+  снятия файла и статьёй, не реальной блокировкой (панель Т5, P3).
 - Критерий 2: сирота с kill-маркером контура в cmdline гасится стартом этой
-  базы (статья «сирота погашен»); клиент соседней базы с тем же маркером
-  жив (гашение по базе); сирота инстанса гасится стартом инстанса, mono-
-  сирота другой базы жива. На базовом дереве сироты не гасятся — падает.
+  базы (статья «сирота погашен» — факт после подтверждённой смерти); клиент
+  соседней базы с тем же маркером жив (гашение по базе); сирота инстанса
+  гасится стартом инстанса, mono-сирота другой базы жива. На базовом дереве
+  сироты не гасятся — падает.
 - Критерий 3 (инвариант, зелёный на любом дереве): живой немаркированный
-  клиент — отказ stand-гарда Т3 с pid, его лок не тронут (граница: лок
-  живого клиента не снимается).
+  клиент — отказ stand-гарда Т3 мультистенда с pid, его лок не тронут
+  (граница: лок живого клиента не снимается).
 - Критерий 4: вывод ветки автогашения без Usr=/Pwd= и значений кредов
-  (инвариант Т2 мультистенда).
+  (инвариант Т2 мультистенда). Проверка составная: статья «сирота погашен»
+  присутствует (ветка сработала) И кредов в выводе нет — иначе на дереве
+  без ветки «отсутствие Usr=» выполнялось бы само (панель Т5, P2).
 - Правило гашения (канон Т1): сирота, игнорирующая SIGTERM, добивается
   SIGKILL по pid.
 
 Клиент фейковый (паттерн test_multistand): мок-прокси через fake HOME,
 ONEC_PLATFORM — фейк; cmdline несёт /IBConnectionString и /Execute — как
-1cv8c. Стенд «поднят» = клиент запущен (дальше WAIT_DEADLINE=2 — rc 1:
-мок не умеет execute_code, канон живости client_alive).
+1cv8c. Стенд «поднят» = клиент запущен; живость — pid из контракта вывода
+«• клиент запущен (pid N)» скрипта, не по формуле pid-файла (панель Т5, P3).
 """
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -58,6 +64,7 @@ def free_port():
 
 
 def root_hash(root):
+    # только для УБОРКИ файлов прогона (pid/лог/замок), не для проверок
     import hashlib
     return hashlib.sha1(str(root.resolve()).encode()).hexdigest()[:8]
 
@@ -151,6 +158,13 @@ def run_start(root, *args):
         capture_output=True, text=True, timeout=120, env=env5)
 
 
+def launched_pid(out):
+    # pid клиента — из контракта вывода скрипта «• клиент запущен (pid N)»
+    # (зафиксирован в docs/ops/continue.md), независимый от формулы pid-файла
+    m = re.search(r"• клиент запущен \(pid (\d+)\)", out)
+    return int(m.group(1)) if m else -1
+
+
 def fake_proc(script, conn, marker):
     # cmdline фейка повторяет схему 1cv8c: /IBConnectionString <строка>
     # /Execute <путь обработки>. Процессы гасятся в finally.
@@ -161,24 +175,32 @@ def fake_proc(script, conn, marker):
     return proc
 
 
-def client_pidfile(root):
-    # формула реализации: sha1("корень")[:8] (HASH в start_1c_db.sh, mono)
-    return Path(f"/tmp/1c-db-{root_hash(root)}.pid")
+roots = []   # корни прогона — уборка файлов по их хешам
+pids = []    # фейковые и поднятые стартом процессы — гасятся в finally
+files = []   # pid-файлы и логи к подчистке
 
 
-def instance_pidfile(root, inst):
-    # формула реализации: sha1("корень|имя")[:8] (IHASH в start_1c_db.sh)
+def cleanup_files_for(root, inst=None):
+    h = root_hash(root)
+    for pattern in (f"1c-db-{h}.*", f"1c-mcp-proxy-{h}.*",
+                    f"1c-db-xvfb-{h}.*", f"1c-db-wm-{h}.*"):
+        for f in Path("/tmp").glob(pattern):
+            files.append(f)
+    if inst:
+        ih = root_hash_instance(root, inst)
+        for f in Path("/tmp").glob(f"1c-db-{ih}.*"):
+            files.append(f)
+
+
+def root_hash_instance(root, inst):
     import hashlib
-    h = hashlib.sha1(f"{root.resolve()}|{inst}".encode()).hexdigest()[:8]
-    return Path(f"/tmp/1c-db-{h}.pid")
+    return hashlib.sha1(f"{root.resolve()}|{inst}".encode()).hexdigest()[:8]
 
-
-pids = []
-files = []  # pid-файлы к подчистке
 
 try:
     # ── критерии 2+4, демо-путь тикета: сирота + мёртвый лок → один старт ──
     root1 = contour_t5(tmp / "t5a", free_port(), "build/ib/A")
+    roots.append(root1)
     ibA = root1 / "build" / "ib" / "A"
     ibA.mkdir(parents=True)
     lock1 = ibA / "1Cv8.1CL"
@@ -193,9 +215,11 @@ try:
     time.sleep(0.3)
     before = alive_proc(pA.pid) and alive_proc(pAB.pid)
     r1 = run_start(root1)
-    pf1 = client_pidfile(root1)
-    files.append(pf1)
-    _lib.check("Т5: сирота с маркером контура гасится стартом базы (rc старт неважен)",
+    cli1 = launched_pid(r1.stdout)
+    if cli1 > 0:
+        pids.append(cli1)
+    cleanup_files_for(root1)
+    _lib.check("Т5: сирота с маркером контура гасится стартом базы",
                before and not alive_proc(pA.pid),
                f"before={before}, alive={alive_proc(pA.pid)}, "
                f"out={r1.stdout[-200:]!r}")
@@ -212,34 +236,56 @@ try:
     _lib.check("Т5: файл лока 1Cv8.1CL снят",
                before and not lock1.exists(),
                f"exists={lock1.exists()}, out={r1.stdout[-200:]!r}")
-    cli_pid = int(pf1.read_text()) if pf1.exists() else -1
     _lib.check("Т5: стенд поднят — клиент запущен и жив после старта",
-               cli_pid > 0 and alive_proc(cli_pid),
-               f"pidfile={pf1.exists()}, pid={cli_pid}, "
-               f"alive={alive_proc(cli_pid) if cli_pid > 0 else None}")
-    _lib.check("Т5: Usr=/Pwd=/значения кредов в выводе нет (stdout и stderr)",
-               all(s not in r1.stdout and s not in r1.stderr
-                   for s in ("Usr=", "Pwd=", "u1", "p1")),
+               cli1 > 0 and alive_proc(cli1),
+               f"pid={cli1}, alive={alive_proc(cli1) if cli1 > 0 else None}")
+    _lib.check("Т5: ветка сработала и кредов в выводе нет (составной критерий 4)",
+               "сирота погашен" in r1.stdout
+               and all(s not in r1.stdout and s not in r1.stderr
+                       for s in ("Usr=", "Pwd=", "u1", "p1")),
                f"out={r1.stdout[-300:]!r}, err={r1.stderr[-300:]!r}")
 
     # ── критерий 1: мёртвый лок без сирот (живых процессов нет вовсе) ──
     root2 = contour_t5(tmp / "t5b", free_port(), "build/ib/B")
+    roots.append(root2)
     ibB = root2 / "build" / "ib" / "B"
     ibB.mkdir(parents=True)
     lock2 = ibB / "1Cv8.1CL"
     lock2.write_text("stale", encoding="utf-8")
+    # живая сессия без File= (1cv8 CONFIG /F<путь>) блокирует снятие лока —
+    # надмножество «живых на базе» (панель Т5, P2); путь-префикс соседа при
+    # этом ложным «живым» не считается. Имя процесса несущественно, носитель
+    # признака — argv с путём базы как самостоятельным значением
+    proc_f = subprocess.Popen(
+        ["bash", str(fake_sh), "fake", "/F", str(ibB)])
+    pids.append(proc_f.pid)
+    time.sleep(0.3)
+    rf = run_start(root2)
+    _lib.check("Т5: живая /F-сессия без File= блокирует снятие лока (надмножество)",
+               lock2.exists() and "лок снят" not in rf.stdout,
+               f"lock={lock2.exists()}, out={rf.stdout[-200:]!r}")
+    subprocess.run(["kill", str(proc_f.pid)], capture_output=True)
+    for _ in range(20):
+        if not alive_proc(proc_f.pid):
+            break
+        time.sleep(0.2)
+    kill_mocks()  # мок первого старта держит flock pid-файла — второй
+                  # старт уходит в ветку «параллельный старт» вместо чистой
+                  # прокси-фазы; погасить, как делает test_multistand
     r2 = run_start(root2)
-    pf2 = client_pidfile(root2)
-    files.append(pf2)
-    cli2 = int(pf2.read_text()) if pf2.exists() else -1
-    _lib.check("Т5: мёртвый лок без сирот снимается, рестарт без ручных команд",
-               lock2.exists() is False and r2.returncode != 0
+    cli2 = launched_pid(r2.stdout)
+    if cli2 > 0:
+        pids.append(cli2)
+    cleanup_files_for(root2)
+    _lib.check("Т5: мёртвый лок без живых снимается, рестарт без ручных команд",
+               lock2.exists() is False
                and "лок снят" in r2.stdout and cli2 > 0 and alive_proc(cli2),
-               f"lock={lock2.exists()}, rc={r2.returncode}, "
-               f"out={r2.stdout[-200:]!r}, client={cli2}>0")
+               f"lock={lock2.exists()}, out={r2.stdout[-200:]!r}, "
+               f"client={cli2}")
 
     # ── критерий 3 (инвариант): живой немаркированный клиент — гард Т3 ──
     root3 = contour_t5(tmp / "t5c", free_port(), "build/ib/C")
+    roots.append(root3)
     ibC = root3 / "build" / "ib" / "C"
     ibC.mkdir(parents=True)
     lock3 = ibC / "1Cv8.1CL"
@@ -251,6 +297,7 @@ try:
     import ib_lock
     ib_lock.acquire_stand_lock(str(root3), connC, pC.pid)
     r3 = run_start(root3)
+    cleanup_files_for(root3)
     _lib.check("Т5: живой немаркированный клиент — отказ stand-гарда с pid (инвариант Т3)",
                r3.returncode == 2 and "база занята stand-замком" in r3.stderr
                and str(pC.pid) in r3.stderr,
@@ -265,6 +312,7 @@ try:
 
     # ── критерий 2 (инстансы): сирота инстанса — стартом инстанса ──
     root4 = contour_t5(tmp / "t5d", free_port(), "build/ib/main")
+    roots.append(root4)
     (root4 / ".zcode" / "1c" / "db-instances.yaml").write_text(
         "instances:\n"
         "  solo1:\n    channel: solo1\n    connection: File=build/ib/s1\n"
@@ -277,7 +325,10 @@ try:
                     str(root4 / "tools" / "mcp" / "Mock.epf"))  # mono-сирота — база дерева
     time.sleep(0.3)
     r4 = run_start(root4, "--instance", "solo1")
-    files.append(instance_pidfile(root4, "solo1"))  # инстансный pid-файл — IHASH
+    cli4 = launched_pid(r4.stdout)
+    if cli4 > 0:
+        pids.append(cli4)
+    cleanup_files_for(root4, inst="solo1")
     _lib.check("Т5: сирота инстанса гасится стартом инстанса (статья в выводе)",
                not alive_proc(pD1.pid) and "сирота погашен" in r4.stdout,
                f"alive={alive_proc(pD1.pid)}, out={r4.stdout[-300:]!r}")
@@ -287,6 +338,7 @@ try:
 
     # ── правило гашения (канон Т1): сирота, игнорирующая SIGTERM, добивается ──
     root5 = contour_t5(tmp / "t5e", free_port(), "build/ib/E")
+    roots.append(root5)
     ibE = root5 / "build" / "ib" / "E"
     ibE.mkdir(parents=True)
     connE = f'File={ibE};Usr="u5";Pwd="p5"'
@@ -295,6 +347,10 @@ try:
     time.sleep(0.3)
     before_e = alive_proc(pE.pid)
     r5 = run_start(root5)
+    cli5 = launched_pid(r5.stdout)
+    if cli5 > 0:
+        pids.append(cli5)
+    cleanup_files_for(root5)
     _lib.check("Т5: сирота, игнорирующая SIGTERM, добивается SIGKILL",
                before_e and not alive_proc(pE.pid)
                and "пережил SIGTERM" in r5.stderr,
@@ -310,11 +366,22 @@ finally:
     for pid in pids:
         if alive_proc(pid):
             subprocess.run(["kill", "-9", str(pid)], capture_output=True)
-    for pid in pids:
-        subprocess.run(["pkill", "-9", "-P", str(pid)],
-                       capture_output=True)
-    for pf in files:
-        pf.unlink(missing_ok=True)
+    # pid-файлы могут указывать на процесс, которого в pids нет
+    # (гигиена его уже погасила) — прочитать и добить по канону
+    for pf in list(files):
+        if pf.suffix == ".pid":
+            try:
+                pfpid = int(pf.read_text().strip())
+            except (OSError, ValueError):
+                continue
+            if alive_proc(pfpid):
+                subprocess.run(["kill", "-9", str(pfpid)],
+                               capture_output=True)
     kill_mocks()
+    deadline = time.time() + 5
+    while time.time() < deadline and any(alive_proc(pid) for pid in pids):
+        time.sleep(0.2)
+    for f in files:
+        f.unlink(missing_ok=True)
     shutil.rmtree(tmp, ignore_errors=True)
 sys.exit(_lib.summary())
