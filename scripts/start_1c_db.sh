@@ -789,6 +789,124 @@ stop_proxy() {
 	return 0
 }
 
+# Execute-проба прокси (юнит #56 Т4): реальный ответ MCP (initialize +
+# tools/call execute_code) за ограниченное время — порт-проба alive()
+# зомби «порт слушает — потребитель мёртв» не различает (#56: 3 случая
+# за день, следующий прогон сыпал 39 errors за 3 минуты). Молчание —
+# не отказ старта: различение по потребителю делает вызвавший
+# (stand_lock_alive); лимит — PROXY_EXECUTE_TIMEOUT (дефолт 10 с).
+proxy_execute_ok() {
+	local LIM="${PROXY_EXECUTE_TIMEOUT:-10}"
+	if ! [[ "$LIM" =~ ^[0-9]+$ ]]; then
+		echo "WARN: PROXY_EXECUTE_TIMEOUT не число («$LIM») — беру 10" >&2
+		LIM=10
+	fi
+	timeout -k 2 "$LIM" python3 - "$PROBE_URL" "$LIM" <<'PY' 2>/dev/null
+import json, sys, urllib.request
+url = sys.argv[1]
+lim = max(1, int(sys.argv[2]) - 2)
+def rpc(payload, sid=None):
+    h = {"Content-Type": "application/json",
+         "Accept": "application/json, text/event-stream"}
+    if sid:
+        h["Mcp-Session-Id"] = sid
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(),
+                                 headers=h)
+    with urllib.request.urlopen(req, timeout=lim) as r:
+        raw = r.read().decode()
+        new_sid = r.headers.get("Mcp-Session-Id")
+        ctype = r.headers.get("Content-Type", "")
+    if "text/event-stream" in ctype:
+        raw = next((ln[5:].strip() for ln in raw.splitlines()
+                    if ln.startswith("data:") and ln[5:].strip()), "{}")
+    return new_sid, (json.loads(raw) if raw.strip() else {})
+try:
+    sid, _ = rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                  "params": {"protocolVersion": "2025-03-26", "capabilities": {},
+                             "clientInfo": {"name": "proxy-probe", "version": "0"}}})
+    if sid:
+        rpc({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid)
+    rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+         "params": {"name": "execute_code",
+                    "arguments": {"code": "Результат = Истина;"}}}, sid)
+except Exception:
+    sys.exit(1)
+sys.exit(0)
+PY
+}
+
+# Потребитель стенда жив? Носитель состояния — stand_lock_status
+# (hooks/ib_lock.py); второй источник «есть ли клиент» не заводится (Т4).
+# Гард недоступен / связь не резолвится — потребителя нет (безопасная
+# сторона: прокси не объявляется зомби, различение не изобретается).
+stand_lock_alive() {
+	local ST
+	ST=$(STAND_CONN="$INST_CONN" python3 - "$ROOT" "$HOOKS_DIR" <<'PY' 2>/dev/null
+import os, sys
+root, hooks = sys.argv[1], sys.argv[2]
+try:
+    if hooks:
+        sys.path.insert(0, hooks)
+    import ib_lock
+except (ImportError, OSError):
+    sys.exit(0)
+conn = os.environ.get("STAND_CONN") or ib_lock.resolve_infobase_connection(root)
+lock = ib_lock.stand_lock_status(root, conn) if conn else None
+print("1" if lock else "", end="")
+PY
+)
+	[[ "$ST" == "1" ]]
+}
+
+# Подъём прокси на текущем $PORT/$URL (канон Т6: nohup, а не
+# subshell+setsid — обёртка оставляла живой bash, pidfile ловил pid
+# обёртки; наблюдение 2026-10-12). Успех — статья «• прокси поднят»,
+# неуспех — rc 1: вызвавший (цикл кандидатов, пересоздание Т4) решает
+# следующий шаг. Замок pid-файла несёт вызвавший через наследованный fd.
+launch_proxy() {
+	cd "$TOOLKIT"
+	nohup env PORT="$PORT" DANGEROUS_KEYWORDS="$DANGER_KEEP" \
+		"${ANON_ENV[@]}" \
+		"$VENV/bin/python" -m onec_mcp_toolkit_proxy \
+		>"$PROXY_LOG" 2>&1 </dev/null &
+	echo $! > "$PROXY_PIDFILE"
+	disown 2>/dev/null || true
+	for _ in $(seq 1 20); do
+		if alive; then
+			echo "• прокси поднят (pid $(cat "$PROXY_PIDFILE")); лог: $PROXY_LOG"
+			return 0
+		fi
+		sleep 1
+	done
+	echo "• :$PORT не поднялся за 20с (перехвачен между пробой и bind?) — лог: $PROXY_LOG" >&2
+	return 1
+}
+
+# Пересоздание прокси-зомби (юнит #56 Т4): гашение по pid-файлу (канон
+# stop_proxy, включая ss-добивание владельца тулкита), взятие замка
+# pid-файла — мёртвый зомби замок освободил — и подъём на том же порту;
+# новый прокси наследует fd замка, инвариант Т6 «второго прокси у
+# проекта не бывает» сохраняется.
+heal_proxy() {
+	stop_proxy
+	exec {HEAL_FD}>>"$PROXY_PIDFILE"
+	if ! flock -n "$HEAL_FD" 2>/dev/null; then
+		exec {HEAL_FD}>&-
+		echo "✗ замок pid-файла перехвачен при пересоздании — старт прекращён" >&2
+		return 1
+	fi
+	if ! launch_proxy; then
+		exec {HEAL_FD}>&-
+		echo "✗ пересоздание прокси не удалось; смотри $PROXY_LOG" >&2
+		return 1
+	fi
+	exec {HEAL_FD}>&-
+	# Пересозданный прокси начинается с пустого словаря анонимизации —
+	# первый прогон после него идёт с прогревом (стоимость прогрева — Т7)
+	echo "• прокси пересоздан: execute молчал при живом потребителе (pid $(cat "$PROXY_PIDFILE"))"
+	return 0
+}
+
 if [[ $MODE == stop_proxy ]]; then
 	stop_proxy
 	exit 0
@@ -813,52 +931,55 @@ if [[ $DBMODE == proxy && $MODE != stop ]]; then
 		echo "✗ нужен flock (util-linux) — арбитраж порта без него невозможен" >&2
 		exit 2
 	fi
+	# Гард окружения и анонимизация — до ветвления замка: общие для подъёма
+	# победителем и для пересоздания зомби (Т4, heal_proxy).
+	if [[ ! -x "$VENV/bin/python" ]]; then
+		echo "✗ нет $VENV — один раз выполни:" >&2
+		echo "  $(dirname "${BASH_SOURCE[0]}")/install_1c_mcp_proxy.sh $TOOLKIT" >&2
+		exit 2
+	fi
+	if [[ ! -d "$TOOLKIT/onec_mcp_toolkit_proxy" ]]; then
+		echo "✗ нет клона тулкита: $TOOLKIT (ONEC_MCP_TOOLKIT_DIR)" >&2
+		exit 2
+	fi
+	# Тестовый контур: логика-тесты пишут/удаляют данные фикстур, поэтому
+	# «Записать»/«Удалить» НЕ блокируются; привилегированный и монопольный
+	# режимы разрешены всегда (решение владельца 2026-10-04:
+	# allow_privileged_mode; монополия нужна сценариям обновления базы по
+	# результатам тестов — вызвавший обязан снять режим сам). COM, файлы
+	# и внешние компоненты остаются заблокированы.
+	# Прод защищён независимо: mcp_gate блокирует execute_code в прод-контуре.
+	DANGER_KEEP="УдалитьФайлы,DeleteFiles,КопироватьФайл,CopyFile,ПереместитьФайл,MoveFile,СоздатьКаталог,CreateDirectory,COMОбъект,COMObject,ПодключитьВнешнююКомпоненту,AttachAddIn,УстановитьВнешнююКомпоненту,InstallAddIn"
+	# Анонимизация канала — ПО УМОЛЧАНИЮ ВКЛЮЧЕНА (решение владельца
+	# 2026-10-11: работа с базой без анонимизации запрещена): ответы
+	# execute_query/execute_code/get_object_by_link/get_event_log/
+	# find_references/get_access_rights токенизируются ([ORG-00001] и т.п.),
+	# токены восстанавливаются в параметрах обратных вызовов. Отключение —
+	# только явное CONTOUR_ANON=off (e2e-прогоны: сравнение сырых значений;
+	# run_e2e.sh экспортирует это сам) с WARN в логе прокси.
+	CONTOUR_ANON="${CONTOUR_ANON:-on}"
+	if [[ "$CONTOUR_ANON" == "on" ]]; then
+		ANON_ENV=(ANONYMIZATION_ENABLED=true)
+		# NER-эшелон (Level 2: ФИО/организации/города вне явных правил
+		# профиля, решение владельца 2026-11-02) — включён вместе с
+		# анонимизацией, включая строковые литералы в результатах
+		# execute_code. Люк для отладки — CONTOUR_NER=off с WARN; люк
+		# CONTOUR_ANON=off глушит и NER: три переменные живут в общей
+		# прокси-ветке (подъём и пересоздание Т4 поднимают с ними же),
+		# e2e продолжают сравнивать сырые значения.
+		if [[ "${CONTOUR_NER:-on}" == "on" ]]; then
+			ANON_ENV+=(ANONYMIZATION_NER_ENABLED=true
+				ANONYMIZATION_NER_FOR_EXECUTE_CODE_RESULT=true
+				ANONYMIZATION_NER_FOR_ERROR=true)
+		else
+			echo "WARN: NER-эшелон анонимизации ВЫКЛЮЧЕН (CONTOUR_NER=off) — значения вне правил профиля идут как есть" >&2
+		fi
+	else
+		ANON_ENV=(ANONYMIZATION_ENABLED=false)
+		echo "WARN: анонимизация канала 1c-db ВЫКЛЮЧЕНА (CONTOUR_ANON=off) — данные базы идут в ответах как есть" >&2
+	fi
 	exec {PORT_LOCK_FD}>>"$PROXY_PIDFILE"
 	if flock -n "$PORT_LOCK_FD" 2>/dev/null; then
-		if [[ ! -x "$VENV/bin/python" ]]; then
-			echo "✗ нет $VENV — один раз выполни:" >&2
-			echo "  $(dirname "${BASH_SOURCE[0]}")/install_1c_mcp_proxy.sh $TOOLKIT" >&2
-			exit 2
-		fi
-		if [[ ! -d "$TOOLKIT/onec_mcp_toolkit_proxy" ]]; then
-			echo "✗ нет клона тулкита: $TOOLKIT (ONEC_MCP_TOOLKIT_DIR)" >&2
-			exit 2
-		fi
-		# Тестовый контур: логика-тесты пишут/удаляют данные фикстур, поэтому
-		# «Записать»/«Удалить» НЕ блокируются; привилегированный и монопольный
-		# режимы разрешены всегда (решение владельца 2026-10-04:
-		# allow_privileged_mode; монополия нужна сценариям обновления базы по
-		# результатам тестов — вызвавший обязан снять режим сам). COM, файлы
-		# и внешние компоненты остаются заблокированы.
-		# Прод защищён независимо: mcp_gate блокирует execute_code в прод-контуре.
-		DANGER_KEEP="УдалитьФайлы,DeleteFiles,КопироватьФайл,CopyFile,ПереместитьФайл,MoveFile,СоздатьКаталог,CreateDirectory,COMОбъект,COMObject,ПодключитьВнешнююКомпоненту,AttachAddIn,УстановитьВнешнююКомпоненту,InstallAddIn"
-		# Анонимизация канала — ПО УМОЛЧАНИЮ ВКЛЮЧЕНА (решение владельца
-		# 2026-10-11: работа с базой без анонимизации запрещена): ответы
-		# execute_query/execute_code/get_object_by_link/get_event_log/
-		# find_references/get_access_rights токенизируются ([ORG-00001] и т.п.),
-		# токены восстанавливаются в параметрах обратных вызовов. Отключение —
-		# только явное CONTOUR_ANON=off (e2e-прогоны: сравнение сырых значений;
-		# run_e2e.sh экспортирует это сам) с WARN в логе прокси.
-		CONTOUR_ANON="${CONTOUR_ANON:-on}"
-		if [[ "$CONTOUR_ANON" == "on" ]]; then
-			ANON_ENV=(ANONYMIZATION_ENABLED=true)
-			# NER-эшелон (Level 2: ФИО/организации/города вне явных правил
-			# профиля, решение владельца 2026-11-02) — включён вместе с
-			# анонимизацией, включая строковые литералы в результатах
-			# execute_code. Люк для отладки — CONTOUR_NER=off с WARN; люк
-			# CONTOUR_ANON=off глушит и NER: три переменные живут внутри
-			# этой ветки, e2e продолжают сравнивать сырые значения.
-			if [[ "${CONTOUR_NER:-on}" == "on" ]]; then
-				ANON_ENV+=(ANONYMIZATION_NER_ENABLED=true
-					ANONYMIZATION_NER_FOR_EXECUTE_CODE_RESULT=true
-					ANONYMIZATION_NER_FOR_ERROR=true)
-			else
-				echo "WARN: NER-эшелон анонимизации ВЫКЛЮЧЕН (CONTOUR_NER=off) — значения вне правил профиля идут как есть" >&2
-			fi
-		else
-			ANON_ENV=(ANONYMIZATION_ENABLED=false)
-			echo "WARN: анонимизация канала 1c-db ВЫКЛЮЧЕНА (CONTOUR_ANON=off) — данные базы идут в ответах как есть" >&2
-		fi
 		# Выбор порта и подъём: живой на кандидате — чужой (свой держал бы
 		# замок, а замок у нас) → следующий; bind перехвачен другим проектом
 		# между пробой и стартом → ретрай следующим кандидатом.
@@ -871,28 +992,11 @@ if [[ $DBMODE == proxy && $MODE != stop ]]; then
 				_cand=$((_cand + 1))
 				continue
 			fi
-			# nohup вместо subshell+setsid: subshell-обёртка оставляла живой
-			# bash (wait4 на дочернем прокси) — скрипт «зависал» после
-			# «✓ готов», а pidfile ловил pid обёртки, не python (наблюдение
-			# 2026-10-12). cd нужен python -m (пакет ищется по cwd); клиент
-			# позже сам делает cd "$ROOT".
-			cd "$TOOLKIT"
-			nohup env PORT="$_cand" DANGEROUS_KEYWORDS="$DANGER_KEEP" \
-				"${ANON_ENV[@]}" \
-				"$VENV/bin/python" -m onec_mcp_toolkit_proxy \
-				>"$PROXY_LOG" 2>&1 </dev/null &
-			echo $! > "$PROXY_PIDFILE"
-			disown 2>/dev/null || true
 			PORT="$_cand"; URL="$_curl_url"
-			for _ in $(seq 1 20); do
-				if alive; then _ok=1; break; fi
-				sleep 1
-			done
-			if [[ $_ok -eq 1 ]]; then
-				echo "• прокси поднят (pid $(cat "$PROXY_PIDFILE")); лог: $PROXY_LOG"
+			if launch_proxy; then
+				_ok=1
 				break
 			fi
-			echo "• :$_cand не поднялся за 20с (перехвачен между пробой и bind?) — пробую следующий порт; лог: $PROXY_LOG" >&2
 			_cand=$((_cand + 1))
 		done
 		if [[ $_ok -eq 0 ]]; then
@@ -926,6 +1030,19 @@ if [[ $DBMODE == proxy && $MODE != stop ]]; then
 	fi
 	build_probe_url
 	if alive; then
+		# Живость — не только порт (юнит #56 Т4): execute-проба, различение
+		# по потребителю. Зомби «порт слушает — потребитель мёртв» прежней
+		# порт-пробой усыновлялся и жил до ручного pgrep. Execute молчит и
+		# у здорового прокси без клиента (он держит execute_code за
+		# клиентом — находка критика P1-1), поэтому молчание само по себе
+		# зомби не объявляет: носитель решения — stand_lock_status.
+		if ! proxy_execute_ok; then
+			if stand_lock_alive; then
+				heal_proxy || exit 1
+			else
+				echo "• execute молчит, потребителя нет (stand-замок не жив) — прокси не тронут: молчание штатно, связь поднимет клиент"
+			fi
+		fi
 		# pid в pidfile чиним по факту — но только подтверждённым владельцем
 		# тулкита: живой посторонний процесс на порту усыновлять нельзя
 		# (его pid в pidfile означал бы гашение постороннего в --stop)
@@ -1388,13 +1505,26 @@ launch_client "$CARG"
 if ! STAND_CONN="$INST_CONN" stand_lock_py transfer "$$" "$(cat "$PIDFILE" 2>/dev/null)"; then
 	echo "⚠ stand-замок не передан клиенту — он умрёт с скриптом, второй старт пройдёт" >&2
 fi
-if ! wait_client 1; then
+client_wait_failed() { # диагностика провала ожидания клиента — общий хвост
 	echo "  сначала: база НОВАЯ или перезалитая (dt, пересоздан build/ib)?" >&2
 	echo "  → разовое подтверждение диалогов платформы (NativeAPI-компонента," >&2
 	echo "    аутентификация) руками владельца на видимом дисплее — навык" >&2
 	echo "    1c-db-data, раздел «Первая/перезалитая база»" >&2
 	echo "  прочее: wrong mode (embedded на Linux невозможен)" >&2
 	exit 1
+}
+if ! wait_client 1; then
+	# Т4, вторая фаза: клиент поднят (потребитель жив по stand-замку),
+	# execute молчит — усыновлённый прокси был зомби: пересоздание по
+	# тому же правилу, одна попытка (бесконечного цикла нет). Живой
+	# клиент переподключится к новому прокси; живая проверка
+	# переподключения — Т10.
+	if kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null \
+			&& ! proxy_execute_ok && heal_proxy; then
+		wait_client 2 || client_wait_failed
+	else
+		client_wait_failed
+	fi
 fi
 
 # ── прогрев словаря анонимизации: словарь строится прокси запросами через
