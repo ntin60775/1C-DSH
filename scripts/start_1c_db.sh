@@ -93,6 +93,16 @@
 # 2×WAIT_DEADLINE. Пересозданный прокси начинается с пустого словаря
 # анонимизации — первый прогон после него идёт с прогревом.
 #
+# Гигиена старта (юнит #56 Т5): авария (kill -9 pytest — финализация Т3 не
+# выполнена) оставляла сироту-клиента с открытым диалогом и лок 1Cv8.1CL,
+# переживающий владельца — рестарт требовал ручного ритуала «stop → pkill →
+# rm → старт» (40-3). Файловая база чистится стартом перед подъёмом клиента:
+# сироты с kill-маркером контура на ЭТОЙ базе гасятся (статья «сирота
+# погашен»; «свои» — mono-путь обработки и per-instance копии, чужие
+# немаркированные не тронуты), мёртвый лок снимается при живых процессах
+# отсутствующих (статья «лок снят»); живой немаркированный клиент — прежний
+# отказ stand-гарда Т3 с pid. Серверная база — ветка молчит.
+#
 # Зависимости: install_1c_mcp_proxy.sh (один раз; venv ~/.local/venvs/
 # 1c-mcp-proxy, путь к клону тулкита — $ONEC_MCP_TOOLKIT_DIR или аргумент);
 # flock (util-linux) — арбитраж порта; ss (iproute2) — диагностика/гашение.
@@ -1446,6 +1456,159 @@ PY
 		exit 2
 	fi
 fi
+
+# ── гигиена старта: сироты и мёртвый лок (юнит #56 Т5) ──
+# Файловая база после аварии остаётся с клиентом-сиротой (открытый диалог,
+# «Test-client startup deadline expired» у следующего прогона) и локом
+# 1Cv8.1CL, пережившим владельца. Старт чистит сам, до stand-гарда:
+# 1) клиенты-сироты с kill-маркером контура на ЭТОЙ базе гасятся (статья
+#    «сирота погашен») — правило гашения канон Т1: короткие одиночные kill +
+#    перепроверка /proc/<pid>/stat, добивание по pid; cmdline не печатается
+#    (Usr/Pwd видны в cmdline клиента — маскирование, инвариант Т2).
+#    «Свои» — полный путь файла обработки (mono root/<epf>, копии инстансов
+#    build/.1c-db-autostart-*/<имя> — Т7); матч литеральный по полному пути
+#    файла: метасимволы пути совпадают только сами с собой (эквивалент
+#    ERE-экранирования KILL_PAT), base2 не ловит base20. Гасится только
+#    на базе: сирота mono не мешает старту инстанса — базы различны.
+# 2) 1Cv8.1CL существует и живых процессов на базе нет — лок снимается
+#    (статья «лок снят», рестарт без ручного rm). При живом клиенте лок
+#    не трогается (граница тикета): его решение stand-гарда Т3 ниже —
+#    отказ с pid, гард не ослабляется. Замок погашенной сироты подчищает
+#    take (stale-запись с мёртвым владельцем, ib_lock.acquire_stand_lock).
+# Живой маркированный клиент с мёртвым каналом — тот же класс сироты:
+# «уже полностью поднят» выше не сработало, канал не отвечает — старт гасит
+# и поднимает заново. Серверная база (File= нет) — ветка молчит: лок
+# платформы живёт в каталоге файловой базы, гарда серверным не ставится.
+hygiene_py() {
+	python3 - "$ROOT" "$EPF_REL" <<'PY'
+import os, signal, sys, time
+from pathlib import Path
+
+def fail(msg):
+    print(f"✗ {msg}", file=sys.stderr)
+    sys.exit(1)
+
+root = Path(sys.argv[1])
+epf_name = Path(sys.argv[2]).name
+conn = os.environ.get("HYGIENE_CONN", "")
+seg = conn.split(";", 1)[0].strip()
+if not seg.lower().startswith("file="):
+    sys.exit(0)  # серверная база: лока 1Cv8.1CL нет, гард не замкивает
+val = seg[5:].strip().strip('"')
+if not val:
+    sys.exit(0)  # пустой File= — чистить нечего
+# File= адресует каталог информационной базы (1Cv8.1CL — файл внутри него)
+base = os.path.realpath(
+    val if val.startswith("/") else os.path.join(root, val))
+
+def alive(pid):
+    # /proc/<pid>/stat есть и у зомби (канон ib_lock._stand_owner_alive):
+    # нет файла = мёртв; прочий нечитаемый (hidepid и т. п.) = жив
+    try:
+        st = open(f"/proc/{pid}/stat", encoding="utf-8").read()
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    return st.rsplit(")", 1)[-1].split()[0] != "Z"
+
+def send(pid, sig):
+    try:
+        os.kill(pid, sig)
+    except ProcessLookupError:
+        pass
+    except PermissionError:
+        print(f"⚠ pid {pid}: kill не доставлен (чужой процесс)", file=sys.stderr)
+
+# Себя и цепочку предков не сканируем: строка соединения в argv любого
+# предка (обёртка вызова) — управление стартом, не клиент базы
+ancestors = set()
+pid = os.getpid()
+while pid > 1:
+    ancestors.add(pid)
+    try:
+        pid = int(open(f"/proc/{pid}/stat", encoding="utf-8")
+                  .read().rsplit(")", 1)[-1].split()[1])
+    except (OSError, IndexError, ValueError):
+        break
+
+# Kill-маркеры контура (Т7): полный путь файла обработки — mono и все
+# per-instance копии (каталог мог остаться от снесённого инстанса —
+# путь маркера литерален, файл не обязан существовать). Матч подстрокой
+# в аргументе cmdline — base2 не ловит base20 (разные пути файла).
+markers = [str(root / sys.argv[2])]
+build_dir = root / "build"
+if build_dir.is_dir():
+    for d in sorted(build_dir.glob(".1c-db-autostart-*")):
+        markers.append(str(d / epf_name))
+
+def cmdline(pid):
+    try:
+        raw = open(f"/proc/{pid}/cmdline", "rb").read()
+    except OSError:
+        return []
+    return [a.decode("utf-8", "replace") for a in raw.split(b"\0") if a]
+
+def base_of(args):
+    # File= в любом аргументе, значение до «;», realpath обеих сторон
+    # (канон stop_base_py --base: относительный путь от корня, ключ file=
+    # в любом регистре, путь-префикс соседа не матчится)
+    for arg in args:
+        for part in arg.split(";"):
+            if part.lower().startswith("file="):
+                pv = part[5:].strip().strip('"')
+                if pv:
+                    return os.path.realpath(
+                        pv if pv.startswith("/") else os.path.join(root, pv))
+    return None
+
+orphans = []
+on_base = []
+for name in os.listdir("/proc"):
+    if not name.isdigit():
+        continue
+    proc = int(name)
+    if proc in ancestors:
+        continue
+    args = cmdline(proc)
+    if not args or any("start_1c_db.sh" in a for a in args):
+        continue  # стоп-скрипт или параллельный старт — не клиент базы
+    if base_of(args) != base:
+        continue
+    on_base.append(proc)
+    if any(m in a for a in args for m in markers):
+        orphans.append(proc)
+
+for pid in orphans:
+    print(f"• сирота погашен (pid {pid})")
+    send(pid, signal.SIGTERM)
+deadline = time.time() + 8
+while time.time() < deadline and any(alive(p) for p in orphans):
+    time.sleep(1)
+left = [p for p in orphans if alive(p)]
+if left:
+    for pid in left:
+        print(f"• pid {pid} пережил SIGTERM — добиваю", file=sys.stderr)
+        send(pid, signal.SIGKILL)
+    deadline = time.time() + 5
+    while time.time() < deadline and any(alive(p) for p in left):
+        time.sleep(1)
+left = [p for p in orphans if alive(p)]
+if left:
+    fail(f"сироты пережили kill: {', '.join(map(str, left))}")
+
+# Мёртвый лок: живых процессов на базе нет (свои сироты погашены) — снять.
+# Живой немаркированный клиент лок сохраняет — его решение stand-гарда Т3.
+lock_file = Path(base) / "1Cv8.1CL"
+if lock_file.exists() and not any(alive(p) for p in on_base):
+    try:
+        lock_file.unlink()
+    except OSError as e:
+        fail(f"мёртвый лок не снимается: {lock_file} ({e}) — сними вручную")
+    print(f"• лок снят: {lock_file} — живых процессов на базе нет")
+PY
+}
+HYGIENE_CONN="$CONN" hygiene_py || exit $?
 
 # ── запуск клиента ──
 # cwd корня базы (File=build/ib относительный); x11-окружение (Wayland ломает
