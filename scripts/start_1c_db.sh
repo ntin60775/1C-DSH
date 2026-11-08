@@ -81,6 +81,18 @@
 # перезапусти wire_config.py — он разведёт config по фактическому url из
 # contour.local.json (drift применяется, пока желаемый в contour не менялся).
 #
+# Зомби-прокси (юнит #56 Т4): живость усыновлённого прокси при старте —
+# execute-проба (initialize + execute_code «Результат = Истина» со сверкой
+# ответа; лимит PROXY_EXECUTE_TIMEOUT, дефолт 30 с, env-override), не
+# только порт: «порт слушает — execute молчит» при живом потребителе
+# (stand-замок, hooks/ib_lock.py) — зомби, прокси пересоздаётся на том же
+# порту со статьёй «прокси пересоздан»; молчание без потребителя — штатно
+# (прокси держит execute_code за клиентом), клиент поднимает связь. Ожидание
+# клиента может пройти две фазы: если после подъёма клиента execute всё ещё
+# молчит, прокси пересоздаётся и ожидание повторяется — потолок до
+# 2×WAIT_DEADLINE. Пересозданный прокси начинается с пустого словаря
+# анонимизации — первый прогон после него идёт с прогревом.
+#
 # Зависимости: install_1c_mcp_proxy.sh (один раз; venv ~/.local/venvs/
 # 1c-mcp-proxy, путь к клону тулкита — $ONEC_MCP_TOOLKIT_DIR или аргумент);
 # flock (util-linux) — арбитраж порта; ss (iproute2) — диагностика/гашение.
@@ -778,6 +790,15 @@ stop_proxy() {
 			ss -tln 2>/dev/null | grep -q ":$PORT " || break
 			sleep 1
 		done
+		# добивание по канону Т1 (kill не всегда доставляется — грабли
+		# среды): только процесс тулкита, посторонний не добивается
+		local VP
+		VP=$(cat "$PROXY_PIDFILE" 2>/dev/null) || true
+		if [[ -n "$VP" ]] && kill -0 "$VP" 2>/dev/null \
+				&& [[ "$(ps -o args= -p "$VP" 2>/dev/null)" == *onec_mcp_toolkit_proxy* ]]; then
+			kill -9 "$VP" 2>/dev/null || true
+			echo "• прокси добит принудительно" >&2
+		fi
 		echo "• прокси остановлен"
 	fi
 	# pid-файл держит flock арбитража (Т6): стираем только stale — живой
@@ -790,18 +811,23 @@ stop_proxy() {
 }
 
 # Execute-проба прокси (юнит #56 Т4): реальный ответ MCP (initialize +
-# tools/call execute_code) за ограниченное время — порт-проба alive()
-# зомби «порт слушает — потребитель мёртв» не различает (#56: 3 случая
-# за день, следующий прогон сыпал 39 errors за 3 минуты). Молчание —
-# не отказ старта: различение по потребителю делает вызвавший
-# (stand_lock_alive); лимит — PROXY_EXECUTE_TIMEOUT (дефолт 10 с).
+# tools/call execute_code «Результат = Истина» со сверкой значения, канон
+# client_alive) за ограниченное время — порт-проба alive() зомби «порт
+# слушает — потребитель мёртв» не различает (#56: 3 случая за день,
+# следующий прогон сыпал 39 errors за 3 минуты). Лимит —
+# PROXY_EXECUTE_TIMEOUT, дефолт 30 с — канон client_alive «достаточно
+# живому каналу»: занятый длинным execute_query клиент обязан успеть
+# ответить, иначе проба рвала бы работающий канал (правка панели Т4).
+# Молчание — не отказ старта: различение по потребителю делает вызвавший
+# (consumer_state); ответ с ошибкой MCP (тот самый «Timeout… consumer»)
+# пробу не проходит — это зомби, не потребитель.
 proxy_execute_ok() {
-	local LIM="${PROXY_EXECUTE_TIMEOUT:-10}"
-	if ! [[ "$LIM" =~ ^[0-9]+$ ]]; then
-		echo "WARN: PROXY_EXECUTE_TIMEOUT не число («$LIM») — беру 10" >&2
-		LIM=10
+	local LIM="${PROXY_EXECUTE_TIMEOUT:-30}"
+	if ! [[ "$LIM" =~ ^[0-9]+$ ]] || (( LIM < 3 )); then
+		echo "WARN: PROXY_EXECUTE_TIMEOUT («$LIM») — нужно число ≥ 3, беру 30" >&2
+		LIM=30
 	fi
-	timeout -k 2 "$LIM" python3 - "$PROBE_URL" "$LIM" <<'PY' 2>/dev/null
+	timeout -k 2 "$LIM" python3 - "$PROBE_URL" "$LIM" <<'PY'
 import json, sys, urllib.request
 url = sys.argv[1]
 lim = max(1, int(sys.argv[2]) - 2)
@@ -826,22 +852,29 @@ try:
                              "clientInfo": {"name": "proxy-probe", "version": "0"}}})
     if sid:
         rpc({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid)
-    rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-         "params": {"name": "execute_code",
-                    "arguments": {"code": "Результат = Истина;"}}}, sid)
-except Exception:
+    _, res = rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                  "params": {"name": "execute_code",
+                             "arguments": {"code": "Результат = Истина;"}}}, sid)
+    data = (res.get("result") or {}).get("structuredContent") or {}
+    if data.get("Результат") is not True and data.get("result") is not True:
+        print(f"execute-проба: ответ без «Истина» ({str(res)[:120]})",
+              file=sys.stderr)
+        sys.exit(1)
+except Exception as e:
+    print(f"execute-проба не ответила за {lim} с ({type(e).__name__})",
+          file=sys.stderr)
     sys.exit(1)
 sys.exit(0)
 PY
 }
 
-# Потребитель стенда жив? Носитель состояния — stand_lock_status
-# (hooks/ib_lock.py); второй источник «есть ли клиент» не заводится (Т4).
-# Гард недоступен / связь не резолвится — потребителя нет (безопасная
-# сторона: прокси не объявляется зомби, различение не изобретается).
-stand_lock_alive() {
-	local ST
-	ST=$(STAND_CONN="$INST_CONN" python3 - "$ROOT" "$HOOKS_DIR" <<'PY' 2>/dev/null
+# Потребитель стенда: «1» — жив, «0» — нет, «?» — не проверен (гард
+# недоступен или связь не резолвится). Носитель состояния —
+# stand_lock_status (hooks/ib_lock.py); второй источник «есть ли клиент»
+# не заводится (Т4). Недоступность гарда — не «потребителя нет»: прокси
+# зомби не объявляется, но и статья «штатно» не печатается.
+consumer_state() {
+	STAND_CONN="$INST_CONN" python3 - "$ROOT" "$HOOKS_DIR" <<'PY' 2>/dev/null
 import os, sys
 root, hooks = sys.argv[1], sys.argv[2]
 try:
@@ -849,21 +882,23 @@ try:
         sys.path.insert(0, hooks)
     import ib_lock
 except (ImportError, OSError):
+    print("?")
     sys.exit(0)
 conn = os.environ.get("STAND_CONN") or ib_lock.resolve_infobase_connection(root)
 lock = ib_lock.stand_lock_status(root, conn) if conn else None
-print("1" if lock else "", end="")
+print("1" if lock else "0", end="")
 PY
-)
-	[[ "$ST" == "1" ]]
 }
 
-# Подъём прокси на текущем $PORT/$URL (канон Т6: nohup, а не
+# Подъём прокси на текущем $PORT/$URL (канон мультистенда Т6: nohup, а не
 # subshell+setsid — обёртка оставляла живой bash, pidfile ловил pid
 # обёртки; наблюдение 2026-10-12). Успех — статья «• прокси поднят»,
-# неуспех — rc 1: вызвавший (цикл кандидатов, пересоздание Т4) решает
+# неуспех — rc 1: вызвавший (цикл кандидатов, пересоздание #56 Т4) решает
 # следующий шаг. Замок pid-файла несёт вызвавший через наследованный fd.
+# Меняет cwd вызывающего на $TOOLKIT (python -m ищет пакет по cwd);
+# общий путь старта после этого идёт через cd "$ROOT".
 launch_proxy() {
+	# cd нужен python -m (пакет ищется по cwd); клиент позже сам делает cd "$ROOT"
 	cd "$TOOLKIT"
 	nohup env PORT="$PORT" DANGEROUS_KEYWORDS="$DANGER_KEEP" \
 		"${ANON_ENV[@]}" \
@@ -878,32 +913,65 @@ launch_proxy() {
 		fi
 		sleep 1
 	done
-	echo "• :$PORT не поднялся за 20с (перехвачен между пробой и bind?) — лог: $PROXY_LOG" >&2
+	echo "✗ :$PORT не поднялся за 20с (перехвачен между пробой и bind?) — лог: $PROXY_LOG" >&2
 	return 1
 }
 
-# Пересоздание прокси-зомби (юнит #56 Т4): гашение по pid-файлу (канон
-# stop_proxy, включая ss-добивание владельца тулкита), взятие замка
-# pid-файла — мёртвый зомби замок освободил — и подъём на том же порту;
-# новый прокси наследует fd замка, инвариант Т6 «второго прокси у
-# проекта не бывает» сохраняется.
+# Пересоздание прокси-зомби (юнит #56 Т4): сериализация отдельным замком
+# (два старта при одном зомби иначе оба зовут stop_proxy и гасят результат
+# друг друга), перепроверка результата победителя, гашение по pid-файлу
+# (канон stop_proxy с эскалацией), взятие замка pid-файла — мёртвый зомби
+# замок освободил — и подъём на том же порту; новый прокси наследует fd
+# замка, инвариант мультистенда Т6 «второго прокси у проекта не бывает»
+# сохраняется.
 heal_proxy() {
+	exec {HEAL_LOCK_FD}>>"$PROXY_PIDFILE.heal"
+	local waited=0
+	while ! flock -n "$HEAL_LOCK_FD" 2>/dev/null; do
+		if (( waited >= 10 )); then
+			exec {HEAL_LOCK_FD}>&-
+			echo "✗ пересоздание уже ведёт параллельный старт — жди его факта" >&2
+			return 1
+		fi
+		sleep 1
+		waited=$((waited + 1))
+	done
+	# победитель гонки мог уже пересоздать: живой и отвечающий прокси
+	# не гасится — усыновление его результата
+	if alive && proxy_execute_ok; then
+		exec {HEAL_LOCK_FD}>&-
+		echo "• пересоздание уже выполнил параллельный старт — прокси отвечает"
+		return 0
+	fi
 	stop_proxy
-	exec {HEAL_FD}>>"$PROXY_PIDFILE"
-	if ! flock -n "$HEAL_FD" 2>/dev/null; then
-		exec {HEAL_FD}>&-
-		echo "✗ замок pid-файла перехвачен при пересоздании — старт прекращён" >&2
+	if alive; then
+		exec {HEAL_LOCK_FD}>&-
+		echo "✗ порт держит живой процесс после гашения — пересоздание невозможно" >&2
 		return 1
 	fi
+	exec {HEAL_FD}>>"$PROXY_PIDFILE"
+	waited=0
+	while ! flock -n "$HEAL_FD" 2>/dev/null; do
+		if (( waited >= 10 )); then
+			exec {HEAL_FD}>&-
+			exec {HEAL_LOCK_FD}>&-
+			echo "✗ замок pid-файла не освободился после гашения — старт прекращён" >&2
+			return 1
+		fi
+		sleep 1
+		waited=$((waited + 1))
+	done
 	if ! launch_proxy; then
 		exec {HEAL_FD}>&-
+		exec {HEAL_LOCK_FD}>&-
 		echo "✗ пересоздание прокси не удалось; смотри $PROXY_LOG" >&2
 		return 1
 	fi
 	exec {HEAL_FD}>&-
+	exec {HEAL_LOCK_FD}>&-
 	# Пересозданный прокси начинается с пустого словаря анонимизации —
-	# первый прогон после него идёт с прогревом (стоимость прогрева — Т7)
-	echo "• прокси пересоздан: execute молчал при живом потребителе (pid $(cat "$PROXY_PIDFILE"))"
+	# первый прогон после него идёт с прогревом (стоимость прогрева — #56 Т7)
+	echo "• прокси пересоздан: execute молчал при живом потребителе (pid $(cat "$PROXY_PIDFILE")); в базе живой клиент — если старт был не нужен, гаси --stop"
 	return 0
 }
 
@@ -1032,15 +1100,23 @@ if [[ $DBMODE == proxy && $MODE != stop ]]; then
 	if alive; then
 		# Живость — не только порт (юнит #56 Т4): execute-проба, различение
 		# по потребителю. Зомби «порт слушает — потребитель мёртв» прежней
-		# порт-пробой усыновлялся и жил до ручного pgrep. Execute молчит и
-		# у здорового прокси без клиента (он держит execute_code за
-		# клиентом — находка критика P1-1), поэтому молчание само по себе
-		# зомби не объявляет: носитель решения — stand_lock_status.
-		if ! proxy_execute_ok; then
-			if stand_lock_alive; then
+		# порт-пробой усыновлялся и жил до ручного pgrep. Проба — только на
+		# УСЫНОВЛЁННОМ прокси ($_ok=0): свежеподнятый этим же стартом не
+		# пробуется — потребителя у него нет по построению, молчание
+		# ничего не говорит, а гашение собственного прокси при живом
+		# stand-замке разорвало бы канал до его появления (панель Т4, P1).
+		# Execute молчит и у здорового прокси без клиента (он держит
+		# execute_code за клиентом — находка критика P1-1), поэтому
+		# молчание само по себе зомби не объявляет: носитель решения —
+		# stand_lock_status через consumer_state.
+		if [[ ${_ok:-0} -eq 0 ]] && ! proxy_execute_ok; then
+			CST=$(consumer_state)
+			if [[ "$CST" == "1" ]]; then
 				heal_proxy || exit 1
+			elif [[ "$CST" == "0" ]]; then
+				echo "• execute молчит, потребителя нет (stand-замок не жив) — прокси не тронут: молчание штатно, клиент подключится и поднимет канал"
 			else
-				echo "• execute молчит, потребителя нет (stand-замок не жив) — прокси не тронут: молчание штатно, связь поднимет клиент"
+				echo "• execute молчит; потребитель не проверен (гард stand-замка недоступен) — прокси не тронут"
 			fi
 		fi
 		# pid в pidfile чиним по факту — но только подтверждённым владельцем
@@ -1514,14 +1590,17 @@ client_wait_failed() { # диагностика провала ожидания 
 	exit 1
 }
 if ! wait_client 1; then
-	# Т4, вторая фаза: клиент поднят (потребитель жив по stand-замку),
-	# execute молчит — усыновлённый прокси был зомби: пересоздание по
-	# тому же правилу, одна попытка (бесконечного цикла нет). Живой
-	# клиент переподключится к новому прокси; живая проверка
-	# переподключения — Т10.
-	if kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null \
-			&& ! proxy_execute_ok && heal_proxy; then
-		wait_client 2 || client_wait_failed
+	# Т4, вторая фаза: клиент поднят и stand-замок жив (потребитель есть),
+	# execute молчит — прокси зомби: пересоздание по тому же правилу,
+	# одна попытка (бесконечного цикла нет). Носитель решения — тот же
+	# consumer_state (второй источник «есть ли клиент» не заводится).
+	# Живой клиент переподключится к новому прокси — живой проверкой
+	# переподключения не проверено; клиент, не подключившийся по своей
+	# причине (диалоги, новая база), получит пересоздание здорового
+	# прокси — цена: прогрев словаря, сам старт всё равно провален.
+	if [[ "$(consumer_state)" == "1" ]] && ! proxy_execute_ok \
+			&& heal_proxy; then
+		wait_client "2 (после пересоздания прокси)" || client_wait_failed
 	else
 		client_wait_failed
 	fi

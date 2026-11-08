@@ -614,12 +614,12 @@ wait_client тест2 && echo "ok=$n"
     # mono-связь: main наследует user/password из local-оверлея (критерий 3,
     # половина main) — процессный прогон mono-блока CONN (тело heredoc).
     # Якорь — строка CONN= целиком: шапка «python3 - "$ROOT" "$HOOKS_DIR" <<»
-    # не уникальна (stand_lock_alive Т4 несёт такую же), первое совпадение
-    # врал бы
+    # не уникальна (consumer_state Т4 несёт такую же), первое совпадение
+    # врало бы
     script_text = SCRIPT.read_text(encoding="utf-8")
     import re
     m = re.search(
-        r'^\tCONN="\$\(python3 - "\$ROOT" "\$HOOKS_DIR" <<\'PY\'\n(.*?)^PY$',
+        r'^\s*CONN="\$\(python3 - "\$ROOT" "\$HOOKS_DIR" <<\'PY\'\n(.*?)^PY$',
         script_text, re.M | re.S)
     mono_body = m.group(1) if m else ""
     mc = tmp / "mono-conn"
