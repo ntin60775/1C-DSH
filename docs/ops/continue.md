@@ -27,8 +27,18 @@ SOURCE_PREFIXES включает tests/epf, кейсы epf/erf в тестах �
 [tickets/external-epf-loop/](../../tickets/external-epf-loop/):
 Т1 реестр 1c-testpilot → Т2 канон src_epf/src_erf (после Т3) → Т3
 reference v8-контейнера → Т4 семантика доверия 1c-db-data (после Т1) →
-Т5 гейт + инвариант 1 → Т6 контроль юнита (после Т1–Т5). Следующее
-действие — ship Т1/Т3 (независимые) по команде.
+Т5 гейт + инвариант 1 → Т6 контроль юнита (после Т1–Т5). Т1 ОТГРУЖЕН
+08.11 (ship ba48ce1 + правки панели 285a302, merge 2c2bd90): строки
+реестра — открытие внешнего epf (/Execute, conflicting_execute_argument),
+ErrorWindow (get_current_error «не проверено», декорация ErrorInfo),
+ErrorReportWindow (не читать/только закрывать), MessageBox (answer_dialog
+на ref окна), диалог безопасности (указатель якоря доверия на 1c-db-data,
+readback «канал оживает»); строка клавиатуры — граница по среде
+(keyboard_window_not_foreground при клиенте в отдельном Xvfb, апстрим
+заявляет поддержку isolated — расхождение названо). Панель 4 роли один
+прогон: 3 P1-дубля (литерал отказа) + 5 P2 + 8 P3 правлены; разбор —
+в тикете, «Расхождения». Приёмка Т1 — за оператором. Следующее —
+ship Т3/Т5 (независимые) по команде.
 
 Открыт юнит «Канон build/out» (спека
 [docs/plans/build-out-canon.md](../plans/build-out-canon.md), тикеты
