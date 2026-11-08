@@ -39,6 +39,9 @@ python3 "$SKILL_DIR/scripts/scaffold.py" all \
   знаниями деплоя (ibcmd для файловой базы из-за GTK, путь платформы
   каталогом без strict-пина). Полный контракт 0.15, назначение всех полей и
   регламент переезда со старого конфига — [references/v8project.md](references/v8project.md);
+  разбор бинарного контейнера `.epf`/`.erf` и проверка собранного
+  (маркеры элементов формы в бинарнике) —
+  [references/epf-binary.md](references/epf-binary.md);
 - `git` — `git init`, `.gitignore` (только дозапись недостающих строк),
   `.gitattributes` (политика CRLF/binary — без неё `unica.check` роняет
   `repositoryReady` первым коммитом), `--remote`;
