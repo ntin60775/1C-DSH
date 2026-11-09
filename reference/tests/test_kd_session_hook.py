@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _lib import check, summary  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
-HOOK = REPO / "hooks" / "kd_session_start.py"
+HOOK = REPO / "gates" / "kd_session_start.py"
 
 FAKE_START = '#!/usr/bin/env bash\necho "$@" > "$MARKER"\n'
 

@@ -216,7 +216,7 @@ TOOLKIT="${ONEC_MCP_TOOLKIT_DIR:-$HOME/home/dev/contrib/clones/1c-mcp-toolkit}"
 
 # ── hooks контура: репо (scripts/../hooks) или вендор (scripts/../../hooks) ──
 HOOKS_DIR=""
-for rel in "../../hooks" "../hooks"; do
+for rel in "../../hooks" "../hooks" "../reference/gates"; do
 	# не-фатально: несуществующий кандидат не должен убить скрипт при set -e
 	cand="$(cd "$(dirname "${BASH_SOURCE[0]}")/$rel" 2>/dev/null && pwd || true)"
 	[[ -f "$cand/ib_lock.py" ]] && { HOOKS_DIR="$cand"; break; }

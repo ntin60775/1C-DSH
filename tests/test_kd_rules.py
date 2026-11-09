@@ -54,14 +54,7 @@ def main() -> int:
 	      and fragments.get("1c-kd", {}).get("url") == "{{kd_url}}",
 	      str(fragments.get("1c-kd")))
 
-	# ── deploy.json: скиллы канала вендорятся ──
-	deploy = json.loads((REPO / "deploy.json").read_text(encoding="utf-8"))
-	mapped = {m["from"] for m in deploy.get("mappings", [])}
-	for name in KD_SKILLS:
-		check(f"deploy.json: скилл {name} в маппингах", f"skills/{name}" in mapped,
-		      str(sorted(mapped)))
-	check("deploy.json: вендор в проекты НЕ маппится",
-	      not any(m.startswith("vendor/") for m in mapped), "вендор утёк в проект")
+	# deploy.json ушёл вместе с ZCode-поставкой (юнит DSH, Т1)
 
 	# ── скиллы: frontmatter под слоты ZCode ──
 	lint = REPO / "scripts" / "lint_skill_frontmatter.py"

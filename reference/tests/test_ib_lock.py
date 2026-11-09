@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "gates"))
 from _lib import HOOKS, check, run_hook, summary  # noqa: E402
 
 import ib_lock  # noqa: E402

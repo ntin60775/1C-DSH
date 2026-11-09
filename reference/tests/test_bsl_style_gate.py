@@ -49,7 +49,7 @@ def main() -> int:
 			import json
 			import subprocess
 			return subprocess.run(
-				[sys.executable, str(Path(__file__).parent.parent / "hooks" / "bsl_style_gate.py")],
+				[sys.executable, str(Path(__file__).parent.parent / "gates" / "bsl_style_gate.py")],
 				input=json.dumps({"hook_event_name": "PostToolUse", "session_id": "s1",
 				                  "tool_name": tool, "tool_input": tool_input, "cwd": cwd}),
 				capture_output=True, text=True, cwd=cwd,
@@ -149,7 +149,7 @@ def main() -> int:
 
 		def post_unica(tool_input, tool="mcp__unica__unica_apply", sid="s1", state_dir=None):
 			return subprocess.run(
-				[sys.executable, str(Path(__file__).parent.parent / "hooks" / "bsl_style_gate.py")],
+				[sys.executable, str(Path(__file__).parent.parent / "gates" / "bsl_style_gate.py")],
 				input=json.dumps({"hook_event_name": "PostToolUse", "session_id": sid,
 				                  "tool_name": tool, "tool_input": tool_input, "cwd": cwd}),
 				capture_output=True, text=True, cwd=cwd,
@@ -235,7 +235,7 @@ def main() -> int:
 		      r.returncode == 0 and not r.stderr.strip(), r.stderr[:120])
 
 		# session_clean выметает старые файлы бриджа вместе с прочими
-		sys.path.insert(0, str(Path(__file__).parent.parent / "hooks"))
+		sys.path.insert(0, str(Path(__file__).parent.parent / "gates"))
 		from session_clean import purge_old_session_state  # noqa: E402
 		stale_time = time.time() - 8 * 86400
 		os.utime(plan_file, (stale_time, stale_time))

@@ -92,7 +92,7 @@ def make_project(root: Path, vendored: bool = True):
 			encoding="utf-8")
 		(z / "hooks").mkdir()
 		(z / "hooks" / "hooks.json").write_text(
-			(REPO / "hooks" / "hooks.json").read_text(encoding="utf-8"),
+			(REPO / "reference" / "gates" / "hooks.json").read_text(encoding="utf-8"),
 			encoding="utf-8")
 		(z / "1c" / "templates" / "agents-section.md").write_text(
 			(REPO / "templates" / "agents-section.md").read_text(encoding="utf-8"),

@@ -18,7 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _lib import audit_entries, check, run_hook, summary  # noqa: E402
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "gates"))
 from contour_common import UNICA_TOOLS_DEFAULT  # noqa: E402
 
 V8PROJECT = """\
@@ -302,7 +302,7 @@ def main() -> int:
 		check("инициализированный ворктри проходит", r.returncode == 0, f"exit {r.returncode}")
 
 		# ── замок на инфобазу: база занята другим деревом ──
-		sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
+		sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "gates"))
 		import os
 		os.environ["ZCODE_1C_STATE_DIR"] = state
 		from ib_lock import acquire_base_lock, release_base_lock, resolve_infobase_connection  # noqa: E402

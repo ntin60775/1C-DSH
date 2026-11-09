@@ -28,12 +28,7 @@ def main() -> int:
 		capture_output=True, text=True)
 	check("линтер фронтматтера чист", lint.returncode == 0, lint.stdout[:300])
 
-	# скилл вендорится в проекты (контракт deploy.json v1)
-	deploy = json.loads((ROOT / "deploy.json").read_text(encoding="utf-8"))
-	pairs = {(m.get("from"), m.get("to")) for m in deploy.get("mappings", [])}
-	check("маппинг skills/1c-unica-artifacts → .zcode/skills",
-	      ("skills/1c-unica-artifacts", ".zcode/skills/1c-unica-artifacts") in pairs,
-	      str(sorted(f for f, _ in pairs)))
+	# deploy.json ушёл вместе с ZCode-поставкой (юнит DSH, Т1)
 
 	# канон не выветрился: маркеры живого рана (dealer, 2026-10-09)
 	for marker in (

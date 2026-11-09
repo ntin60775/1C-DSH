@@ -293,7 +293,7 @@ try:
     connC = f'File={ibC};Usr="u3";Pwd="p3"'
     pC = fake_proc(fake_sh, connC, str(root3 / "elsewhere.epf"))  # маркер не контура
     time.sleep(0.3)
-    sys.path.insert(0, str(REPO / "hooks"))
+    sys.path.insert(0, str(REPO / "reference" / "gates"))
     import ib_lock
     ib_lock.acquire_stand_lock(str(root3), connC, pC.pid)
     r3 = run_start(root3)

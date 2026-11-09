@@ -229,7 +229,7 @@ def make_scenario(name, mode, with_lock, client_life=""):
              "import ib_lock\n"
              "ib_lock.acquire_stand_lock(sys.argv[1], sys.argv[3],"
              " int(sys.argv[4]))\n",
-             str(root), str(REPO / "hooks"),
+             str(root), str(REPO / "reference" / "gates"),
              f"File={root / 'build' / 'ib'}", str(lock_pid)],
             env=dict(BASE_ENV), capture_output=True, check=True)
     return {"root": root, "port": port, "mock": mock, "pidfile": pidfile,

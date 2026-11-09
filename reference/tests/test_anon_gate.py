@@ -150,7 +150,7 @@ def main() -> int:
 		check("не-PreToolUse событие проходит", r.returncode == 0, f"exit {r.returncode}")
 
 		r = subprocess.run(
-			[sys.executable, str(Path(__file__).resolve().parent.parent / "hooks" / "anon_gate.py")],
+			[sys.executable, str(Path(__file__).resolve().parent.parent / "gates" / "anon_gate.py")],
 			input="не-json", capture_output=True, text=True,
 			env={"ZCODE_1C_STATE_DIR": state, "PATH": "/usr/bin:/bin"},
 			cwd=cwd)

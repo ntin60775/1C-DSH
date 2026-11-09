@@ -50,21 +50,13 @@ from pathlib import Path
 
 # contour hooks доступны в обеих раскладках: репо (scripts/../hooks) и
 # вендоренной (.zcode/1c/scripts/../../hooks)
-for _rel in ("../../hooks", "../hooks"):
+for _rel in ("../../hooks", "../hooks", "../reference/gates"):
 	_p = (Path(__file__).resolve().parent / _rel).resolve()
 	if (_p / "contour_common.py").is_file():
 		sys.path.insert(0, str(_p))
 
 from contour_common import contour_config
 
-# deploy_recon — сосед по scripts/ в обеих раскладках; секция остатков (3d)
-# импортирует его проверки: единственный источник истины между разведкой
-# на деплое (run-шаг post_update) и принуждением здесь (ишью #49).
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-try:
-	import deploy_recon
-except ImportError:  # старая вендоренная раскладка без deploy_recon
-	deploy_recon = None
 # wire_config — сосед: единственный разбор db-instances.yaml и фактического
 # url 1c-db (мультистенд #37); нет в старой раскладке — секция пропускается
 try:
@@ -524,25 +516,8 @@ def main() -> int:
 				     f"{shown} — правило: {'/'.join(sorted(out_canon))}; "
 				     "чужое снести или перенести (скилл 1c-project-layout)")
 
-	# ── 3d. Остатки прежнего/чужого контура (разведка deploy_recon) ──
-	# Намеренно жёстче recon: doctor — точка лечения, не разведки (recon в
-	# post_update только предупреждает и всегда exit 0).
-	if deploy_recon is None:
-		warn("deploy_recon рядом с doctor не найден (старая раскладка) — "
-		     "остатки прежнего контура не проверяются")
-	else:
-		leftovers = deploy_recon.find_leftovers(root)
-		if leftovers:
-			fail("остатки прежнего/чужого контура (%d): %s — лечение: "
-			     "scripts/migrate_from_omp.py (dry-run → --apply) + перенос "
-			     "покрытия по канону скилла 1c-test-contour"
-			     % (len(leftovers), "; ".join(
-			         "%s: %s" % (f["code"], f["target"]) for f in leftovers[:8])))
-		else:
-			ok("остатков прежнего контура не найдено (deploy_recon)")
-
 	wire = Path(__file__).resolve().parent / "wire_config.py"
-	if (root / ".zcode" / "config.json").is_file():
+	if wire.is_file() and (root / ".zcode" / "config.json").is_file():
 		done = subprocess.run(
 			[sys.executable, str(wire), str(root), "--check"],
 			capture_output=True, text=True)
