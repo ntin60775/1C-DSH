@@ -36,6 +36,8 @@
 - Каждая из 4 команд запущена smoke-прогоном с ожидаемым результатом:
   doctor — код, bootstrap — dry-run, test — план прогона, migrate —
   `--check`.
+- Живой `mcp__unica__apply` в сессии с пресетом проходит, исход виден в
+  `tool/result` (пункт, перенесённый из Т2).
 - `grep -rl "\.zcode" skills commands templates` — пусто.
 - `whenToUse` есть во всех 15 `SKILL.md`; линт скиллов под слоты DSH
   проходит.
