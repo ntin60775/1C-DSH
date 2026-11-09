@@ -3,27 +3,28 @@
 # 09.11: оператор назначил все роли на модель сессии DSH
 # (deepseek-account/deepseek-flash) — отдельной модели критика в DSH нет;
 # независимость критика держится чтением артефактов (спека + тикеты), а не
-# моделью. Отдельная модель вернётся решением оператора, когда появится.
+# моделью. 09.11, позже: ревью-панель переведена на Qwen3.8 Flash (xhigh);
+# критик и куратор остались на модели сессии — решение оператора.
 # `level` is the role's reasoning level, written verbatim into the definition;
 # with the key absent the launch-time check falls back to the maximum
 # available (onto-doc decisions 3 and 4) — the generator only omits the line.
 # A level value is a bare token: letters, digits, '.', '_', '-'.
 
 [agents.reviewer-spec]
-model = "deepseek-account/deepseek-flash"
-level = "max"
+model = "qwen-token-plan/qwen3.8-flash"
+level = "xhigh"
 
 [agents.reviewer-tests]
-model = "deepseek-account/deepseek-flash"
-level = "max"
+model = "qwen-token-plan/qwen3.8-flash"
+level = "xhigh"
 
 [agents.reviewer-code]
-model = "deepseek-account/deepseek-flash"
-level = "max"
+model = "qwen-token-plan/qwen3.8-flash"
+level = "xhigh"
 
 [agents.reviewer-kb]
-model = "deepseek-account/deepseek-flash"
-level = "max"
+model = "qwen-token-plan/qwen3.8-flash"
+level = "xhigh"
 
 [agents.critic]
 model = "deepseek-account/deepseek-flash"
