@@ -1,31 +1,34 @@
 # OntoShip role registry.
 # One [agents.<name>] section per role; `model` is required.
-# The critic model must differ from the session model (decision 10).
+# 09.11: оператор назначил все роли на модель сессии DSH
+# (deepseek-account/deepseek-flash) — отдельной модели критика в DSH нет;
+# независимость критика держится чтением артефактов (спека + тикеты), а не
+# моделью. Отдельная модель вернётся решением оператора, когда появится.
 # `level` is the role's reasoning level, written verbatim into the definition;
 # with the key absent the launch-time check falls back to the maximum
 # available (onto-doc decisions 3 and 4) — the generator only omits the line.
 # A level value is a bare token: letters, digits, '.', '_', '-'.
 
 [agents.reviewer-spec]
-model = "qwen-alibaba-model-studio-intl/deepseek-v4.1-flash-1017"
+model = "deepseek-account/deepseek-flash"
 level = "max"
 
 [agents.reviewer-tests]
-model = "qwen-alibaba-model-studio-intl/deepseek-v4.1-flash-1017"
+model = "deepseek-account/deepseek-flash"
 level = "max"
 
 [agents.reviewer-code]
-model = "qwen-alibaba-model-studio-intl/deepseek-v4.1-flash-1017"
+model = "deepseek-account/deepseek-flash"
 level = "max"
 
 [agents.reviewer-kb]
-model = "qwen-alibaba-model-studio-intl/deepseek-v4.1-flash-1017"
+model = "deepseek-account/deepseek-flash"
 level = "max"
 
 [agents.critic]
-model = "account:zai-individual-coding-plan/GLM-5.3"
+model = "deepseek-account/deepseek-flash"
 level = "max"
 
 [agents.curator]
-model = "account:zai-individual-coding-plan/GLM-5.3-Flash"
-level = "max"
+model = "deepseek-account/deepseek-flash"
+level = "low"
