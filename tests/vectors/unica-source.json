@@ -1,0 +1,924 @@
+[
+  {
+    "id": "write-bsl-in-src-cf",
+    "describe": "write .bsl в src/cf блокируется маршрутизацией на unica.apply",
+    "call": {
+      "tool": "write",
+      "args": {
+        "file_path": "src/cf/CommonModules/ОбщегоНазначения.bsl",
+        "content": ""
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "source-edit",
+      "reasonIncludes": [
+        "Прямое редактирование исходников 1С",
+        "unica.apply",
+        "Файл: src/cf/CommonModules/ОбщегоНазначения.bsl"
+      ]
+    }
+  },
+  {
+    "id": "edit-bsl-absolute-path",
+    "describe": "edit .bsl по абсолютному пути из другого дерева проекта блокируется",
+    "cwd": "other-tree",
+    "call": {
+      "tool": "edit",
+      "args": {
+        "file_path": "$TMP/tree/src/cf/CommonModules/ОбщегоНазначения.bsl",
+        "old_string": "a",
+        "new_string": "b"
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "source-edit",
+      "reasonIncludes": [
+        "Файл: src/cf/CommonModules/ОбщегоНазначения.bsl"
+      ]
+    }
+  },
+  {
+    "id": "agents-md-in-src",
+    "describe": "AGENTS.md внутри src/ — документация, не исходник",
+    "call": {
+      "tool": "write",
+      "args": {
+        "file_path": "src/cf/AGENTS.md",
+        "content": ""
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "file-outside-sources",
+    "describe": "файл вне исходников 1С проходит",
+    "call": {
+      "tool": "write",
+      "args": {
+        "file_path": "src/docs/readme.md",
+        "content": ""
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "escalation-granted",
+    "describe": "строка allowlist разрешает прямую правку",
+    "fixture": {
+      "write": {
+        "tree/.zcode/unica-gate-escalations.txt": "# разовая прямая правка\nsrc/cf/CommonModules/ОбщегоНазначения.bsl\n"
+      }
+    },
+    "call": {
+      "tool": "write",
+      "args": {
+        "file_path": "src/cf/CommonModules/ОбщегоНазначения.bsl",
+        "content": ""
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "escalation-file-edit",
+    "describe": "правка самого allowlist'а проходит и журналируется",
+    "call": {
+      "tool": "edit",
+      "args": {
+        "file_path": ".zcode/unica-gate-escalations.txt",
+        "old_string": "a",
+        "new_string": "b"
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "escalation-format-error",
+    "describe": "строка «путь — причина» не молчит: разбор в блоке",
+    "fixture": {
+      "write": {
+        "tree/.zcode/unica-gate-escalations.txt": "# разовая прямая правка\nsrc/cf/CommonModules/ОбщегоНазначения.bsl — правка легаси\n"
+      }
+    },
+    "call": {
+      "tool": "write",
+      "args": {
+        "file_path": "src/cf/CommonModules/ОбщегоНазначения.bsl",
+        "content": ""
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "source-edit",
+      "reasonIncludes": [
+        "для этого файла не подошли",
+        "путь и причина одной строкой"
+      ]
+    }
+  },
+  {
+    "id": "escalation-absolute-line",
+    "describe": "абсолютная форма строки allowlist не матчится",
+    "fixture": {
+      "write": {
+        "tree/.zcode/unica-gate-escalations.txt": "# разовая прямая правка\n$TMP/tree/src/cf/CommonModules/ОбщегоНазначения.bsl\n"
+      }
+    },
+    "call": {
+      "tool": "write",
+      "args": {
+        "file_path": "src/cf/CommonModules/ОбщегоНазначения.bsl",
+        "content": ""
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "source-edit",
+      "reasonIncludes": [
+        "не относительный путь"
+      ]
+    }
+  },
+  {
+    "id": "escalation-missing",
+    "describe": "без файла эскалаций блок называет отсутствие",
+    "call": {
+      "tool": "write",
+      "args": {
+        "file_path": "src/cf/CommonModules/ОбщегоНазначения.bsl",
+        "content": ""
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "source-edit",
+      "reasonIncludes": [
+        "не найден"
+      ]
+    }
+  },
+  {
+    "id": "escalation-cwd-fallback",
+    "describe": "allowlist читается из дерева цели, при отсутствии — из cwd сессии",
+    "fixture": {
+      "write": {
+        "tree/.zcode/unica-gate-escalations.txt": "# разовая прямая правка\nsrc/cfe/Расширение/Module.bsl\n"
+      }
+    },
+    "call": {
+      "tool": "write",
+      "args": {
+        "file_path": "$TMP/other-tree/src/cfe/Расширение/Module.bsl",
+        "content": ""
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "escalation-target-tree-wins",
+    "describe": "файл дерева цели приоритетен: без совпадения блок",
+    "fixture": {
+      "write": {
+        "tree/.zcode/unica-gate-escalations.txt": "# разовая прямая правка\nsrc/cfe/Расширение/Module.bsl\n",
+        "other-tree/.zcode/unica-gate-escalations.txt": "# чужое дерево: совпадения нет\n"
+      }
+    },
+    "call": {
+      "tool": "write",
+      "args": {
+        "file_path": "$TMP/other-tree/src/cfe/Расширение/Module.bsl",
+        "content": ""
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "source-edit"
+    }
+  },
+  {
+    "id": "bash-sed-inplace",
+    "describe": "sed -i по исходнику блокируется",
+    "call": {
+      "tool": "bash",
+      "args": {
+        "command": "sed -i 's/a/b/' src/cf/CommonModules/ОбщегоНазначения.bsl"
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "source-bash"
+    }
+  },
+  {
+    "id": "bash-redirect",
+    "describe": "перенаправление в исходник блокируется",
+    "call": {
+      "tool": "bash",
+      "args": {
+        "command": "echo x >> src/cf/CommonModules/Модуль.bsl"
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "source-bash"
+    }
+  },
+  {
+    "id": "bash-redirect-outside",
+    "describe": "перенаправление вне исходников проходит",
+    "call": {
+      "tool": "bash",
+      "args": {
+        "command": "echo x >> build/out/log.txt"
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "bash-sed-copy-in-tmp",
+    "describe": "правка копии исходника во временном каталоге проходит",
+    "call": {
+      "tool": "bash",
+      "args": {
+        "command": "cp src/cfe/Расширение/Module.bsl /tmp/w.bsl && sed -i 's/a/b/' /tmp/w.bsl"
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "bash-sed-script-mentions-src",
+    "describe": "упоминание src в скрипте sed — не цель правки",
+    "call": {
+      "tool": "bash",
+      "args": {
+        "command": "sed -i 's/src\\/cf\\///' /tmp/w.bsl"
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "bash-sed-multiple-expressions",
+    "describe": "sed -i -e … -e … по исходнику блокируется",
+    "call": {
+      "tool": "bash",
+      "args": {
+        "command": "sed -i -e 's/a/b/' -e 's/c/d/' src/cf/CommonModules/ОбщегоНазначения.bsl"
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "source-bash"
+    }
+  },
+  {
+    "id": "bash-sed-script-file",
+    "describe": "sed -i -f по исходнику блокируется",
+    "call": {
+      "tool": "bash",
+      "args": {
+        "command": "sed -i -f fix.sed src/cf/CommonModules/ОбщегоНазначения.bsl"
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "source-bash"
+    }
+  },
+  {
+    "id": "bash-sed-flag-cluster",
+    "describe": "кластер флагов -ie по исходнику блокируется",
+    "call": {
+      "tool": "bash",
+      "args": {
+        "command": "sed -ie 's/a/b/' src/cf/CommonModules/ОбщегоНазначения.bsl"
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "source-bash"
+    }
+  },
+  {
+    "id": "bash-sed-after-pipe",
+    "describe": "sed после пайпа по исходнику блокируется",
+    "call": {
+      "tool": "bash",
+      "args": {
+        "command": "echo x | sed -i 's/a/b/' src/cf/CommonModules/ОбщегоНазначения.bsl"
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "source-bash"
+    }
+  },
+  {
+    "id": "bash-sed-variable-fail-closed",
+    "describe": "цель-переменная при упоминании src блокируется (fail-closed)",
+    "call": {
+      "tool": "bash",
+      "args": {
+        "command": "f=src/cf/CommonModules/Модуль.bsl; sed -i 's/a/b/' \"$f\""
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "source-bash"
+    }
+  },
+  {
+    "id": "bash-sed-variable-outside",
+    "describe": "цель-переменная вне исходников проходит",
+    "call": {
+      "tool": "bash",
+      "args": {
+        "command": "f=build/ib/x.txt; sed -i 's/a/b/' \"$f\""
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "bash-unbalanced-outside",
+    "describe": "неразбираемая команда без упоминания src проходит",
+    "call": {
+      "tool": "bash",
+      "args": {
+        "command": "sed -i 's/a/b/ /tmp/w.bsl"
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "bash-unbalanced-with-src",
+    "describe": "неразбираемая команда с упоминанием src блокируется",
+    "call": {
+      "tool": "bash",
+      "args": {
+        "command": "sed -i 's/a/b/ /tmp/w.bsl # src/cf/"
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "source-bash"
+    }
+  },
+  {
+    "id": "read-tool",
+    "describe": "чтение исходника не блокируется",
+    "call": {
+      "tool": "read",
+      "args": {
+        "file_path": "src/cf/CommonModules/ОбщегоНазначения.bsl"
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "unica-push-extension-without-rules",
+    "describe": "без правил пересборки гейт нейтрален",
+    "call": {
+      "tool": "mcp__unica__run",
+      "args": {
+        "args": {
+          "op": "push",
+          "force": true,
+          "sourceSet": "Тесты",
+          "cwd": "$TMP/tree"
+        }
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "unica-push-extension-no-full",
+    "describe": "правило: push расширения без full блокируется",
+    "fixture": {
+      "contour": "$REBUILD_RULES"
+    },
+    "call": {
+      "tool": "mcp__unica__run",
+      "args": {
+        "args": {
+          "op": "push",
+          "force": true,
+          "sourceSet": "Тесты",
+          "cwd": "$TMP/tree"
+        }
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "rebuild-rule",
+      "reasonEquals": "Частичная загрузка расширений в этом проекте не работает — push только с full:true."
+    }
+  },
+  {
+    "id": "unica-push-extension-with-full",
+    "describe": "правило: push расширения с full проходит",
+    "fixture": {
+      "contour": "$REBUILD_RULES"
+    },
+    "call": {
+      "tool": "mcp__unica__run",
+      "args": {
+        "args": {
+          "op": "push",
+          "force": true,
+          "sourceSet": "Тесты",
+          "full": true,
+          "cwd": "$TMP/tree"
+        }
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "unica-push-main-with-full",
+    "describe": "правило: push основной конфигурации с full блокируется",
+    "fixture": {
+      "contour": "$REBUILD_RULES"
+    },
+    "call": {
+      "tool": "mcp__unica__run",
+      "args": {
+        "args": {
+          "op": "push",
+          "force": true,
+          "sourceSet": "main",
+          "full": true,
+          "cwd": "$TMP/tree"
+        }
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "rebuild-rule",
+      "reasonEquals": "Полная пересборка основной конфигурации запрещена — десятки минут."
+    }
+  },
+  {
+    "id": "unica-push-main-without-full",
+    "describe": "правило: push основной конфигурации без full проходит",
+    "fixture": {
+      "contour": "$REBUILD_RULES"
+    },
+    "call": {
+      "tool": "mcp__unica__run",
+      "args": {
+        "args": {
+          "op": "push",
+          "force": true,
+          "sourceSet": "main",
+          "cwd": "$TMP/tree"
+        }
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "unica-contract-form-extension",
+    "describe": "контрактная форма 0.15: op наверху, параметры в args",
+    "fixture": {
+      "contour": "$REBUILD_RULES"
+    },
+    "call": {
+      "tool": "mcp__unica__run",
+      "args": {
+        "op": "push",
+        "args": {
+          "force": true,
+          "sourceSet": "Тесты",
+          "cwd": "$TMP/tree"
+        }
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "rebuild-rule",
+      "reasonEquals": "Частичная загрузка расширений в этом проекте не работает — push только с full:true."
+    }
+  },
+  {
+    "id": "unica-contract-form-launch",
+    "describe": "контрактная форма: чужой op мимо push-правил",
+    "fixture": {
+      "contour": "$REBUILD_RULES"
+    },
+    "call": {
+      "tool": "mcp__unica__run",
+      "args": {
+        "op": "launch",
+        "args": {
+          "full": true,
+          "cwd": "$TMP/tree"
+        }
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "unica-no-source-set-with-full",
+    "describe": "push без sourceSet считается main: запрет full срабатывает",
+    "fixture": {
+      "contour": "$REBUILD_RULES"
+    },
+    "call": {
+      "tool": "mcp__unica__run",
+      "args": {
+        "args": {
+          "op": "push",
+          "force": true,
+          "full": true,
+          "cwd": "$TMP/tree"
+        }
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "rebuild-rule",
+      "reasonEquals": "Полная пересборка основной конфигурации запрещена — десятки минут."
+    }
+  },
+  {
+    "id": "unica-no-source-set-plain",
+    "describe": "push без sourceSet и без full проходит",
+    "fixture": {
+      "contour": "$REBUILD_RULES"
+    },
+    "call": {
+      "tool": "mcp__unica__run",
+      "args": {
+        "args": {
+          "op": "push",
+          "force": true,
+          "cwd": "$TMP/tree"
+        }
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "unica-other-mcp-server",
+    "describe": "вызов чужого MCP-сервера проходит",
+    "call": {
+      "tool": "mcp__1c-db__execute_query",
+      "args": {
+        "query": "ВЫБРАТЬ 1"
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "unica-plugin-wrapper-neutral",
+    "describe": "plugin-обёртка хоста: нейтральный op проходит",
+    "call": {
+      "tool": "mcp__plugin_unica_unica__unica.run",
+      "args": {
+        "args": {
+          "op": "launch",
+          "cwd": "$TMP/tree"
+        }
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "unica-plugin-wrapper-rule",
+    "describe": "plugin-обёртка хоста: правило пересборки срабатывает",
+    "fixture": {
+      "contour": "$REBUILD_RULES"
+    },
+    "call": {
+      "tool": "mcp__plugin_unica_unica__unica.run",
+      "args": {
+        "args": {
+          "op": "push",
+          "force": true,
+          "sourceSet": "Тесты",
+          "cwd": "$TMP/tree"
+        }
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "rebuild-rule",
+      "reasonEquals": "Частичная загрузка расширений в этом проекте не работает — push только с full:true."
+    }
+  },
+  {
+    "id": "worktree-not-initialized",
+    "describe": "unica в неинициализированном ворктри блокируется",
+    "fixture": {
+      "write": {
+        "wt/.git": "gitdir: /repo/.git/worktrees/wt\n"
+      },
+      "mkdir": [
+        "wt"
+      ]
+    },
+    "call": {
+      "tool": "mcp__unica__run",
+      "args": {
+        "args": {
+          "op": "push",
+          "force": true,
+          "sourceSet": "main",
+          "cwd": "$TMP/wt"
+        }
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "worktree-uninit",
+      "reasonIncludes": [
+        "init_worktree"
+      ]
+    }
+  },
+  {
+    "id": "worktree-contract-cwd",
+    "describe": "контрактная форма: верхний cwd доходит до ветки ворктри",
+    "fixture": {
+      "write": {
+        "wt/.git": "gitdir: /repo/.git/worktrees/wt\n"
+      },
+      "mkdir": [
+        "wt"
+      ]
+    },
+    "call": {
+      "tool": "mcp__unica__run",
+      "args": {
+        "op": "push",
+        "cwd": "$TMP/wt",
+        "args": {
+          "sourceSet": "main"
+        }
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "worktree-uninit"
+    }
+  },
+  {
+    "id": "worktree-initialized",
+    "describe": "инициализированный ворктри проходит",
+    "fixture": {
+      "write": {
+        "wt/.git": "gitdir: /repo/.git/worktrees/wt\n",
+        "wt/v8project.local.yaml": "infobase:\n  user: bot\n"
+      },
+      "mkdir": [
+        "wt/build/tools"
+      ]
+    },
+    "call": {
+      "tool": "mcp__unica__run",
+      "args": {
+        "args": {
+          "op": "push",
+          "force": true,
+          "sourceSet": "main",
+          "cwd": "$TMP/wt"
+        }
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "ib-lock-busy",
+    "describe": "операция на занятой базе блокируется замком python-эталона",
+    "seedLock": {
+      "holderTree": "$TMP/other-holder",
+      "fromTree": "tree",
+      "operation": "push",
+      "sessionId": "s-other"
+    },
+    "call": {
+      "tool": "mcp__unica__run",
+      "args": {
+        "args": {
+          "op": "push",
+          "force": true,
+          "sourceSet": "main",
+          "cwd": "$TMP/tree"
+        }
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "ib-lock",
+      "reasonIncludes": [
+        "База занята"
+      ]
+    }
+  },
+  {
+    "id": "apply-patch-update-source",
+    "describe": "apply_patch по исходнику блокируется: пути из текста патча",
+    "call": {
+      "tool": "apply_patch",
+      "args": {
+        "input": "*** Begin Patch\n*** Update File: src/cf/CommonModules/ОбщегоНазначения.bsl\n@@\n-Процедура А()\n+Процедура Б()\n*** End Patch\n"
+      }
+    },
+    "oracle": {
+      "tool_name": "ApplyPatch",
+      "tool_input": {
+        "file_path": "src/cf/CommonModules/ОбщегоНазначения.bsl"
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "source-edit",
+      "reasonIncludes": [
+        "Файл: src/cf/CommonModules/ОбщегоНазначения.bsl"
+      ]
+    },
+    "paths": [
+      "src/cf/CommonModules/ОбщегоНазначения.bsl"
+    ],
+    "oracleNote": "ZCode-инструмент ApplyPatch нёс готовые пути, DSH несёт текст патча: эталон получает путь, извлечённый из того же патча (сверка — ниже в тесте)"
+  },
+  {
+    "id": "apply-patch-add-outside",
+    "describe": "apply_patch вне исходников проходит",
+    "call": {
+      "tool": "apply_patch",
+      "args": {
+        "input": "*** Begin Patch\n*** Add File: src/docs/new.md\n+текст\n*** End Patch\n"
+      }
+    },
+    "oracle": {
+      "tool_name": "ApplyPatch",
+      "tool_input": {
+        "file_path": "src/docs/new.md"
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    },
+    "paths": [
+      "src/docs/new.md"
+    ],
+    "oracleNote": "ZCode-инструмент ApplyPatch нёс готовые пути, DSH несёт текст патча: эталон получает путь, извлечённый из того же патча (сверка — ниже в тесте)"
+  },
+  {
+    "id": "apply-patch-move-into-source",
+    "describe": "apply_patch с Move to в исходники блокируется",
+    "call": {
+      "tool": "apply_patch",
+      "args": {
+        "input": "*** Begin Patch\n*** Update File: src/docs/x.md\n*** Move to: src/cf/CommonModules/Новый.bsl\n@@\n+текст\n*** End Patch\n"
+      }
+    },
+    "oracle": {
+      "tool_name": "ApplyPatch",
+      "tool_input": {
+        "file_path": "src/cf/CommonModules/Новый.bsl"
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "source-edit"
+    },
+    "paths": [
+      "src/docs/x.md",
+      "src/cf/CommonModules/Новый.bsl"
+    ],
+    "oracleNote": "ZCode-инструмент ApplyPatch нёс готовые пути, DSH несёт текст патча: эталон получает путь, извлечённый из того же патча (сверка — ниже в тесте)"
+  },
+  {
+    "id": "write-epf-source",
+    "describe": "write обработки src/epf блокируется",
+    "call": {
+      "tool": "write",
+      "args": {
+        "file_path": "src/epf/Обработка/epf.epf",
+        "content": ""
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "source-edit",
+      "reasonIncludes": [
+        "Файл: src/epf/"
+      ]
+    }
+  },
+  {
+    "id": "write-erf-source",
+    "describe": "write отчёта src/erf блокируется",
+    "call": {
+      "tool": "edit",
+      "args": {
+        "file_path": "src/erf/Отчёт/erf.erf",
+        "old_string": "a",
+        "new_string": "b"
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "source-edit",
+      "reasonIncludes": [
+        "Файл: src/erf/"
+      ]
+    }
+  },
+  {
+    "id": "write-tests-epf-source",
+    "describe": "write в tests/epf блокируется",
+    "call": {
+      "tool": "write",
+      "args": {
+        "file_path": "tests/epf/Тест.epf",
+        "content": ""
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "source-edit",
+      "reasonIncludes": [
+        "Файл: tests/epf/"
+      ]
+    }
+  },
+  {
+    "id": "bash-sed-epf-source",
+    "describe": "sed -i по внешней обработке блокируется",
+    "call": {
+      "tool": "bash",
+      "args": {
+        "command": "sed -i 's/a/b/' src/epf/Обработка/epf.epf"
+      }
+    },
+    "expect": {
+      "decision": "deny",
+      "code": "source-bash"
+    }
+  },
+  {
+    "id": "apply-patch-indented-header",
+    "describe": "apply_patch с ведущим пробелом перед заголовком блокируется: парсер DSH такой патч принимает",
+    "call": {
+      "tool": "apply_patch",
+      "args": {
+        "input": "*** Begin Patch\n *** Update File: src/cf/CommonModules/ОбщегоНазначения.bsl\n@@\n-Процедура А()\n+Процедура Б()\n*** End Patch\n"
+      }
+    },
+    "oracle": {
+      "tool_name": "ApplyPatch",
+      "tool_input": {
+        "file_path": "src/cf/CommonModules/ОбщегоНазначения.bsl"
+      }
+    },
+    "paths": [
+      "src/cf/CommonModules/ОбщегоНазначения.bsl"
+    ],
+    "oracleNote": "заголовок обрезается парсером DSH, путь тот же — эталон получает его в файловой форме",
+    "expect": {
+      "decision": "deny",
+      "code": "source-edit"
+    }
+  }
+]
