@@ -1,0 +1,186 @@
+[
+  {
+    "id": "module-directive-common-blocks",
+    "describe": "директива в общем модуле в изменённой строке блокирует",
+    "gate": "bsl-module",
+    "fixture": {
+      "write": {
+        "tree/src/cf/CommonModules/Общий/Ext/Module.bsl": "&НаКлиенте\nПроцедура А()\nКонецПроцедуры\n"
+      }
+    },
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "edit",
+          "args": {
+            "file_path": "src/cf/CommonModules/Общий/Ext/Module.bsl",
+            "old_string": "x",
+            "new_string": "&НаКлиенте"
+          }
+        },
+        "result": {
+          "isError": false
+        },
+        "expect": {
+          "decision": "block",
+          "code": "bsl-module",
+          "reasonIncludes": [
+            "нарушает контракт носителя"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "module-directive-cold-notice",
+    "describe": "директива вне правки не блокирует",
+    "gate": "bsl-module",
+    "fixture": {
+      "write": {
+        "tree/src/cf/CommonModules/Общий/Ext/Module.bsl": "&НаКлиенте\nПроцедура А()\n\tСообщить(1);\nКонецПроцедуры\n"
+      }
+    },
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "edit",
+          "args": {
+            "file_path": "src/cf/CommonModules/Общий/Ext/Module.bsl",
+            "old_string": "x",
+            "new_string": "\tСообщить(1);"
+          }
+        },
+        "result": {
+          "isError": false
+        },
+        "expect": {
+          "decision": "accept",
+          "noticeIncludes": [
+            "вне твоей правки"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "module-manager-directive-blocks",
+    "describe": "директива в модуле менеджера блокирует",
+    "gate": "bsl-module",
+    "fixture": {
+      "write": {
+        "tree/src/cf/Documents/Док/Ext/ManagerModule.bsl": "&НаСервере\nПроцедура А()\nКонецПроцедуры\n"
+      }
+    },
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "write",
+          "args": {
+            "file_path": "src/cf/Documents/Док/Ext/ManagerModule.bsl",
+            "content": ""
+          }
+        },
+        "result": {
+          "isError": false
+        },
+        "expect": {
+          "decision": "block",
+          "code": "bsl-module"
+        }
+      }
+    ]
+  },
+  {
+    "id": "module-level-variable-blocks",
+    "describe": "Перем на верхнем уровне блокирует",
+    "gate": "bsl-module",
+    "fixture": {
+      "write": {
+        "tree/src/cf/CommonModules/Общий/Ext/Module.bsl": "Перем Кэш;\nПроцедура А()\nКонецПроцедуры\n"
+      }
+    },
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "write",
+          "args": {
+            "file_path": "src/cf/CommonModules/Общий/Ext/Module.bsl",
+            "content": ""
+          }
+        },
+        "result": {
+          "isError": false
+        },
+        "expect": {
+          "decision": "block",
+          "code": "bsl-module"
+        }
+      }
+    ]
+  },
+  {
+    "id": "module-rights-blocks",
+    "describe": "права на запретный класс метаданных блокируют",
+    "gate": "bsl-module",
+    "fixture": {
+      "write": {
+        "tree/src/cf/Roles/Роль/Ext/Rights.xml": "<Rights><object><name>Enum.Статус</name><right><name>Read</name><value>true</value></right></object></Rights>\n"
+      }
+    },
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "write",
+          "args": {
+            "file_path": "src/cf/Roles/Роль/Ext/Rights.xml",
+            "content": ""
+          }
+        },
+        "result": {
+          "isError": false
+        },
+        "expect": {
+          "decision": "block",
+          "code": "bsl-module"
+        }
+      }
+    ]
+  },
+  {
+    "id": "module-escalation-skip",
+    "describe": "эскалация снимает блок",
+    "gate": "bsl-module",
+    "fixture": {
+      "write": {
+        "tree/src/cf/CommonModules/Общий/Ext/Module.bsl": "&НаКлиенте\nПроцедура А()\nКонецПроцедуры\n",
+        "tree/.zcode/bsl-module-gate-escalations.txt": "directive-in-common-module:CommonModules/Общий\n"
+      }
+    },
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "write",
+          "args": {
+            "file_path": "src/cf/CommonModules/Общий/Ext/Module.bsl",
+            "content": ""
+          }
+        },
+        "result": {
+          "isError": false
+        },
+        "expect": {
+          "decision": "accept",
+          "noticeIncludes": [
+            "вне твоей правки"
+          ]
+        }
+      }
+    ]
+  }
+]

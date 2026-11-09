@@ -204,6 +204,72 @@ export function releaseBaseLock(
 }
 
 /**
+ * Ключ stand-замка: `stand:` + нормализация без `Usr=`/`Pwd=`.
+ *
+ * Пароль в ключ не входит: смена пароля в local-слое не должна создавать
+ * второй стенд на ту же базу. Пустые сегменты (хвост «;») отбрасываются.
+ * @param connection - строка подключения.
+ * @param tree - дерево проекта.
+ * @returns sha1 нормализованной строки без учётных данных.
+ */
+export function standLockKey(connection: string, tree: string): string {
+  const normalized = normalizedConnection(connection, tree)
+    .split(';')
+    .filter((part) => part !== '' && !part.startsWith('usr=') && !part.startsWith('pwd='))
+    .join(';')
+  return createHash('sha1').update(`stand:${normalized}`).digest('hex')
+}
+
+/**
+ * Путь файла stand-замка.
+ * @param stateDir - корень состояния контура.
+ * @param connection - строка подключения.
+ * @param tree - дерево проекта.
+ * @returns абсолютный путь файла stand-замка.
+ */
+export function standLockPath(stateDir: string, connection: string, tree: string): string {
+  return join(stateDir, 'stand-locks', `${standLockKey(connection, tree)}.json`)
+}
+
+/**
+ * Живость владельца stand-замка свежей пробой `/proc/<pid>/stat`.
+ *
+ * Зомби (`Z`) считается мёртвым: базу он не держит. Процесса нет — мёртв;
+ * `/proc` не читается (не Linux, hidepid) — владелец считается живым: смерть
+ * живого стенда не угадывается. Битый pid — замок мёртв.
+ * @param pid - pid владельца из записи замка.
+ * @returns истина, когда владелец жив.
+ */
+export function standOwnerAlive(pid: unknown): boolean {
+  const number = Number(pid)
+  if (!Number.isInteger(number) || number <= 0) return false
+  let stat: string
+  try {
+    stat = readFileSync(`/proc/${number}/stat`, 'utf8')
+  } catch (error: unknown) {
+    const code = (error as NodeJS.ErrnoException).code
+    return code === 'ENOENT' ? false : true
+  }
+  const fields = stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/)
+  return fields.length > 0 && fields[0] !== 'Z'
+}
+
+/**
+ * Живой stand-замок на базу: запись либо `null`.
+ *
+ * Чистку не делает: протухший замок подчищает взятие.
+ * @param stateDir - корень состояния контура.
+ * @param connection - строка подключения.
+ * @param tree - дерево проекта.
+ * @returns запись замка с живым владельцем либо `null`.
+ */
+export function standLockStatus(stateDir: string, connection: string, tree: string): LockRecord | null {
+  const lock = readLock(standLockPath(stateDir, connection, tree))
+  if (lock !== null && standOwnerAlive(lock.pid)) return lock
+  return null
+}
+
+/**
  * Описание держателя для сообщения о блокировке.
  * @param lock - запись замка.
  * @returns строка «дерево — операция, с …, сессия …».
@@ -211,5 +277,8 @@ export function releaseBaseLock(
 export function describeHolder(lock: LockRecord): string {
   const started = lock.started_at === '' ? '?' : lock.started_at
   const operation = lock.operation === '' ? '?' : lock.operation
+  if (lock.kind === 'stand') {
+    return `${lock.tree} — операция ${operation}, с ${started}, процесс ${String(lock.pid ?? '?')}`
+  }
   return `${lock.tree} — операция ${operation}, с ${started}, сессия ${lock.session_id === '' ? '?' : lock.session_id}`
 }

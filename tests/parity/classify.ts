@@ -17,6 +17,11 @@ export type OracleClass =
   | 'worktree-uninit'
   | 'rebuild-rule'
   | 'ib-lock'
+  | 'docs-unverified'
+  | 'mcp-unsafe'
+  | 'stand-lock'
+  | 'bsl-style'
+  | 'bsl-module'
   | 'unknown'
 
 /** Маркеры блокирующих сообщений эталона — по одному на класс. */
@@ -25,6 +30,11 @@ const MARKERS: readonly { readonly marker: string; readonly code: Exclude<Oracle
   { marker: 'Запись в исходники 1С через bash', code: 'source-bash' },
   { marker: 'Ворктри не инициализирован', code: 'worktree-uninit' },
   { marker: 'База занята другим деревом', code: 'ib-lock' },
+  { marker: 'без сверки с документацией платформы', code: 'docs-unverified' },
+  { marker: 'меняет данные/состояние базы', code: 'mcp-unsafe' },
+  { marker: 'не поднимает второй клиент', code: 'stand-lock' },
+  { marker: 'нарушает стиль BSL', code: 'bsl-style' },
+  { marker: 'нарушает контракт носителя', code: 'bsl-module' },
 ]
 
 /**
@@ -37,10 +47,22 @@ const MARKERS: readonly { readonly marker: string; readonly code: Exclude<Oracle
  * @returns класс решения.
  */
 export function classifyOracle(result: OracleResult): OracleClass {
-  if (result.exitCode === 0) return 'allow'
+  return classifyText(result.exitCode, result.stderr)
+}
+
+/**
+ * Класс причины по тексту блокирующего сообщения.
+ * @param exitCode - код возврата.
+ * @param stderr - текст причины.
+ * @returns класс решения.
+ */
+export function classifyText(exitCode: number, stderr: string): OracleClass {
+  if (exitCode === 0) return 'allow'
   for (const { marker, code } of MARKERS) {
-    if (result.stderr.includes(marker)) return code
+    if (stderr.includes(marker)) return code
   }
-  if (result.exitCode === 2) return 'rebuild-rule'
+  // Блок без маркера гейт unica_source отдаёт только сообщением правила
+  // пересборки; кейсы корпуса сверяют там ещё и точный текст причины.
+  if (exitCode === 2) return 'rebuild-rule'
   return 'unknown'
 }

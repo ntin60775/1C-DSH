@@ -1,0 +1,549 @@
+[
+  {
+    "id": "doc-mutation-without-verify",
+    "describe": "мутация кода без сверки блокируется",
+    "gate": "doc",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__unica__apply",
+          "args": {
+            "args": {
+              "ops": [
+                {
+                  "op": "code.replace",
+                  "args": {
+                    "at": "CommonModule.X.Body",
+                    "text": "Процедура А()"
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "expect": {
+          "decision": "deny",
+          "code": "docs-unverified",
+          "reasonIncludes": [
+            "docs-before-design"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "doc-docs-call-allowed",
+    "describe": "документационный вызов не блокируется",
+    "gate": "doc",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__unica__docs",
+          "args": {
+            "args": {
+              "source": "platform-help"
+            }
+          }
+        },
+        "expect": {
+          "decision": "allow"
+        }
+      }
+    ]
+  },
+  {
+    "id": "doc-empty-hits-not-verified",
+    "describe": "ответ с пустыми hits сверкой не считается",
+    "gate": "doc",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__unica__docs",
+          "args": {
+            "args": {
+              "source": "platform-help"
+            }
+          }
+        },
+        "expect": {
+          "decision": "allow"
+        }
+      },
+      {
+        "phase": "post",
+        "call": {
+          "tool": "mcp__unica__docs",
+          "args": {
+            "args": {
+              "source": "platform-help"
+            }
+          }
+        },
+        "result": {
+          "isError": false,
+          "text": "{\"sections\":[{\"status\":\"ok\",\"hits\":[]}]}"
+        },
+        "expect": {
+          "decision": "accept"
+        }
+      },
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__unica__apply",
+          "args": {
+            "args": {
+              "ops": [
+                {
+                  "op": "code.insert"
+                }
+              ]
+            }
+          }
+        },
+        "expect": {
+          "decision": "deny",
+          "code": "docs-unverified"
+        }
+      }
+    ]
+  },
+  {
+    "id": "doc-content-verifies",
+    "describe": "содержательный ответ включает сверку",
+    "gate": "doc",
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "mcp__unica__docs",
+          "args": {
+            "args": {
+              "source": "platform-help"
+            }
+          }
+        },
+        "result": {
+          "isError": false,
+          "text": "{\"sections\":[{\"status\":\"ok\",\"hits\":[{\"title\":\"x\"}]}]}"
+        },
+        "expect": {
+          "decision": "accept"
+        }
+      },
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__unica__apply",
+          "args": {
+            "args": {
+              "ops": [
+                {
+                  "op": "code.replace"
+                }
+              ]
+            }
+          }
+        },
+        "expect": {
+          "decision": "allow"
+        }
+      }
+    ]
+  },
+  {
+    "id": "doc-structural-resets",
+    "describe": "структурная мутация тратит сверку",
+    "gate": "doc",
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "mcp__unica__docs",
+          "args": {
+            "args": {
+              "source": "platform-help"
+            }
+          }
+        },
+        "result": {
+          "isError": false,
+          "text": "{\"sections\":[{\"status\":\"ok\",\"hits\":[{\"title\":\"x\"}]}]}"
+        },
+        "expect": {
+          "decision": "accept"
+        }
+      },
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__unica__run",
+          "args": {
+            "args": {
+              "op": "push"
+            }
+          }
+        },
+        "expect": {
+          "decision": "allow"
+        }
+      },
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__unica__apply",
+          "args": {
+            "args": {
+              "ops": [
+                {
+                  "op": "code.replace"
+                }
+              ]
+            }
+          }
+        },
+        "expect": {
+          "decision": "deny",
+          "code": "docs-unverified"
+        }
+      }
+    ]
+  },
+  {
+    "id": "doc-task-not-verified",
+    "describe": "принятая задача сверкой не считается, флаг ставит task.result",
+    "gate": "doc",
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "mcp__unica__docs",
+          "args": {
+            "args": {
+              "source": "platform-help"
+            }
+          }
+        },
+        "result": {
+          "isError": false,
+          "text": "{\"status\":\"working\",\"taskId\":\"t1\"}"
+        },
+        "expect": {
+          "decision": "accept"
+        }
+      },
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__unica__apply",
+          "args": {
+            "args": {
+              "ops": [
+                {
+                  "op": "code.replace"
+                }
+              ]
+            }
+          }
+        },
+        "expect": {
+          "decision": "deny",
+          "code": "docs-unverified"
+        }
+      },
+      {
+        "phase": "post",
+        "call": {
+          "tool": "mcp__unica__task.result",
+          "args": {
+            "args": {
+              "taskId": "t1"
+            }
+          }
+        },
+        "result": {
+          "isError": false,
+          "text": "{\"taskId\":\"t1\",\"sections\":[{\"status\":\"ok\",\"hits\":[{\"title\":\"y\"}]}]}"
+        },
+        "expect": {
+          "decision": "accept"
+        }
+      },
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__unica__apply",
+          "args": {
+            "args": {
+              "ops": [
+                {
+                  "op": "code.replace"
+                }
+              ]
+            }
+          }
+        },
+        "expect": {
+          "decision": "allow"
+        }
+      }
+    ]
+  },
+  {
+    "id": "doc-preview-does-not-spend",
+    "describe": "preview плана сверку требует, но не тратит",
+    "gate": "doc",
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "mcp__unica__docs",
+          "args": {
+            "args": {
+              "source": "platform-help"
+            }
+          }
+        },
+        "result": {
+          "isError": false,
+          "text": "{\"sections\":[{\"status\":\"ok\",\"hits\":[{\"title\":\"x\"}]}]}"
+        },
+        "expect": {
+          "decision": "accept"
+        }
+      },
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__unica__apply",
+          "args": {
+            "args": {
+              "at": "CommonModule.X",
+              "ops": [
+                {
+                  "op": "code.replace"
+                }
+              ]
+            }
+          }
+        },
+        "expect": {
+          "decision": "allow"
+        }
+      },
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__unica__apply",
+          "args": {
+            "args": {
+              "executionToken": "tok"
+            }
+          }
+        },
+        "expect": {
+          "decision": "allow"
+        }
+      },
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__unica__apply",
+          "args": {
+            "args": {
+              "ops": [
+                {
+                  "op": "code.replace"
+                }
+              ]
+            }
+          }
+        },
+        "expect": {
+          "decision": "deny",
+          "code": "docs-unverified"
+        }
+      }
+    ]
+  },
+  {
+    "id": "doc-run-dryrun-does-not-spend",
+    "describe": "dryRun-прогон сверку не тратит, исполнение тратит",
+    "gate": "doc",
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "mcp__unica__docs",
+          "args": {
+            "args": {
+              "source": "platform-help"
+            }
+          }
+        },
+        "result": {
+          "isError": false,
+          "text": "{\"sections\":[{\"status\":\"ok\",\"hits\":[{\"title\":\"x\"}]}]}"
+        },
+        "expect": {
+          "decision": "accept"
+        }
+      },
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__unica__run",
+          "args": {
+            "args": {
+              "op": "push"
+            },
+            "dryRun": true
+          }
+        },
+        "expect": {
+          "decision": "allow"
+        }
+      },
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__unica__run",
+          "args": {
+            "args": {
+              "op": "push"
+            },
+            "dryRun": false
+          }
+        },
+        "expect": {
+          "decision": "allow"
+        }
+      },
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__unica__apply",
+          "args": {
+            "args": {
+              "ops": [
+                {
+                  "op": "code.replace"
+                }
+              ]
+            }
+          }
+        },
+        "expect": {
+          "decision": "deny",
+          "code": "docs-unverified"
+        }
+      }
+    ]
+  },
+  {
+    "id": "doc-file-edit-blocked",
+    "describe": "прямая правка исходника без сверки блокируется",
+    "gate": "doc",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "write",
+          "args": {
+            "file_path": "src/cf/X.bsl",
+            "content": ""
+          }
+        },
+        "expect": {
+          "decision": "deny",
+          "code": "docs-unverified"
+        }
+      }
+    ]
+  },
+  {
+    "id": "doc-file-edit-after-verify",
+    "describe": "после сверки прямая правка исходника проходит",
+    "gate": "doc",
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "mcp__unica__docs",
+          "args": {
+            "args": {
+              "source": "platform-help"
+            }
+          }
+        },
+        "result": {
+          "isError": false,
+          "text": "{\"sections\":[{\"status\":\"ok\",\"hits\":[{\"title\":\"x\"}]}]}"
+        },
+        "expect": {
+          "decision": "accept"
+        }
+      },
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "write",
+          "args": {
+            "file_path": "src/cf/X.bsl",
+            "content": ""
+          }
+        },
+        "expect": {
+          "decision": "allow"
+        }
+      }
+    ]
+  },
+  {
+    "id": "doc-unsupported-source",
+    "describe": "недоступный источник сверкой не считается",
+    "gate": "doc",
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "mcp__unica__docs",
+          "args": {
+            "args": {
+              "source": "configuration-documentation"
+            }
+          }
+        },
+        "result": {
+          "isError": false,
+          "text": "{\"sections\":[{\"status\":\"unavailable\",\"hits\":[]}]}"
+        },
+        "expect": {
+          "decision": "accept"
+        }
+      },
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__unica__apply",
+          "args": {
+            "args": {
+              "ops": [
+                {
+                  "op": "code.replace"
+                }
+              ]
+            }
+          }
+        },
+        "expect": {
+          "decision": "deny",
+          "code": "docs-unverified"
+        }
+      }
+    ]
+  }
+]

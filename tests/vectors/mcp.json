@@ -1,0 +1,229 @@
+[
+  {
+    "id": "mcp-prod-blocks-execute-code",
+    "describe": "прод-контур блокирует изменяющий инструмент",
+    "gate": "mcp",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__1c-db__execute_code",
+          "args": {
+            "query": "x"
+          }
+        },
+        "expect": {
+          "decision": "deny",
+          "code": "mcp-unsafe",
+          "reasonIncludes": [
+            "меняет данные/состояние базы"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "mcp-test-contour-allows",
+    "describe": "тест-контур пропускает изменяющий вызов",
+    "gate": "mcp",
+    "fixture": {
+      "write": {
+        "tree/.zcode/contour": "test\n"
+      }
+    },
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__1c-db__execute_code",
+          "args": {
+            "query": "x"
+          }
+        },
+        "expect": {
+          "decision": "allow"
+        }
+      }
+    ]
+  },
+  {
+    "id": "mcp-legacy-contour-allows",
+    "describe": "legacy .zcode/contour со словом test работает",
+    "gate": "mcp",
+    "fixture": {
+      "write": {
+        "tree/.zcode/contour": "test\n"
+      }
+    },
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__1c-db__execute_code",
+          "args": {
+            "query": "x"
+          }
+        },
+        "expect": {
+          "decision": "allow"
+        }
+      }
+    ]
+  },
+  {
+    "id": "mcp-escalation-allows",
+    "describe": "строка allowlist разрешает инструмент",
+    "gate": "mcp",
+    "fixture": {
+      "write": {
+        "tree/.zcode/mcp-write-allow.txt": "# разово\nexecute_code\n"
+      }
+    },
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__1c-db__execute_code",
+          "args": {
+            "query": "x"
+          }
+        },
+        "expect": {
+          "decision": "allow"
+        }
+      }
+    ]
+  },
+  {
+    "id": "mcp-star-allows",
+    "describe": "звёздочка в allowlist разрешает всё",
+    "gate": "mcp",
+    "fixture": {
+      "write": {
+        "tree/.zcode/mcp-write-allow.txt": "*\n"
+      }
+    },
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__1c-db__close_1c_session",
+          "args": {}
+        },
+        "expect": {
+          "decision": "allow"
+        }
+      }
+    ]
+  },
+  {
+    "id": "mcp-instance-server-blocks",
+    "describe": "инстансный сервер семейства 1c-db блокируется",
+    "gate": "mcp",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__1c-db-main__execute_code",
+          "args": {
+            "query": "x"
+          }
+        },
+        "expect": {
+          "decision": "deny",
+          "code": "mcp-unsafe"
+        }
+      }
+    ]
+  },
+  {
+    "id": "mcp-bash-rest-blocks",
+    "describe": "REST toolkit через bash блокируется",
+    "gate": "mcp",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "bash",
+          "args": {
+            "command": "curl -s http://127.0.0.1:6003/mcp -d '{\"tool\":\"execute_code\"}'"
+          }
+        },
+        "expect": {
+          "decision": "deny",
+          "code": "mcp-unsafe"
+        }
+      }
+    ]
+  },
+  {
+    "id": "mcp-bash-other-passes",
+    "describe": "обычный curl не трогается",
+    "gate": "mcp",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "bash",
+          "args": {
+            "command": "curl -s http://127.0.0.1:8080/health"
+          }
+        },
+        "expect": {
+          "decision": "allow"
+        }
+      }
+    ]
+  },
+  {
+    "id": "mcp-stand-lock-blocks",
+    "describe": "живой stand-замок базы профиля блокирует launch_client",
+    "gate": "mcp",
+    "fixture": {
+      "write": {
+        "tree/.zcode/testpilot/profiles.yaml": "profiles:\n  main:\n    base: $TMP/tree/db\n"
+      }
+    },
+    "seedStandLock": {
+      "connection": "File=$TMP/tree/db"
+    },
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__1c-testpilot__tc_session",
+          "args": {
+            "action": "launch_client",
+            "profile": "main"
+          }
+        },
+        "expect": {
+          "decision": "deny",
+          "code": "stand-lock",
+          "reasonIncludes": [
+            "не поднимает второй клиент"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "mcp-non-mutating-allows",
+    "describe": "читающий инструмент проходит",
+    "gate": "mcp",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "mcp__1c-db__execute_query",
+          "args": {
+            "query": "ВЫБРАТЬ 1"
+          }
+        },
+        "expect": {
+          "decision": "allow"
+        }
+      }
+    ]
+  }
+]
