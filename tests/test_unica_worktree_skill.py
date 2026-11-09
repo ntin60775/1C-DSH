@@ -3,7 +3,6 @@
 
 Запуск: python3 tests/test_unica_worktree_skill.py
 """
-import json
 import subprocess
 import sys
 from pathlib import Path

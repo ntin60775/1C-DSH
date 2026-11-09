@@ -5,7 +5,7 @@
 включение API деанонимизации агент не исполняет — ни в bash, ни в правках
 файлов. Исключений нет; .md и строки-комментарии гейт не сканирует.
 
-Запуск: python3 tests/test_anon_gate.py
+Запуск: python3 reference/tests/test_anon_gate.py
 """
 import subprocess
 import sys

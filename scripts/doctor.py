@@ -48,8 +48,8 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
-# contour hooks доступны в обеих раскладках: репо (scripts/../hooks) и
-# вендоренной (.zcode/1c/scripts/../../hooks)
+# contour_common: репо (scripts/../hooks), вендоренная (.zcode/1c/scripts/../../hooks)
+# и переходная раскладка 1C-DSH (scripts/../reference/gates)
 for _rel in ("../../hooks", "../hooks", "../reference/gates"):
 	_p = (Path(__file__).resolve().parent / _rel).resolve()
 	if (_p / "contour_common.py").is_file():
@@ -517,14 +517,17 @@ def main() -> int:
 				     "чужое снести или перенести (скилл 1c-project-layout)")
 
 	wire = Path(__file__).resolve().parent / "wire_config.py"
-	if wire.is_file() and (root / ".zcode" / "config.json").is_file():
-		done = subprocess.run(
-			[sys.executable, str(wire), str(root), "--check"],
-			capture_output=True, text=True)
-		if done.returncode == 0:
-			ok(".zcode/config.json разведён (hooks+MCP)")
+	if (root / ".zcode" / "config.json").is_file():
+		if wire.is_file():
+			done = subprocess.run(
+				[sys.executable, str(wire), str(root), "--check"],
+				capture_output=True, text=True)
+			if done.returncode == 0:
+				ok(".zcode/config.json разведён (hooks+MCP)")
+			else:
+				fail(".zcode/config.json разошёлся с разводкой — прогони wire_config.py")
 		else:
-			fail(".zcode/config.json разошёлся с разводкой — прогони wire_config.py")
+			warn("wire_config.py рядом с doctor нет — разводку не сверить")
 
 		# ── 3c. живой статус конфигурационных хуков (#41) ──
 		# Структуру разводки сверяет wire --check выше; здесь — вопрос

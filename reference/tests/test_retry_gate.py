@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Тесты retry_gate.py: третий идентичный повтор упавшей команды — блок.
 
-Запуск: python3 tests/test_retry_gate.py
+Запуск: python3 reference/tests/test_retry_gate.py
 """
 import sys
 import tempfile

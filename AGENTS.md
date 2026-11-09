@@ -2,8 +2,9 @@
 
 > **Переезд на DSH.** Ниже — унаследованный ZCode-канон; он описывает
 > механику, которой в этом репозитории больше нет (`.zcode/`, `deploy.json`,
-> `hooks/`). Актуальные правила — спека [docs/plans/dsh-contour.md](docs/plans/dsh-contour.md)
-> и тикеты [tickets/dsh-contour/](tickets/dsh-contour/); раздел переписывается в T9.
+> `hooks/`). Актуальные правила — спека
+> [docs/plans/dsh-contour.md](docs/plans/dsh-contour.md) и тикеты
+> [tickets/dsh-contour/](tickets/dsh-contour/); раздел переписывается в T9.
 
 ZCode-плагин контура 1С-разработки: нативный порт 1c-omp. Статус слоёв —
 docs/migration-map.md; каналы юники — docs/UNICA.md; миграция проектов —

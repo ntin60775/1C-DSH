@@ -1,7 +1,8 @@
 # 1C-DSH
 
 > **Переезд на DSH.** Репозиторий создан копией `1c-zcode` и очищен от
-> ZCode-слоя (юнит `dsh-contour`, спека — [docs/plans/dsh-contour.md](docs/plans/dsh-contour.md)).
+> ZCode-слоя (юнит `dsh-contour`, спека —
+> [docs/plans/dsh-contour.md](docs/plans/dsh-contour.md)).
 > Нативный плагин, установка и документация — по тикетам T1–T10; до готовности
 > контура этот раздел ниже описывает прежний ZCode-контур и не является
 > инструкцией по установке.

@@ -15,8 +15,9 @@ ZCode-привязки сразу. Артефакты юнита (спека и 
 
 - Коммит `docs/plans/dsh-contour.md`, `tickets/dsh-contour/` и
   `.agents/config.toml` в `1c-zcode` до копии.
-- Копия рабочего дерева `1c-zcode` с историей в репозиторий `1C-DSH`,
-  remote; пуш — за оператором.
+- Копия рабочего дерева `1c-zcode` с историей в репозиторий `1C-DSH`;
+  remote и пуш — за оператором (в локальной копии remote нет — названный
+  пробел приёмки).
 - Удаляется ZCode-поставка: `deploy.json`, `.zcode-plugin/`, `.zcode/`,
   `.zcodeignore`, `scripts/deploy_recon.py`,
   `templates/deploy-migrations.json`, тесты `test_deploy_mappings.py`,
@@ -46,16 +47,20 @@ ZCode-привязки сразу. Артефакты юнита (спека и 
 ZCode-слоя, гейтовые тесты в `reference/` и тесты скриптов в `tests/`
 зелёные; в старом репозитории — баннер.
 
-## Критерии приёмки (падают на базовом коммите)
+## Критерии приёмки
 
-- `git log --oneline | tail -1` нового репо совпадает с первым коммитом
-  `1c-zcode` (общий предок).
+Новые артефакты (C2–C4, C7) на базовом коммите красные; C1, C5, C6 —
+регрессионные, зелены и на базе.
+
+- `git -C ../1C-DSH log --oneline | tail -1` даёт первый коммит `1c-zcode`
+  (`1f0db2b`): новый репозиторий существует, история общая.
 - `git ls-files` содержит `docs/plans/dsh-contour.md`,
   `tickets/dsh-contour/` (10 файлов) и `.agents/skills/ship/SKILL.md`.
 - В дереве нет `deploy.json`, `.zcode-plugin/`, `.zcode/`, `.zcodeignore`,
   `scripts/deploy_recon.py`, `templates/deploy-migrations.json`.
 - `ls tests/test_*.py | wc -l` = 17; `ls reference/tests/test_*.py | wc -l`
-  = 11; оба набора зелёные.
+  = 11; оба набора зелёные — `for t in tests/test_*.py; do python3 "$t"; done`
+  и `cd reference/tests && for t in test_*.py; do python3 "$t"; done`.
 - `ls skills | wc -l` = 15; `ls commands | wc -l` = 4; `ls workflows | wc -l`
   = 2; `vendor/` непуст.
 - `python3 tests/test_doctor.py` зелёный (doctor без `deploy_recon`).

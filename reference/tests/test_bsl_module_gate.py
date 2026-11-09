@@ -5,7 +5,7 @@
 Симуляция правки — как у стайл-гейта: на диске уже ПРИМЕНЁННЫЙ текст
 (PostToolUse приходит после записи), spans гейт строит из new_string.
 
-Запуск: python3 tests/test_bsl_module_gate.py
+Запуск: python3 reference/tests/test_bsl_module_gate.py
 """
 import json
 import os

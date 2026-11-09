@@ -4,7 +4,7 @@
 Чекер подменяется фейком в .zcode/style/scripts/ — реальный пак
 1c-bsl-code-style вендорится отдельно и здесь не нужен.
 
-Запуск: python3 tests/test_bsl_style_gate.py
+Запуск: python3 reference/tests/test_bsl_style_gate.py
 """
 import json
 import os

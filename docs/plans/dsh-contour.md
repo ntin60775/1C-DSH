@@ -45,7 +45,8 @@ updated: 2026-11-09
 ## Готово
 
 1. **Репо и заморозка.** `1C-DSH` создан копией рабочего дерева
-   `1c-zcode` с историей (общий предок), remote настроен; в `1c-zcode`
+   `1c-zcode` с историей (общий предок); remote и пуш — за оператором
+   (в локальной копии remote нет); в `1c-zcode`
    — баннер «архив, развитие в 1C-DSH» и архивация на GitHub. В новом
    репо ZCode-поставки нет (`deploy.json`, `.zcode-plugin/`,
    `.zcode/`), корпус на месте: 15 скиллов, `commands/`, `workflows/`,
@@ -85,18 +86,20 @@ updated: 2026-11-09
    zcode-раскладка → `.dsh/1c`.
 6. **Раскладка.** Проектные данные — `.dsh/1c/` (`contour.json`,
    `contour.local.json`, `db-instances.yaml`,
-   `templates/agents-section.md`), состояние — `${DSH_1C_STATE_DIR:-~/.dsh/state/1c}`,
-   env — `DSH_1C_STATE_DIR`. Переезжают все входы гейтов, а не только
-   четыре файла: `unica-gate-escalations.txt`,
+   `templates/agents-section.md`), состояние —
+   `${DSH_1C_STATE_DIR:-~/.dsh/state/1c}`, env — `DSH_1C_STATE_DIR`.
+   Переезжают все входы гейтов, а не только четыре файла:
+   `unica-gate-escalations.txt`,
    `bsl-module-gate-escalations.txt`, `mcp-write-allow.txt`,
    `standards-exceptions.yaml`, `testpilot/profiles.yaml`, путь
    чекера стиля. Старая `.zcode/1c` читается на время переезда;
    `migrate_from_zcode.py --check` различает «не переведён» и «переведён
    с расхождением» — сравнение набора файлов и содержимого, не только
    код возврата.
-7. **Пилот и doctor.** Пилот — `erp-demo` (`/home/prog7/home/dev/work/erp-demo`):
-   переведён на `.dsh/1c/`, на нём работают все 11 гейтов, 15 скиллов,
-   4 команды и MCP; запись в реестре проектов создана. `doctor.py`
+7. **Пилот и doctor.** Пилот — `erp-demo`
+   (`/home/prog7/home/dev/work/erp-demo`): переведён на `.dsh/1c/`, на нём
+   работают все 11 гейтов, 15 скиллов, 4 команды и MCP; запись в реестре
+   проектов создана. `doctor.py`
    переписан под DSH: проверяет bundle, пресет, скиллы, MCP, раскладку
    и проект, отвечает кодом и `--json`; фикстура «сломанная установка»
    воспроизводится. Python-эталон удалён после зелёного паритета и
@@ -176,13 +179,14 @@ updated: 2026-11-09
 - Каталог сессии — `ctx.workingDirectory.ensure(agent, signal)` /
   `ctx.workingDirectory.get(agent.session)`; монотонный запрет —
   `ctx.tools.guard()`.
-- Разводка ZCode: 4 события, 11 гейтов (`hooks/hooks.json`); корпус —
-  13 файлов python, 3460 строк; тесты — 30 файлов: 11 гейтовых, 15 тестов скриптов,
+- Разводка ZCode: 4 события, 11 гейтов (`hooks/hooks.json`; после T1 —
+  `reference/gates/hooks.json`); корпус — 13 файлов python, 3460 строк;
+  тесты — 30 файлов: 11 гейтовых, 15 тестов скриптов,
   2 теста переходных модулей (`wire_config`, omp-мигратор; остаются до
   T6/T7 и T5), 2 ZCode-only (`deploy_mappings`, `deploy_recon`);
   скиллов — 15.
-- `doctor.py` — 851 строка, импортирует `deploy_recon` и читает
-  `templates/deploy-migrations.json`; при вычистке ZCode-слоя скрипт,
+- `doctor.py` — 851 строка до T1 (826 после), импортировал `deploy_recon`
+  и читал `templates/deploy-migrations.json`; при вычистке ZCode-слоя скрипт,
   шаблон и тест уходят вместе, doctor чистится от импорта.
 - Мост `dsh-hooks-claude-code` покрывает 3 из 4 событий ZCode и не
   используется — решение 4.

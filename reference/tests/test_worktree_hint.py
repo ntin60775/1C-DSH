@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Тесты worktree_hint.py: после git worktree add — подсказка пути в additionalContext.
 
-Запуск: python3 tests/test_worktree_hint.py
+Запуск: python3 reference/tests/test_worktree_hint.py
 """
 import json
 import sys

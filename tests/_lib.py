@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""_lib.py — общие механизмы тестов скриптов контура: путь к гейтовому
-эталону (его модули нужны стартеру стенда) и счётчик проверок.
-"""
-from pathlib import Path
-
-REPO = Path(__file__).resolve().parent.parent
-GATES = REPO / "reference" / "gates"
-
+"""_lib.py — общие механизмы тестов скриптов контура: счётчик проверок."""
 failures = []
 
 

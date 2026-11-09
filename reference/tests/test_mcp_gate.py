@@ -6,7 +6,7 @@
 инстансными серверами 1c-db-<имя>) и REST-toolkit через bash
 (path-детект: 127.0.0.1 с путём /mcp или /api, порт не входит в признак).
 
-Запуск: python3 tests/test_mcp_gate.py
+Запуск: python3 reference/tests/test_mcp_gate.py
 """
 import json
 import os

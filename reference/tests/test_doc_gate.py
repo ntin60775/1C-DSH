@@ -11,7 +11,7 @@ executionToken и unica.run с исполнением (dryRun не true); previe
 docs-ответа считается по секциям провайдеров: недоступные секции живой
 ответ не роняют.
 
-Запуск: python3 tests/test_doc_gate.py
+Запуск: python3 reference/tests/test_doc_gate.py
 """
 import json
 import sys

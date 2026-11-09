@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Тесты ib_lock.py (модуль) и session_clean.py (SessionStart-уборка).
 
-Запуск: python3 tests/test_ib_lock.py
+Запуск: python3 reference/tests/test_ib_lock.py
 """
 import json
 import os

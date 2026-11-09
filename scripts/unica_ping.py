@@ -24,7 +24,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-for _rel in ("../../hooks", "../hooks"):
+for _rel in ("../../hooks", "../hooks", "../reference/gates"):
 	_p = (Path(__file__).resolve().parent / _rel).resolve()
 	if (_p / "contour_common.py").is_file():
 		sys.path.insert(0, str(_p))

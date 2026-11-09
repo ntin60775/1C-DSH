@@ -16,8 +16,8 @@
   `.zcode/1c/...` → `.dsh/1c/...`; ZCode-инструменты и workflows — на DSH),
   4 команды (пути и `CreateWorkflow`), `templates/` (5 файлов).
 - Команда миграции одна: `/1c-migrate` → `scripts/migrate_from_zcode.py`
-  (zcode-раскладка → `.dsh/1c`); `/1c-migrate-from-omp` удаляется,
-  `scripts/migrate_from_omp.py` уже удалён в Т1.
+  (zcode-раскладка → `.dsh/1c`); `/1c-migrate-from-omp` и
+  `scripts/migrate_from_omp.py` удаляются здесь же (в Т1 они остались).
 - Поставка скиллов в пресет; фронтир `whenToUse`; MCP-записи: unica,
   1c-testpilot, 1c-db (+ инстансы), 1c-kd.
 - Установка проверяется двумя путями: локальный path и `git+https`.

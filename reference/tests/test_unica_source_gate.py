@@ -7,7 +7,7 @@
 ворктри, замок на инфобазу и правила пересборки из contour.json
 (по умолчанию нейтральны — semantics 0.15, до сверки на стенде).
 
-Запуск: python3 tests/test_unica_source_gate.py
+Запуск: python3 reference/tests/test_unica_source_gate.py
 """
 import json
 import sys

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Тесты session_context.py: SessionStart сообщает основное дерево vs ворктри.
 
-Запуск: python3 tests/test_session_context.py
+Запуск: python3 reference/tests/test_session_context.py
 """
 import json
 import subprocess
