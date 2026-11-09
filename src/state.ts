@@ -11,8 +11,8 @@ import { appendFileSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-import type { GateState, LockRecord, LockRequest } from './contract.js'
-import { acquireBaseLock, releaseBaseLock } from './lock.js'
+import type { GateMemory, GateState, LockRecord, LockRequest, StyleCheckerPort } from './contract.js'
+import { acquireBaseLock, releaseBaseLock, standLockStatus } from './lock.js'
 
 /** Запись журнала решений гейтов — формат omp сохранён. */
 export interface AuditEntry {
@@ -58,6 +58,24 @@ export interface GateStateOptions {
   readonly stateDir?: string
   /** Часы в секундах эпохи — подменяются в тестах. */
   readonly nowSeconds?: () => number
+  /** Память сессии: состояние гейтов между вызовами. */
+  readonly memory?: GateMemory
+  /** Чекер стиля BSL; без него стиль-гейт молчит. */
+  readonly styleChecker?: StyleCheckerPort
+}
+
+/**
+ * Память процесса по умолчанию: гейты без сессии не должны падать.
+ * @returns память на одну жизнь процесса.
+ */
+function detachedMemory(): GateMemory {
+  const store = new Map<string, unknown>()
+  return {
+    get: <T>(key: string): T | undefined => store.get(key) as T | undefined,
+    set: (key: string, value: unknown): void => {
+      store.set(key, value)
+    },
+  }
 }
 
 /**
@@ -72,6 +90,8 @@ export function createGateState(options: GateStateOptions): GateState {
   return {
     sessionId: options.sessionId,
     nowSeconds,
+    memory: options.memory ?? detachedMemory(),
+    ...options.styleChecker === undefined ? {} : { styleChecker: options.styleChecker },
     audit(rule: string, action: string, reason: string, decision: 'blocked' | 'confirmed' = 'blocked'): void {
       appendAudit(stateDir, {
         rule,
@@ -86,6 +106,9 @@ export function createGateState(options: GateStateOptions): GateState {
     },
     releaseBaseLock(request: Omit<LockRequest, 'operation'>): void {
       releaseBaseLock(stateDir, request)
+    },
+    standLockStatus(request: { tree: string; connection: string }): LockRecord | null {
+      return standLockStatus(stateDir, request.connection, request.tree)
     },
   }
 }

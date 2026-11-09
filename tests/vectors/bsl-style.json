@@ -1,0 +1,214 @@
+[
+  {
+    "id": "style-edit-hot-blocks",
+    "describe": "нарушение в изменённой строке блокирует",
+    "gate": "bsl-style",
+    "fixture": {
+      "write": {
+        "tree/src/cf/CommonModules/M.bsl": "Процедура А()\n\tПлохо();\nКонецПроцедуры\n"
+      }
+    },
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "edit",
+          "args": {
+            "file_path": "src/cf/CommonModules/M.bsl",
+            "old_string": "x",
+            "new_string": "\tПлохо();"
+          }
+        },
+        "result": {
+          "isError": false
+        },
+        "expect": {
+          "decision": "block",
+          "code": "bsl-style",
+          "reasonIncludes": [
+            "нарушает стиль BSL"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "style-edit-cold-notice",
+    "describe": "нарушение вне правки не блокирует, а уходит заметкой",
+    "gate": "bsl-style",
+    "fixture": {
+      "write": {
+        "tree/src/cf/CommonModules/M.bsl": "\tПлохо();\nПроцедура А()\n\tХорошо();\nКонецПроцедуры\n"
+      }
+    },
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "edit",
+          "args": {
+            "file_path": "src/cf/CommonModules/M.bsl",
+            "old_string": "x",
+            "new_string": "\tХорошо();"
+          }
+        },
+        "result": {
+          "isError": false
+        },
+        "expect": {
+          "decision": "accept",
+          "noticeIncludes": [
+            "вне твоей правки"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "style-write-whole-file-blocks",
+    "describe": "write проверяет весь файл",
+    "gate": "bsl-style",
+    "fixture": {
+      "write": {
+        "tree/src/cf/CommonModules/M.bsl": "Процедура А()\n\tПлохо();\nКонецПроцедуры\n"
+      }
+    },
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "write",
+          "args": {
+            "file_path": "src/cf/CommonModules/M.bsl",
+            "content": ""
+          }
+        },
+        "result": {
+          "isError": false
+        },
+        "expect": {
+          "decision": "block",
+          "code": "bsl-style"
+        }
+      }
+    ]
+  },
+  {
+    "id": "style-clean-accept",
+    "describe": "чистый файл проходит",
+    "gate": "bsl-style",
+    "fixture": {
+      "write": {
+        "tree/src/cf/CommonModules/M.bsl": "Процедура А()\n\tХорошо();\nКонецПроцедуры\n"
+      }
+    },
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "write",
+          "args": {
+            "file_path": "src/cf/CommonModules/M.bsl",
+            "content": ""
+          }
+        },
+        "result": {
+          "isError": false
+        },
+        "expect": {
+          "decision": "accept"
+        }
+      }
+    ]
+  },
+  {
+    "id": "style-plan-advisory",
+    "describe": "план unica.apply получает предварительный отчёт",
+    "gate": "bsl-style",
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "mcp__unica__apply",
+          "args": {
+            "args": {
+              "ops": [
+                {
+                  "op": "code.replace",
+                  "args": {
+                    "at": "CommonModule.X.Body",
+                    "text": "\tПлохо();"
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "result": {
+          "isError": false
+        },
+        "expect": {
+          "decision": "accept",
+          "noticeIncludes": [
+            "Предварительный стайл-чек"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "style-execute-blocks",
+    "describe": "исполнение плана проверяет файлы с текстом правки",
+    "gate": "bsl-style",
+    "fixture": {
+      "write": {
+        "tree/src/cf/CommonModules/M.bsl": "Процедура А()\n\tПлохо();\nКонецПроцедуры\n"
+      }
+    },
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "mcp__unica__apply",
+          "args": {
+            "args": {
+              "ops": [
+                {
+                  "op": "code.replace",
+                  "args": {
+                    "at": "CommonModule.M.Body",
+                    "text": "\tПлохо();"
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "result": {
+          "isError": false
+        },
+        "expect": {
+          "decision": "accept"
+        }
+      },
+      {
+        "phase": "post",
+        "call": {
+          "tool": "mcp__unica__apply",
+          "args": {
+            "args": {
+              "executionToken": "tok"
+            }
+          }
+        },
+        "result": {
+          "isError": false
+        },
+        "expect": {
+          "decision": "block",
+          "code": "bsl-style"
+        }
+      }
+    ]
+  }
+]

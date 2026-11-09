@@ -6,6 +6,7 @@
 тесте, иначе проверка стала бы тавтологией.
 
     acquire <tree> <operation> <session> <connection-source-tree>
+    stand-acquire <tree> <connection> <pid>
     resolve <tree>
 
 Каталог гейтов — в `CONTOUR_GATES`, корень состояния — в `ZCODE_1C_STATE_DIR`.
@@ -16,7 +17,11 @@ import sys
 
 sys.path.insert(0, os.environ["CONTOUR_GATES"])
 
-from ib_lock import acquire_base_lock, resolve_infobase_connection  # noqa: E402
+from ib_lock import (  # noqa: E402
+	acquire_base_lock,
+	acquire_stand_lock,
+	resolve_infobase_connection,
+)
 
 
 def main() -> int:
@@ -29,6 +34,11 @@ def main() -> int:
 			return 1
 		status, holder = acquire_base_lock(tree, connection, operation, session)
 		print(json.dumps({"status": status, "connection": connection, "holder": holder}, ensure_ascii=False))
+		return 0
+	if command == "stand-acquire":
+		tree, connection, pid = sys.argv[2], sys.argv[3], int(sys.argv[4])
+		status, holder = acquire_stand_lock(tree, connection, pid)
+		print(json.dumps({"status": status, "holder": holder}, ensure_ascii=False))
 		return 0
 	if command == "resolve":
 		print(json.dumps({"connection": resolve_infobase_connection(sys.argv[2])}, ensure_ascii=False))

@@ -50,6 +50,8 @@ export interface UnicaTools {
   readonly op_tools: readonly string[]
   /** Операции раннера, меняющие базу: захватывают замок инфобазы. */
   readonly ib_mutating_ops: readonly string[]
+  /** Операции раннера, требующие сверки с документацией (гейт doc). */
+  readonly verify_ops: readonly string[]
   /** Правила инвариантов пересборки из `contour.json`. */
   readonly rebuild_rules: readonly RebuildRule[]
 }
@@ -82,6 +84,7 @@ export const UNICA_TOOLS_DEFAULT: UnicaTools = {
     'infobase.create', 'infobase.restore', 'infobase.dump', 'launch',
     'extensions.set',
   ],
+  verify_ops: ['push', 'upload', 'apply', 'reset'],
   rebuild_rules: [],
 }
 
@@ -120,6 +123,17 @@ export function unicaTools(project: ContourProject | null): UnicaTools {
 export function unicaServerName(project: ContourProject | null): string {
   const server = unicaTools(project).server
   return typeof server === 'string' && server !== '' ? server : 'unica'
+}
+
+/**
+ * Короткое имя инструмента MCP: `mcp__<server>__<tool>` → `<tool>`.
+ * @param toolName - полное имя инструмента.
+ * @param server - имя сервера.
+ * @returns короткое имя либо пустая строка.
+ */
+export function mcpShortName(toolName: string, server: string): string {
+  const prefix = `mcp__${server}__`
+  return toolName.startsWith(prefix) ? toolName.slice(prefix.length) : ''
 }
 
 /**

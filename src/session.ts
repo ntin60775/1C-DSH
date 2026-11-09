@@ -14,19 +14,32 @@
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 
-import type { ExecutedCall, GateCall } from './contract.js'
+import type { ExecutedCall, GateCall, GateMemory } from './contract.js'
 import { observeOutcome, OutcomeLog } from './outcomes.js'
 
 /** Состояние одного агента в памяти хоста. */
 export interface SessionState {
   /** Счётчики исходов вызовов. */
   readonly outcomes: OutcomeLog
+  /** Память гейтов с состоянием: флаг сверки, планы правок. */
+  readonly memory: GateMemory
+}
+
+/** Память на карте: значения живут, пока жива сессия. */
+function createMemory(): GateMemory {
+  const store = new Map<string, unknown>()
+  return {
+    get: <T>(key: string): T | undefined => store.get(key) as T | undefined,
+    set: (key: string, value: unknown): void => {
+      store.set(key, value)
+    },
+  }
 }
 
 const states = new WeakMap<Agent, SessionState>()
 
 /** Состояние вызовов без агента: подпроцессы и вызовы вне сессии. */
-const detached: SessionState = { outcomes: new OutcomeLog() }
+const detached: SessionState = { outcomes: new OutcomeLog(), memory: createMemory() }
 
 /**
  * Состояние агента; создаётся при первом обращении.
@@ -37,7 +50,7 @@ export function sessionStateOf(agent: Agent | undefined): SessionState {
   if (agent === undefined) return detached
   const known = states.get(agent)
   if (known !== undefined) return known
-  const created: SessionState = { outcomes: new OutcomeLog() }
+  const created: SessionState = { outcomes: new OutcomeLog(), memory: createMemory() }
   states.set(agent, created)
   return created
 }
@@ -59,6 +72,7 @@ export function observeResult(
     call,
     isError: result.isError,
     denied: result.isError && result.error.info?.code === deniedCode,
+    resultText: '',
   }
   observeOutcome(state.outcomes, executed)
 }

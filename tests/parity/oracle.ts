@@ -13,8 +13,17 @@ import { fileURLToPath } from 'node:url'
 /** Каталог эталонных гейтов. */
 export const GATES_DIR = fileURLToPath(new URL('../../reference/gates/', import.meta.url))
 
-/** Скрипт гейта в эталоне. */
+/** Скрипт гейта в эталоне по умолчанию. */
 export const GATE_SCRIPT = fileURLToPath(new URL('../../reference/gates/unica_source_gate.py', import.meta.url))
+
+/**
+ * Скрипт эталонного гейта по имени файла.
+ * @param name - имя файла гейта в `reference/gates`.
+ * @returns абсолютный путь скрипта.
+ */
+export function gateScript(name: string): string {
+  return fileURLToPath(new URL(`../../reference/gates/${name}`, import.meta.url))
+}
 
 /** Путь моста замков ИБ. */
 const LOCK_BRIDGE = fileURLToPath(new URL('../helpers/ib-lock-bridge.py', import.meta.url))
@@ -38,14 +47,39 @@ function python(): string {
  * @param options - корень состояния и рабочий каталог процесса.
  * @returns код возврата и stderr.
  */
-export function runOracle(event: unknown, options: { stateDir: string; cwd: string }): OracleResult {
-  const result = spawnSync(python(), [GATE_SCRIPT], {
+export function runOracle(
+  event: unknown,
+  options: { stateDir: string; cwd: string; script?: string },
+): OracleResult {
+  const script = options.script ?? GATE_SCRIPT
+  const result = spawnSync(python(), [script], {
     input: JSON.stringify(event),
     cwd: options.cwd,
     encoding: 'utf8',
     env: { ...process.env, ZCODE_1C_STATE_DIR: options.stateDir },
   })
   return { exitCode: result.status ?? -1, stderr: result.stderr ?? '' }
+}
+
+/**
+ * Положить stand-замок так, как это делает эталон.
+ * @param options - дерево, строка подключения и pid живого владельца.
+ */
+export function seedStandLock(options: {
+  readonly tree: string
+  readonly connection: string
+  readonly pid: number
+  readonly legacyStateDir: string
+}): void {
+  const result = spawnSync(python(), [LOCK_BRIDGE, 'stand-acquire', options.tree, options.connection, String(options.pid)], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      ZCODE_1C_STATE_DIR: options.legacyStateDir,
+      CONTOUR_GATES: GATES_DIR,
+    },
+  })
+  if (result.status !== 0) throw new Error(`stand-замок не встал: ${result.stderr || result.stdout}`)
 }
 
 /**

@@ -24,6 +24,16 @@ export type ReasonCode =
   | 'none'
   /** Прямая правка разрешена allowlist'ом эскалаций. */
   | 'escalation-granted'
+  /** Мутация метаданных/кода без сверки с документацией платформы. */
+  | 'docs-unverified'
+  /** Изменяющий вызов тест-контура в прод-контуре без эскалации. */
+  | 'mcp-unsafe'
+  /** База занята stand-замком: второй клиент не поднимается. */
+  | 'stand-lock'
+  /** Нарушение стиля BSL в изменённых строках. */
+  | 'bsl-style'
+  /** Нарушение контракта носителя 1С-кода. */
+  | 'bsl-module'
 
 /** Один вызов инструмента так, как его видит гейт. */
 export interface GateCall {
@@ -65,9 +75,41 @@ export interface LockRecord {
   readonly operation: string
   readonly started_at: string
   readonly expires_ts: number
+  /** Вид замка: `stand` — стенд-замок файловой базы, иначе замок ИБ. */
+  readonly kind?: 'stand'
+  /** Процесс-владелец stand-замка. */
+  readonly pid?: number
 }
 
-/** Порт побочных эффектов гейта: журнал, замки, время. */
+/**
+ * Память сессии для гейтов с состоянием.
+ *
+ * Эталон хранил состояние в файлах `state/1c/<gate>/<session>.json`; в хосте
+ * сессия живёт в памяти, поэтому состояние — её часть и умирает вместе с ней.
+ * Ключ включает имя гейта (`doc:verified`), чтобы гейты не делили поля.
+ */
+export interface GateMemory {
+  /** Прочитать значение; `undefined` — не записано. */
+  get<T>(key: string): T | undefined
+  /** Записать значение. */
+  set(key: string, value: unknown): void
+}
+
+/**
+ * Порт чекера стиля BSL: движок пака или вендоренный скрипт.
+ *
+ * Гейт не знает, чем именно проверяют: движок выбирает адаптер. Отчёт —
+ * `''` чисто, строка с нарушениями, `null` — проверка не отработала (это не
+ * сигнал о нарушениях).
+ */
+export interface StyleCheckerPort {
+  /** Прогнать чекер по файлам дерева. */
+  run(targets: readonly string[], root: string): Promise<string | null>
+  /** Предварительный чек фрагмента текста без контекста модуля. */
+  snippet(texts: readonly string[], root: string): Promise<string | null>
+}
+
+/** Порт побочных эффектов гейта: журнал, замки, время, память, чекер. */
 export interface GateState {
   /** Сессия-держатель состояния. */
   readonly sessionId: string
@@ -79,6 +121,12 @@ export interface GateState {
   acquireBaseLock(request: LockRequest): { readonly status: 'ok' } | { readonly status: 'busy'; readonly holder: LockRecord }
   /** Отпустить замок своего дерева. */
   releaseBaseLock(request: Omit<LockRequest, 'operation'>): void
+  /** Живой stand-замок на базу вызова либо `null`. */
+  standLockStatus(request: { tree: string; connection: string }): LockRecord | null
+  /** Память сессии: состояние гейтов, живущее между вызовами. */
+  readonly memory: GateMemory
+  /** Чекер стиля BSL; `undefined` — не установлен (advisory-пропуск). */
+  readonly styleChecker?: StyleCheckerPort
 }
 
 /** Решение до вызова инструмента. */
@@ -99,9 +147,20 @@ export interface ExecutedCall {
    * повторов не идёт.
    */
   readonly denied: boolean
+  /**
+   * Текст результата инструмента: гейту сверки нужен ответ docs-провайдера,
+   * а не только признак ошибки.
+   */
+  readonly resultText: string
 }
 
-/** Решение после вызова инструмента. */
+/**
+ * Решение после вызова инструмента.
+ *
+ * `notice` — текст, который хост добавляет в контекст модели. Эталон отдавал
+ * его через `additionalContext` в stdout: advisory-отчёты стиля и носителя
+ * доезжают до модели, не роняя правку.
+ */
 export type PostDecision =
-  | { readonly kind: 'accept' }
-  | { readonly kind: 'block'; readonly feedback: string }
+  | { readonly kind: 'accept'; readonly notice?: string }
+  | { readonly kind: 'block'; readonly feedback: string; readonly notice?: string }
