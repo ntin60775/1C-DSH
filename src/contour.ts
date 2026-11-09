@@ -7,7 +7,7 @@
  * @module dsh-1c-contour/contour
  */
 
-import { readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
 import type { ContourProject } from './contract.js'
@@ -18,10 +18,6 @@ export const ESCALATION_FILE_NAME = 'unica-gate-escalations.txt'
 
 /** Канонические пути раскладки проекта для сообщений гейта. */
 export interface ContourPaths {
-  /** Каталог данных контура: `.dsh/1c` либо legacy `.zcode/1c`. */
-  readonly dataDir: string
-  /** Корень раскладки: `.dsh` либо legacy `.zcode`. */
-  readonly layoutDir: string
   /** Путь allowlist'а эскалаций в канонической раскладке. */
   readonly escalationFile: string
   /** Скрипт инициализации ворктри в канонической раскладке. */
@@ -36,8 +32,6 @@ export interface ContourPaths {
 export function contourPaths(project: ContourProject | null): ContourPaths {
   const layout = project?.layout === 'zcode' ? '.zcode' : '.dsh'
   return {
-    layoutDir: layout,
-    dataDir: `${layout}/1c`,
     escalationFile: `${layout}/${ESCALATION_FILE_NAME}`,
     initWorktreeScript: `${layout}/1c/scripts/init_worktree.sh`,
   }
@@ -251,6 +245,22 @@ export function ruleMatchesSource(rule: RebuildRule, sourceSet: string, extensio
 }
 
 /**
+ * Сравнить значение аргумента с ожидаемым значением правила.
+ *
+ * Схема правила может нести не только скаляры: эталон сравнивает структуры
+ * python-равенством, поэтому объекты и списки сверяются по содержимому, а не
+ * по ссылке (иначе `require` всегда срабатывал бы, а `forbid` — никогда).
+ * @param actual - значение из аргументов вызова.
+ * @param expected - значение из правила.
+ * @returns истина, когда значения равны по содержимому.
+ */
+function sameValue(actual: unknown, expected: unknown): boolean {
+  if (actual === expected) return true
+  if (typeof actual !== 'object' || actual === null) return false
+  return JSON.stringify(actual) === JSON.stringify(expected)
+}
+
+/**
  * Нарушено ли правило пересборки.
  * @param rule - правило из `contour.json`.
  * @param short - глагол юники.
@@ -270,10 +280,10 @@ export function violatedRebuildRule(
   const extensions = extensionSourceSets(callCwd)
   if (!ruleMatchesSource(rule, typeof sourceSet === 'string' ? sourceSet : '', extensions)) return null
   for (const [key, value] of Object.entries(rule.require ?? {})) {
-    if (args[key] !== value) return rule.message ?? `правило пересборки: требуется ${key}=${JSON.stringify(value)}`
+    if (!sameValue(args[key], value)) return rule.message ?? `правило пересборки: требуется ${key}=${JSON.stringify(value)}`
   }
   for (const [key, value] of Object.entries(rule.forbid ?? {})) {
-    if (args[key] === value) return rule.message ?? `правило пересборки: ${key}=${JSON.stringify(value)} запрещено`
+    if (sameValue(args[key], value)) return rule.message ?? `правило пересборки: ${key}=${JSON.stringify(value)} запрещено`
   }
   return null
 }
@@ -353,7 +363,16 @@ export function escalationEntries(targetRoot: string, sessionCwd: string): Escal
       try {
         raw = readFileSync(path, 'utf8')
       } catch {
-        continue
+        // Файла нет — смотрим следующую раскладку. Файл есть, но не читается —
+        // это несовпадение, а не отсутствие: молча уступать legacy-файлу нельзя.
+        if (!existsSync(path)) continue
+        return {
+          found: true,
+          matched: [],
+          report: [`файл эскалаций не прочитан: ${path}`],
+          treeRoot: root,
+          label: `${layout}/${ESCALATION_FILE_NAME}`,
+        }
       }
       const matched: string[] = []
       const report: string[] = []

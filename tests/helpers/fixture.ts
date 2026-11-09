@@ -89,6 +89,7 @@ export function createFixture(options: FixtureOptions = {}): Fixture {
     mkdirSync(dir, { recursive: true })
   }
   writeFileSync(join(tree, 'v8project.yaml'), V8PROJECT, 'utf8')
+  writeFileSync(join(root, 'other-tree', 'v8project.yaml'), V8PROJECT, 'utf8')
   const layout = options.layout ?? 'zcode'
   if (options.contour !== undefined) {
     const dir = join(tree, layout === 'dsh' ? '.dsh' : '.zcode', '1c')
@@ -100,7 +101,6 @@ export function createFixture(options: FixtureOptions = {}): Fixture {
     mkdirSync(dirname(target), { recursive: true })
     writeFileSync(target, content.replaceAll('$TMP', root), 'utf8')
   }
-  const stateRoot = join(root, 'state')
   const legacyStateDir = join(root, 'legacy-state')
   return {
     root,

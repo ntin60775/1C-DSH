@@ -6,6 +6,9 @@
  * решение, класс причины и (когда задан) текст причины. Имена инструментов
  * различаются (`Write`/`Edit`/`ApplyPatch` против `write`/`edit`/`apply_patch`),
  * поэтому сверка идёт на канонических кейсах, а не на сырых payload.
+ *
+ * spec: Т2 — «паритет-тест `unica_source_gate` зелёный на корпусе кейсов
+ * эталона: решение и класс причины совпадают».
  * @module tests/parity/unica-source.spec
  */
 
@@ -15,7 +18,7 @@ import { isAbsolute, join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 
 import type { GateCall } from '../../src/contract.js'
-import { evaluatePre } from '../../src/gates/unica-source.js'
+import { evaluatePre, patchPaths } from '../../src/gates/unica-source.js'
 import { resolveProject } from '../../src/paths.js'
 import { createGateState } from '../../src/state.js'
 import { createFixture, REBUILD_RULES } from '../helpers/fixture.js'
@@ -40,6 +43,10 @@ interface Expectation {
 interface Vector {
   readonly id: string
   readonly describe: string
+  /** Пути, извлечённые из текста патча: для кейсов `apply_patch`. */
+  readonly paths?: readonly string[]
+  /** Пояснение к форме эталонного вызова, когда она отличается от вызова DSH. */
+  readonly oracleNote?: string
   readonly cwd?: string
   readonly fixture?: {
     readonly write?: Readonly<Record<string, string>>
@@ -122,6 +129,12 @@ for (const vector of vectors) {
         })
       }
 
+      if (vector.paths !== undefined) {
+        const patch = (vector.call.args as { input?: unknown }).input
+        expect(typeof patch).toBe('string')
+        expect(patchPaths(patch as string)).toEqual(vector.paths)
+      }
+
       const cwd = caseCwd(vector.cwd ?? 'tree', fixture.root)
       const call: GateCall = {
         tool: vector.call.tool,
@@ -173,5 +186,24 @@ describe('корпус паритета', () => {
   it('денай-кейсы задают класс причины', () => {
     const missing = vectors.filter((vector) => vector.expect.decision === 'deny' && vector.expect.code === undefined)
     expect(missing.map((vector) => vector.id)).toEqual([])
+  })
+
+  it('кейсы правила пересборки сверяют текст причины, а не только класс', () => {
+    // Классификатор эталона выводит rebuild-rule как запасной вариант для
+    // неизвестного блока: без сверки текста такой кейс прошёл бы даром.
+    const wordless = vectors.filter(
+      (vector) => vector.expect.code === 'rebuild-rule' && vector.expect.reasonEquals === undefined,
+    )
+    expect(wordless.map((vector) => vector.id)).toEqual([])
+  })
+
+  it('кейсы apply_patch описывают пути патча и форму эталона', () => {
+    const patches = vectors.filter((vector) => vector.call.tool === 'apply_patch')
+    expect(patches.length).toBeGreaterThan(0)
+    for (const vector of patches) {
+      expect(vector.paths, vector.id).toBeDefined()
+      expect(vector.oracleNote, vector.id).toBeDefined()
+      expect(vector.oracle, vector.id).toBeDefined()
+    }
   })
 })

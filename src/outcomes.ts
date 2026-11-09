@@ -45,13 +45,6 @@ export class OutcomeLog {
     const current = this.#counters.get(tool)
     return current === undefined ? { ok: 0, error: 0 } : { ...current }
   }
-
-  /** Число подряд идущих ошибок последнего инструмента — вход гейта повторов. */
-  get lastErrorStreak(): number {
-    let streak = 0
-    for (const counter of this.#counters.values()) streak = Math.max(streak, counter.error)
-    return streak
-  }
 }
 
 /**

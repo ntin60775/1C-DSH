@@ -35,7 +35,7 @@ import {
   violatedRebuildRule,
 } from '../contour.js'
 import { describeHolder, resolveInfobaseConnection } from '../lock.js'
-import { isAgentsDoc, normalizeSourcePath, SOURCE_PREFIXES } from '../paths.js'
+import { isAgentsDoc, normalizeSourcePath, resolveProject, SOURCE_PREFIXES } from '../paths.js'
 
 /** Имя правила в журнале решений. */
 export const RULE = 'unica-source-gate'
@@ -269,14 +269,26 @@ export function suggestUnicaTool(rel: string): string {
 
 /**
  * Пути из текста патча `apply_patch`.
+ *
+ * Разбор повторяет парсер DSH (`packages/fs/fs-patch`): заголовок — это
+ * строка, обрезанная по Unicode White_Space с обоих концов, поэтому ведущий
+ * пробел перед `*** Add File:` парсер не отменяет. `Move to` живёт внутри
+ * блока обновления и обрезается только справа — так же, как в парсере.
  * @param patch - текст патча в формате `*** Add File:` / `*** Update File:`.
  * @returns пути в порядке появления.
  */
 export function patchPaths(patch: string): string[] {
   const paths: string[] = []
-  for (const match of patch.matchAll(/^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/gm)) {
-    const path = match[1]?.trim()
-    if (path !== undefined && path !== '') paths.push(path)
+  for (const rawLine of patch.split('\n')) {
+    const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+    const header = line.trim()
+    const head = /^\*\*\* (?:Add File|Update File|Delete File): (.+)$/.exec(header)
+    if (head?.[1] !== undefined) {
+      paths.push(head[1])
+      continue
+    }
+    const move = /^\*\*\* Move to: (.+)$/.exec(line.trimEnd())
+    if (move?.[1] !== undefined) paths.push(move[1])
   }
   return paths
 }
@@ -401,11 +413,27 @@ export function evaluatePre(
   if (typeof call.args !== 'object' || call.args === null || Array.isArray(call.args)) {
     return { kind: 'allow', code: 'none' }
   }
-  const paths = contourPaths(project)
+  // Вне проекта 1С контура нет: гейт молчит. Форма пути (`src/cf/…`) сама по
+  // себе не признак исходника — плагин стоит на машину, а не на проект, и в
+  // чужом репозитории такой путь может быть чем угодно. Отличие от эталона,
+  // который жил внутри проекта и блокировал по форме пути.
+  // Исключение — вызов Unica с `cwd` внутри проекта: такой вызов относится к
+  // проекту цели (инициализация ворктри, замок базы), даже если сессия открыта
+  // вне проекта.
+  let effective = project
+  if (effective === null) {
+    const callCwd = asRecord(call.args)['cwd']
+    const target = call.tool.startsWith('mcp__') && typeof callCwd === 'string' && callCwd !== ''
+      ? resolveProject(callCwd)
+      : null
+    if (target === null) return { kind: 'allow', code: 'none' }
+    effective = target
+  }
+  const paths = contourPaths(effective)
 
-  const unica = unicaCall(call, project)
+  const unica = unicaCall(call, effective)
   if (unica !== null) {
-    const tools = unicaTools(project)
+    const tools = unicaTools(effective)
 
     if (isWorktree(unica.callCwd)) {
       const missing = missingWorktreeWorkspace(unica.callCwd)
@@ -533,8 +561,12 @@ export function evaluatePre(
 
 /**
  * Решение после вызова: синхронная операция юники закончилась — замок своего
- * дерева отпускается. Ошибка вызова тоже отпускает: держать базу до TTL
- * незачем, блокировка переживёт сессию.
+ * дерева отпускается.
+ *
+ * Замок отпускает только успешный вызов: эталон вешает освобождение на
+ * `PostToolUse`, который у ZCode приходит лишь после успеха, а упавшая
+ * операция держит базу до TTL. Отказ политики и ошибка в хосте доходят сюда
+ * тем же событием, поэтому исход проверяется явно.
  * @param executed - вызов и его финальный исход.
  * @param project - проект контура.
  * @param state - журнал и замки.
@@ -545,6 +577,7 @@ export function evaluatePost(
   project: ContourProject | null,
   state: GateState,
 ): PostDecision {
+  if (executed.isError || executed.denied) return { kind: 'accept' }
   const call = executed.call
   if (typeof call.args !== 'object' || call.args === null || Array.isArray(call.args)) {
     return { kind: 'accept' }

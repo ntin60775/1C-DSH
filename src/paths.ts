@@ -33,18 +33,33 @@ export const PROJECT_MARKERS: readonly string[] = [
   'v8project.test.local.yaml',
 ]
 
-/** Путь, разрешённый как у python `Path.resolve()`: символические ссылки сняты. */
+/**
+ * Путь, разрешённый как у python `Path.resolve()`: символические ссылки сняты.
+ *
+ * Цели может ещё не быть (write нового файла), поэтому разрешается ближайший
+ * существующий предок, а остаток пути приписывается как есть. Без этого одно
+ * дерево в двух написаниях давало бы разные ключи замка.
+ * @param path - путь для разрешения.
+ * @returns абсолютный путь без символических ссылок в существующей части.
+ */
 export function resolvedPath(path: string): string {
   const absolute = resolve(path)
   try {
     return realpathSync.native(absolute)
   } catch {
-    // Цели может ещё не быть (write нового файла) — снимаем ссылки с каталога.
+    // Цели пока нет — разрешаем существующего предка.
   }
-  try {
-    return join(realpathSync.native(dirname(absolute)), basename(absolute))
-  } catch {
-    return absolute
+  let head = dirname(absolute)
+  let tail = basename(absolute)
+  for (;;) {
+    try {
+      return join(realpathSync.native(head), tail)
+    } catch {
+      const parent = dirname(head)
+      if (parent === head) return absolute
+      tail = join(basename(head), tail)
+      head = parent
+    }
   }
 }
 

@@ -12,6 +12,7 @@ import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type { LockRecord } from './contract.js'
+import { resolvedPath } from './paths.js'
 
 /** Время жизни замка без продления — как у эталона: 20 минут. */
 export const DEFAULT_TTL_SECONDS = 20 * 60
@@ -72,7 +73,7 @@ export function normalizedConnection(connection: string, tree: string): string {
   const norm = connection.toLowerCase().replaceAll(/\s+/g, '')
   if (!norm.startsWith('file=')) return norm
   let filePart = norm.slice('file='.length)
-  if (!filePart.startsWith('/')) filePart = join(tree, filePart)
+  if (!filePart.startsWith('/')) filePart = resolvedPath(join(tree, filePart))
   return `file=${filePart}`
 }
 
@@ -126,6 +127,25 @@ function isoNow(): string {
 }
 
 /**
+ * Строка подключения без учётных данных.
+ *
+ * Пароль не должен жить в файлах состояния: `connection` — только для
+ * разбора человеком, ключ замка считается отдельно и `Usr=`/`Pwd=` не
+ * содержит.
+ * @param connection - строка подключения проекта.
+ * @returns строка без сегментов `Usr=` и `Pwd=`.
+ */
+export function withoutCredentials(connection: string): string {
+  return connection
+    .split(';')
+    .filter((part) => {
+      const head = part.trim().toLowerCase()
+      return !head.startsWith('usr=') && !head.startsWith('pwd=')
+    })
+    .join(';')
+}
+
+/**
  * Взять или продлить замок инфобазы.
  *
  * Своё дерево продлевает замок и сохраняет `started_at`; чужое дерево при
@@ -147,7 +167,7 @@ export function acquireBaseLock(
     return { status: 'busy', holder: existing }
   }
   const lock: LockRecord = {
-    connection: request.connection,
+    connection: withoutCredentials(request.connection),
     tree: request.tree,
     session_id: request.sessionId,
     operation: request.operation,
@@ -156,7 +176,7 @@ export function acquireBaseLock(
   }
   try {
     mkdirSync(join(stateDir, 'ib-locks'), { recursive: true })
-    writeFileSync(path, `${JSON.stringify(lock, null, 2)}`, 'utf8')
+    writeFileSync(path, `${JSON.stringify(lock, null, 2)}`, { encoding: 'utf8', mode: 0o600 })
   } catch {
     // Нет доступа к каталогу состояния — из-за этого работу не блокируем.
   }

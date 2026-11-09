@@ -1,12 +1,17 @@
 /**
- * Состояние сессии контура и наблюдатель исхода вызова.
+ * Состояние сессий контура и наблюдатель исхода вызова.
  *
- * Вынесено из адаптера, чтобы логика исходов проверялась без поднятия хоста:
- * `tools/result` — единственное событие с финальным исходом, и счётчики
- * повторов (гейт `retry_gate`) считаются уже здесь.
+ * Состояние живёт в памяти хоста и привязано к агенту: сессия — единица
+ * изоляции счётчиков. Реестр модульный, потому что одного агента видят и
+ * адаптер события, и тест разводки; ключ — сам объект агента, поэтому запись
+ * исчезает вместе с ним.
+ *
+ * `tools/result` — единственное событие с финальным исходом, включая ошибку
+ * инструмента; счётчики повторов (гейт `retry_gate`) считаются здесь.
  * @module dsh-1c-contour/session
  */
 
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 
 import type { ExecutedCall, GateCall } from './contract.js'
@@ -18,12 +23,23 @@ export interface SessionState {
   readonly outcomes: OutcomeLog
 }
 
+const states = new WeakMap<Agent, SessionState>()
+
+/** Состояние вызовов без агента: подпроцессы и вызовы вне сессии. */
+const detached: SessionState = { outcomes: new OutcomeLog() }
+
 /**
- * Создать состояние агента.
- * @returns пустое состояние с журналом исходов.
+ * Состояние агента; создаётся при первом обращении.
+ * @param agent - агент сессии либо `undefined` вне сессии.
+ * @returns состояние, привязанное к агенту.
  */
-export function createSessionState(): SessionState {
-  return { outcomes: new OutcomeLog() }
+export function sessionStateOf(agent: Agent | undefined): SessionState {
+  if (agent === undefined) return detached
+  const known = states.get(agent)
+  if (known !== undefined) return known
+  const created: SessionState = { outcomes: new OutcomeLog() }
+  states.set(agent, created)
+  return created
 }
 
 /**

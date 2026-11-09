@@ -5,6 +5,9 @@
  * Хост подменён минимальным контекстом: тест проверяет разводку плагина, а
  * не Cordis. Освобождение замка проверяется на замке, который поставил
  * python-эталон, — это же и проверка совместимости формата.
+ *
+ * spec: Т2 — «`tools/result` видит и успешный, и ошибочный исход — тест
+ * на оба»; invariant: замок ИБ читается эталоном и TS-гейтом в обе стороны.
  * @module tests/unit/plugin.spec
  */
 
@@ -16,9 +19,9 @@ import { evaluatePre } from '../../src/gates/unica-source.js'
 import { apply, DENIED_CODE, inject, name } from '../../src/index.js'
 import { lockPath, resolveInfobaseConnection } from '../../src/lock.js'
 import { resolveProject } from '../../src/paths.js'
-import { createSessionState, observeResult } from '../../src/session.js'
+import { sessionStateOf } from '../../src/session.js'
 import { createGateState } from '../../src/state.js'
-import { createFixture, V8PROJECT } from '../helpers/fixture.js'
+import { BSL, createFixture, V8PROJECT } from '../helpers/fixture.js'
 import { runOracle, seedPythonLock } from '../parity/oracle.js'
 
 /** Минимальный контекст плагина: запоминает обработчики событий. */
@@ -62,12 +65,15 @@ async function withStateDir<T>(dir: string, body: () => Promise<T> | T): Promise
   }
 }
 
-/** Вызов инструмента в форме события DSH. */
-function exec(tool: string, args: unknown, sessionId = 's1'): unknown {
-  return { name: tool, arguments: args, agent: { session: { id: sessionId } } }
+/** Агент сессии: тот же объект, что видят плагин и тест. */
+function agentOf(sessionId = 's1'): { session: { id: string } } {
+  return { session: { id: sessionId } }
 }
 
-const BSL = 'src/cf/CommonModules/ОбщегоНазначения.bsl'
+/** Вызов инструмента в форме события DSH. */
+function exec(tool: string, args: unknown, agent: { session: { id: string } } = agentOf()): unknown {
+  return { name: tool, arguments: args, agent }
+}
 
 describe('разводка плагина', () => {
   it('объявляет имя и зависимости', () => {
@@ -160,35 +166,39 @@ describe('tools/post-execute', () => {
 })
 
 describe('tools/result', () => {
-  it('видит и успешный, и ошибочный исход', async () => {
+  it('видит и успешный, и ошибочный исход и считает оба', async () => {
     const fixture = createFixture()
+    const agent = agentOf()
     await withStateDir(fixture.stateDir, () => {
       const fake = createFakeContext(fixture.tree)
       apply(fake.ctx as never)
       const handler = fake.handlers.get('tools/result') as (...args: any[]) => unknown
-      expect(() => handler(exec('bash', { command: 'ls' }), { isError: false, content: [] })).not.toThrow()
-      expect(() =>
-        handler(exec('bash', { command: 'false' }), {
-          isError: true,
-          content: [{ type: 'text', text: 'Error: 1' }],
-          error: { message: '1' },
-        }),
-      ).not.toThrow()
+      handler(exec('bash', { command: 'ls' }, agent), { isError: false, content: [], value: null })
+      handler(exec('bash', { command: 'false' }, agent), {
+        isError: true,
+        content: [{ type: 'text', text: 'Error: 1' }],
+        error: { message: '1' },
+      })
     })
+    expect(sessionStateOf(agent as never).outcomes.get('bash')).toEqual({ ok: 1, error: 1 })
     rmSync(fixture.root, { recursive: true, force: true })
   })
 
-  it('считает оба исхода и не считает отказ политики', () => {
-    const state = createSessionState()
-    const call = { tool: 'bash', args: { command: 'ls' }, cwd: '/tmp' }
-    observeResult(state, call, { isError: false, content: [], value: null } as never, DENIED_CODE)
-    observeResult(state, call, { isError: true, content: [], error: { message: 'сбой' } } as never, DENIED_CODE)
-    observeResult(state, call, {
-      isError: true,
-      content: [],
-      error: { message: 'отказ', info: { name: 'ContourDeniedError', code: DENIED_CODE } },
-    } as never, DENIED_CODE)
-    expect(state.outcomes.get('bash')).toEqual({ ok: 1, error: 1 })
+  it('не считает отказ политики сбоем инструмента', async () => {
+    const fixture = createFixture()
+    const agent = agentOf()
+    await withStateDir(fixture.stateDir, () => {
+      const fake = createFakeContext(fixture.tree)
+      apply(fake.ctx as never)
+      const handler = fake.handlers.get('tools/result') as (...args: any[]) => unknown
+      handler(exec('write', { file_path: BSL, content: '' }, agent), {
+        isError: true,
+        content: [],
+        error: { message: 'отказ', info: { name: 'ContourDeniedError', code: DENIED_CODE } },
+      })
+    })
+    expect(sessionStateOf(agent as never).outcomes.get('write')).toEqual({ ok: 0, error: 0 })
+    rmSync(fixture.root, { recursive: true, force: true })
   })
 })
 

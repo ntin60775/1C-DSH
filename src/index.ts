@@ -19,7 +19,7 @@ import type {} from '@deepseek-ai/dsh-working-directory'
 import type { ExecutedCall, GateCall } from './contract.js'
 import { evaluatePost, evaluatePre } from './gates/unica-source.js'
 import { resolveProject } from './paths.js'
-import { createSessionState, observeResult, type SessionState } from './session.js'
+import { observeResult, sessionStateOf } from './session.js'
 import { createGateState, defaultStateDir } from './state.js'
 
 /** Имя плагина в профиле. */
@@ -41,20 +41,8 @@ function gateCall(exec: Readonly<ToolExecution>, cwd: string): GateCall {
  * @param ctx - контекст плагина.
  */
 export function apply(ctx: Context): void {
-  const perAgent = new WeakMap<Agent, SessionState>()
-  const detached: SessionState = createSessionState()
-
   const directoryOf = (agent: Agent | undefined): string =>
     agent === undefined ? process.cwd() : ctx.workingDirectory.get(agent.session)
-
-  const stateFor = (agent: Agent | undefined): SessionState => {
-    if (agent === undefined) return detached
-    const known = perAgent.get(agent)
-    if (known !== undefined) return known
-    const created = createSessionState()
-    perAgent.set(agent, created)
-    return created
-  }
 
   // Корень состояния читается на каждый вызов: смена DSH_1C_STATE_DIR в
   // окружении процесса подхватывается без перезапуска плагина.
@@ -62,7 +50,7 @@ export function apply(ctx: Context): void {
     createGateState({ sessionId: agent?.session.id ?? 'default', stateDir: defaultStateDir() })
 
   ctx.on('agent/created', async ({ agent }) => {
-    stateFor(agent)
+    sessionStateOf(agent)
     try {
       await ctx.workingDirectory.ensure(agent)
     } catch (error: unknown) {
@@ -87,7 +75,7 @@ export function apply(ctx: Context): void {
     const executed: ExecutedCall = {
       call: gateCall(exec, cwd),
       isError: result.isError,
-      denied: false,
+      denied: result.isError && result.error.info?.code === DENIED_CODE,
     }
     const decision = evaluatePost(executed, resolveProject(cwd), gateStateFor(exec.agent))
     if (decision.kind === 'block') {
@@ -98,6 +86,6 @@ export function apply(ctx: Context): void {
 
   ctx.on('tools/result', (exec, result) => {
     const cwd = directoryOf(exec.agent)
-    observeResult(stateFor(exec.agent), gateCall(exec, cwd), result, DENIED_CODE)
+    observeResult(sessionStateOf(exec.agent), gateCall(exec, cwd), result, DENIED_CODE)
   })
 }

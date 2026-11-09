@@ -1,6 +1,6 @@
 {
   "name": "dsh-1c-contour",
-  "description": "Контур 1С-разработки в DeepSeek Harness: гейты, скиллы и пресет",
+  "description": "Контур 1С-разработки в DeepSeek Harness: гейты правки исходников",
   "version": "0.1.0",
   "icon": "./icon.svg",
   "type": "module",
@@ -17,7 +17,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js",
+    "lib/**/*.js",
     "lib/types/**/*.d.ts",
     "cordis.patch.yml",
     "locale/*.json",

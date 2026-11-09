@@ -1,5 +1,8 @@
 /**
  * Раскладка и пути контура: приоритет `.dsh/1c`, маркеры проекта, исходники.
+ *
+ * invariant: путь исходника и корень дерева считаются так же, как у эталона;
+ * порядок раскладок — решение 7 спеки (`.dsh` первым, legacy читается).
  * @module tests/unit/paths.spec
  */
 
@@ -49,7 +52,9 @@ describe('resolveProject', () => {
 
   it('вне проекта 1С возвращает null', () => {
     const fixture = createFixture()
-    expect(resolveProject(join(fixture.root, 'other-tree'))).toBeNull()
+    const outside = join(fixture.root, 'no-project')
+    mkdirSync(outside, { recursive: true })
+    expect(resolveProject(outside)).toBeNull()
     rmSync(fixture.root, { recursive: true, force: true })
   })
 })

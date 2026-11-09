@@ -3,6 +3,9 @@
  *
  * Ожидания взяты из поведения эталона и спеки bash-write: разбор по
  * операндам, fail-closed на неразбираемом вызове, правка копии вне дерева.
+ *
+ * target: спека bash-write — разбор sed по операндам и fail-closed без
+ * упоминания пути исходников.
  * @module tests/unit/bash-writes.spec
  */
 
@@ -11,9 +14,7 @@ import { rmSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 import { bashWritesToSource } from '../../src/gates/unica-source.js'
-import { createFixture } from '../helpers/fixture.js'
-
-const BSL = 'src/cf/CommonModules/ОбщегоНазначения.bsl'
+import { BSL, createFixture } from '../helpers/fixture.js'
 
 describe('bashWritesToSource', () => {
   const hitting = [

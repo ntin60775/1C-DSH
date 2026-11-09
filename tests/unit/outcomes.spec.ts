@@ -1,5 +1,8 @@
 /**
  * Счётчики исходов: успех и ошибка считаются, отказ политики — нет.
+ *
+ * invariant: отказ гейта приходит тем же `isError`, но сбоем инструмента
+ * не является и в счётчик повторов (гейт Т4) не идёт.
  * @module tests/unit/outcomes.spec
  */
 
@@ -32,12 +35,5 @@ describe('OutcomeLog', () => {
     const log = new OutcomeLog()
     observeOutcome(log, executed(true, true))
     expect(log.get('bash')).toEqual({ ok: 0, error: 0 })
-  })
-
-  it('длина серии ошибок видна гейту повторов', () => {
-    const log = new OutcomeLog()
-    observeOutcome(log, executed(false))
-    observeOutcome(log, executed(true))
-    expect(log.lastErrorStreak).toBe(1)
   })
 })

@@ -4,10 +4,14 @@
  * Паритет с python-эталоном проверяется отдельно (`tests/parity`). Здесь —
  * то, чего у эталона нет: новая раскладка `.dsh`, извлечение путей из
  * `apply_patch`, коды причин и записи журнала.
+ *
+ * target: решение 7 спеки — новая раскладка `.dsh` перекрывает legacy;
+ * target: `apply_patch` приносит патч текстом, пути извлекаются из него.
  * @module tests/unit/gate.spec
  */
 
-import { existsSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
@@ -16,7 +20,7 @@ import { evaluatePost, evaluatePre, patchPaths } from '../../src/gates/unica-sou
 import { resolveProject } from '../../src/paths.js'
 import { lockPath, resolveInfobaseConnection } from '../../src/lock.js'
 import { createGateState } from '../../src/state.js'
-import { createFixture, readAudit } from '../helpers/fixture.js'
+import { BSL, createFixture, readAudit } from '../helpers/fixture.js'
 
 /** Собрать вызов инструмента. */
 function call(tool: string, args: unknown, cwd: string): GateCall {
@@ -34,7 +38,21 @@ function run(
   return { project, state, decision: evaluatePre(toolCall, project, state) }
 }
 
-const BSL = 'src/cf/CommonModules/ОбщегоНазначения.bsl'
+describe('вне проекта 1С', () => {
+  it('гейт молчит и на пути исходника', () => {
+    const fixture = createFixture()
+    const outside = join(fixture.root, 'no-project')
+    mkdirSync(outside, { recursive: true })
+    expect(resolveProject(outside)).toBeNull()
+    const write = run(fixture, call('write', { file_path: 'src/cf/X.bsl', content: '' }, outside))
+    expect(write.decision).toMatchObject({ kind: 'allow', code: 'none' })
+    const bash = run(fixture, call('bash', { command: 'echo x >> src/cf/X.bsl' }, outside))
+    expect(bash.decision).toMatchObject({ kind: 'allow', code: 'none' })
+    // Решение не журналируется: контура вне проекта нет.
+    expect(readAudit(fixture.stateDir)).toEqual([])
+    rmSync(fixture.root, { recursive: true, force: true })
+  })
+})
 
 describe('раскладка .dsh', () => {
   it('allowlist в .dsh разрешает прямую правку', () => {
@@ -75,6 +93,27 @@ describe('раскладка .dsh', () => {
       call('mcp__unica__run', { args: { op: 'push', full: true, cwd: fixture.tree } }, fixture.tree),
     )
     expect(decision).toMatchObject({ kind: 'deny', code: 'rebuild-rule', reason: 'полная пересборка запрещена' })
+    rmSync(fixture.root, { recursive: true, force: true })
+  })
+
+  it('правило пересборки сравнивает значения по содержимому', () => {
+    const rule = {
+      tool: 'run',
+      op: 'push',
+      require: { params: { a: 1 } },
+      message: 'структура не та',
+    }
+    const fixture = createFixture({ layout: 'dsh', contour: { unica: { rebuild_rules: [rule] } } })
+    const equal = run(
+      fixture,
+      call('mcp__unica__run', { args: { op: 'push', params: { a: 1 }, cwd: fixture.tree } }, fixture.tree),
+    )
+    expect(equal.decision).toMatchObject({ kind: 'allow' })
+    const other = run(
+      fixture,
+      call('mcp__unica__run', { args: { op: 'push', params: { a: 2 }, cwd: fixture.tree } }, fixture.tree),
+    )
+    expect(other.decision).toMatchObject({ kind: 'deny', code: 'rebuild-rule', reason: 'структура не та' })
     rmSync(fixture.root, { recursive: true, force: true })
   })
 
@@ -186,6 +225,18 @@ describe('patchPaths', () => {
     expect(patchPaths('*** Begin Patch\n*** End Patch\n')).toEqual([])
     expect(patchPaths('обычный текст')).toEqual([])
   })
+
+  it('ведущая и хвостовая пробельность заголовка не прячет путь', () => {
+    // Парсер DSH обрезает заголовок по Unicode White_Space с обоих концов,
+    // поэтому такой патч правит файл и обязан попасть в гейт.
+    const header = '*** Update File: src/cf/CommonModules/X.bsl'
+    for (const prefix of [' ', '\t', '\u00a0', ' \t ']) {
+      const patch = `*** Begin Patch\n${prefix}${header}${prefix}\n@@\n-a\n+b\n*** End Patch\n`
+      expect(patchPaths(patch), JSON.stringify(prefix)).toEqual(['src/cf/CommonModules/X.bsl'])
+    }
+    expect(patchPaths('*** Begin Patch\r\n*** Add File: src/cf/Y.bsl\r\n+x\r\n*** End Patch\r\n'))
+      .toEqual(['src/cf/Y.bsl'])
+  })
 })
 
 describe('постовое решение', () => {
@@ -210,6 +261,23 @@ describe('постовое решение', () => {
     expect(decision).toMatchObject({ kind: 'accept' })
     expect(existsSync(lockFile)).toBe(false)
     rmSync(fixture.root, { recursive: true, force: true })
+  })
+
+  it('упавшая или отбитая операция замок не отпускает', () => {
+    // Эталон отпускает замок только на успешном PostToolUse: упавшая
+    // операция держит базу до TTL.
+    for (const outcome of [{ isError: true, denied: false }, { isError: true, denied: true }]) {
+      const fixture = createFixture({ contour: {} })
+      const state = createGateState({ sessionId: 's1', stateDir: fixture.stateDir })
+      const unica = call('mcp__unica__run', { args: { op: 'push', cwd: fixture.tree } }, fixture.tree)
+      const connection = resolveInfobaseConnection(fixture.tree) as string
+      const lockFile = lockPath(fixture.stateDir, connection, fixture.tree)
+      expect(evaluatePre(unica, resolveProject(fixture.tree), state)).toMatchObject({ kind: 'allow' })
+      expect(evaluatePost({ call: unica, ...outcome }, resolveProject(fixture.tree), state))
+        .toMatchObject({ kind: 'accept' })
+      expect(existsSync(lockFile), JSON.stringify(outcome)).toBe(true)
+      rmSync(fixture.root, { recursive: true, force: true })
+    }
   })
 
   it('durable-задача держит замок до TTL', () => {
