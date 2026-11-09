@@ -4,3 +4,6 @@ __pycache__/
 .gitmark/
 *-map.html
 .scratch/
+node_modules/
+lib/
+coverage/
