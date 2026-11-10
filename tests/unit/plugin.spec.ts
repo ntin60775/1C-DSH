@@ -311,8 +311,10 @@ describe('T4: старт сессии и новые гейты', () => {
       const fake = createFakeContext(fixture.tree)
       apply(fake.ctx as never)
       const result = fake.handlers.get('tools/result') as (...args: any[]) => void
-      result(exec('bash', { command: 'false' }, agent), { isError: true, content: [], error: { message: '1' } })
-      result(exec('bash', { command: 'false' }, agent), { isError: true, content: [], error: { message: '1' } })
+      // Живая форма bash: ненулевой код приходит не isError, а маркером в хвосте.
+      const failed = { isError: false, content: [{ type: 'text', text: '(no output)\n[exit code: 1]' }] }
+      result(exec('bash', { command: 'false' }, agent), failed)
+      result(exec('bash', { command: 'false' }, agent), failed)
       const handler = fake.handlers.get('tools/pre-execute') as (exec: unknown, next: () => unknown) => Promise<any>
       return handler(exec('bash', { command: 'false' }, agent), () => ({ kind: 'allow' }))
     })

@@ -12,7 +12,6 @@
  */
 
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 
 import type { ExecutedCall, GateCall, GateMemory } from './contract.js'
 import { observeOutcome, OutcomeLog } from './outcomes.js'
@@ -59,20 +58,15 @@ export function sessionStateOf(agent: Agent | undefined): SessionState {
  * Учесть финальный исход вызова по событию `tools/result`.
  * @param state - состояние агента.
  * @param call - вызов инструмента.
- * @param result - финальный исход, включая ошибку.
- * @param deniedCode - код структурированной ошибки отказа политики.
+ * @param isError - вызов завершился ошибкой (включая ненулевой exit).
+ * @param denied - вызов отклонён политикой, а не упал в теле инструмента.
  */
 export function observeResult(
   state: SessionState,
   call: GateCall,
-  result: Readonly<ToolExecutionResult>,
-  deniedCode: string,
+  isError: boolean,
+  denied: boolean,
 ): void {
-  const executed: ExecutedCall = {
-    call,
-    isError: result.isError,
-    denied: result.isError && result.error.info?.code === deniedCode,
-    resultText: '',
-  }
+  const executed: ExecutedCall = { call, isError, denied, resultText: '' }
   observeOutcome(state.outcomes, executed)
 }

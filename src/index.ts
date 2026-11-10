@@ -68,6 +68,27 @@ function deniedBy(result: Readonly<ToolExecutionResult>): boolean {
   return result.isError && result.error.info?.code === DENIED_CODE
 }
 
+/** Маркер ненулевого завершения команды в хвосте результата. */
+const NONZERO_EXIT_RE = /\n\[exit code: (\d+)\]$/
+
+/** Маркер убийства команды сигналом в хвосте результата. */
+const KILLED_BY_SIGNAL_RE = /\n\[killed by signal: .+\]$/
+
+/**
+ * Вызов завершился ошибкой.
+ *
+ * `isError` у bash-инструмента означает сбой исполнения, а ненулевой код
+ * возврата приходит обычным результатом с маркером `[exit code: N]` в хвосте
+ * текста. Для дисциплины повторов это та же ошибка.
+ */
+function failedResult(result: Readonly<ToolExecutionResult>): boolean {
+  if (result.isError) return true
+  const text = resultText(result).trimEnd()
+  const exit = NONZERO_EXIT_RE.exec(text)
+  if (exit !== null) return Number(exit[1]) !== 0
+  return KILLED_BY_SIGNAL_RE.test(text)
+}
+
 /**
  * Подключить гейты контура к хосту.
  * @param ctx - контекст плагина.
@@ -152,7 +173,7 @@ export function apply(ctx: Context): void {
     const state = gateState(exec.agent)
     const executed: ExecutedCall = {
       call: gateCall(exec, cwd),
-      isError: result.isError,
+      isError: failedResult(result),
       denied: deniedBy(result),
       resultText: resultText(result),
     }
@@ -191,8 +212,9 @@ export function apply(ctx: Context): void {
     const project = resolveProject(cwd)
     const call = gateCall(exec, cwd)
     const state = gateState(exec.agent)
-    observeResult(sessionStateOf(exec.agent), call, result, DENIED_CODE)
-    observeRetryResult(state, call, project, result.isError, deniedBy(result))
+    const failed = failedResult(result)
+    observeResult(sessionStateOf(exec.agent), call, failed, deniedBy(result))
+    observeRetryResult(state, call, project, failed, deniedBy(result))
   })
 }
 
