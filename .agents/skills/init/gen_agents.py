@@ -125,7 +125,6 @@ def render(name: str, model: str, level: str | None, gen_ref: str) -> str:
     level_line = f'thoughtLevel: {level}\n' if level else ""
     return (
         "---\n"
-        f"name: {name}\n"
         f'description: Роль OntoShip "{name}".\n'
         f'model: "{quoted}"\n'
         + level_line
