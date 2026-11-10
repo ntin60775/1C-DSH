@@ -94,7 +94,7 @@ kd — legacy-путь `~/.local/share/1c-zcode` до Т6. Живые пробы
 `unica.docs → apply(план) → apply(токен)` записал правку, журнал гейтов
 записал advisory. Разрыв DSH ↔ Юника (`content` против
 `structuredContent`) закрыт мостом `scripts/unica_mcp_proxy.py`.
-Расхождения: имя инструмента в DSH с хешем; станции 1c-db/1c-kd/testpilot
+Дефект DSH (`structuredContent` не рендерится) оформлен в форк: ntin60775/deepseek-harness#1. Расхождения: имя инструмента в DSH с хешем; станции 1c-db/1c-kd/testpilot
 живьём не поднимались; `/1c-bootstrap` и `/1c-test` не прогнаны; гейты
 Т3/Т4 читают часть входов из `.dsh/<файл>`, мигратор кладёт `.dsh/1c/…` —
 сведение в Т6. Набор: 266 vitest + python-набор + линт 19/19.
