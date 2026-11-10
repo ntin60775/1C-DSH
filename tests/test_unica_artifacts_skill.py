@@ -21,7 +21,7 @@ def main() -> int:
 		return summary()
 	text = skill_md.read_text(encoding="utf-8")
 
-	# фронтматтер под слоты ZCode — тем же линтером, что в pre-commit
+	# фронтматтер под слоты DSH — тем же линтером, что в pre-commit
 	lint = subprocess.run(
 		[sys.executable, str(ROOT / "scripts" / "lint_skill_frontmatter.py"), str(SKILL_DIR)],
 		capture_output=True, text=True)
@@ -33,11 +33,11 @@ def main() -> int:
 	for marker in (
 		"runtime-manifest.json",                      # контракт артефактов
 		"provider_unavailable",                       # отказ неготового провайдера
-		"installed_plugins.json",                     # версия+installPath установки
+		"~/.local/share/unica",                       # глобальная установка на машину
 		".ready.json",                                # маркер завершённости артефакта
 		".partial",                                   # след оборванной закачки
 		"sha256",                                     # сверка при переносе
-		"~/.codex/unica/runtimes",                    # соседний кэш установки
+		"~/.local/share/unica/runtimes",              # единый кэш на машину
 		"bsl-analyzer is not bundled in this workspace",  # строка из логов
 		"bsl_diagnostics",                            # симптом в статусе
 		"Рестарт сервера\nне нужен",                  # свойство починки
@@ -47,8 +47,7 @@ def main() -> int:
 	# границы канона: пустой ответ ≠ чисто; перенос легален только после сверки
 	check("провайдер отказывает честно (пустой ≠ чисто)",
 	      "не выполнялся" in text and "code-diagnostics" in text, "")
-	check("перенос требует байт-сверки", "байт-в-байт" in text
-	      or "совпасть с манифестом" in text, "")
+	check("перенос требует байт-сверки", "sha256" in text and "манифест" in text, "")
 
 	# перекрёстные ссылки: карта контура, UNICA.md и doctor ведут в скилл
 	contour = (ROOT / "skills" / "1c-contour" / "SKILL.md").read_text(encoding="utf-8")

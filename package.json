@@ -11,6 +11,10 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./preset": {
+      "types": "./lib/types/preset/index.d.ts",
+      "default": "./lib/preset/index.js"
+    },
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg",
     "./cordis.patch.yml": "./cordis.patch.yml",
@@ -21,7 +25,12 @@
     "lib/types/**/*.d.ts",
     "cordis.patch.yml",
     "locale/*.json",
-    "icon.svg"
+    "icon.svg",
+    "skills/**",
+    "commands/**",
+    "scripts/**",
+    "workflows/**",
+    "templates/**"
   ],
   "dsh": {
     "bundle": {

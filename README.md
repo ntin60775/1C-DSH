@@ -21,13 +21,13 @@ bootstrap и миграция. Нативный порт [1c-omp](../1c-omp) н�
 |---|---|
 | `hooks/` | гейты (python3 stdlib, stateless, состояние в `~/.zcode/state/1c/`): `unica_source_gate` (правка только через Unica + инварианты пересборки + ворктри + замок ИБ), `doc_gate` (мутации после сверки с документацией), `retry_gate`, `mcp_gate` (прод-контур fail-closed), `anon_gate` (граница анонимизации: отключение raw-режима и включение API деанонимизации блокируется в командах и правках, исключений нет), `bsl_style_gate` (пак стайла), `ib_lock`, `session_clean` |
 | `skills/` | `1c-contour` (карта контура, приоритеты качества), `1c-bsl-review-standards` (формальный ревью BSL: стайл-пак + v8std), `1c-test-contour` (e2e), `1c-testpilot` (GUI-клиент), `1c-db-data` (данные базы), `1c-ibsrv-publish` (HTTP-публикация), `1c-ibcmd-delivery` (поставка исходников через ibcmd), `1c-kd-rules` + `kd2-rules-build` / `kd2-exchange-pitfalls` / `kd3-rules` (правила обмена КД 2/3 через MCP `1c-kd` — [docs/KD-RULES.md](docs/KD-RULES.md)), `1c-unica-worktree` / `1c-unica-artifacts` (каналы юники), `1c-project-bootstrap`, `1c-project-layout` (топология каталогов) |
-| `commands/` | `/1c-doctor`, `/1c-test`, `/1c-bootstrap`, `/1c-migrate-from-omp` |
+| `commands/` | `/1c-doctor`, `/1c-test`, `/1c-bootstrap`, `/1c-migrate` |
 | `workflows/` | `1c-e2e-author` (агент сам пишет e2e-тест), `1c-e2e-run` (прогон pytest без модели + ЖР-сверка и приёмка-кодом) |
-| `scripts/` | `wire_config.py` (разводка `.zcode/config.json`), `init_worktree.sh`, `migrate_from_omp.py`, `doctor.py`, `lint_skill_frontmatter.py`, `run_e2e.sh` (автономный e2e-прогон с постпроверкой/зачисткой Е2Е-данных — [e2e_sweep.py](scripts/e2e_sweep.py)), `e2e_sweep.py` (зачистка и проверка остатков по маркеру), `install_testpilot.sh` (+ пакет [1c-onec-db](https://github.com/ntin60775/1c-onec-db) — фикстуры уровня логики), `install_1c_mcp_proxy.sh` (прокси 1c-mcp-toolkit), `start_1c_db.sh` (однофазный подъём стенда 1c-db: клиент с danger-флагами + прогрев; `--instance` — инстансы из db-instances.yaml), `publish_ib.sh` (HTTP-публикация тестовой базы для API-тестов), `unica_ping.py` (живость unica MCP для doctor), `bsl_review_join.py` (скрипт-джойн ревьюера 1c-bsl-review-standards: сохранённые ответы unica.check × routing × журнал исключений → размеченные находки и строки отчёта, [спека](docs/BSL-REVIEW-JOIN-SPEC.md)), `install_kd_rules.sh` + `start_kd_rules.sh` (станция kd-rules-mcp: MCP `1c-kd`, правила обмена КД — [docs/KD-RULES.md](docs/KD-RULES.md)) |
+| `scripts/` | `wire_config.py` (разводка `.zcode/config.json`), `init_worktree.sh`, `migrate_from_zcode.py`, `install_unica_skills.py` (скиллы Юники), `unica_mcp_proxy.py` (мост structuredContent), `doctor.py`, `lint_skill_frontmatter.py`, `run_e2e.sh` (автономный e2e-прогон с постпроверкой/зачисткой Е2Е-данных — [e2e_sweep.py](scripts/e2e_sweep.py)), `e2e_sweep.py` (зачистка и проверка остатков по маркеру), `install_testpilot.sh` (+ пакет [1c-onec-db](https://github.com/ntin60775/1c-onec-db) — фикстуры уровня логики), `install_1c_mcp_proxy.sh` (прокси 1c-mcp-toolkit), `start_1c_db.sh` (однофазный подъём стенда 1c-db: клиент с danger-флагами + прогрев; `--instance` — инстансы из db-instances.yaml), `publish_ib.sh` (HTTP-публикация тестовой базы для API-тестов), `unica_ping.py` (живость unica MCP для doctor), `bsl_review_join.py` (скрипт-джойн ревьюера 1c-bsl-review-standards: сохранённые ответы unica.check × routing × журнал исключений → размеченные находки и строки отчёта, [спека](docs/BSL-REVIEW-JOIN-SPEC.md)), `install_kd_rules.sh` + `start_kd_rules.sh` (станция kd-rules-mcp: MCP `1c-kd`, правила обмена КД — [docs/KD-RULES.md](docs/KD-RULES.md)) |
 | `vendor/` | `kd-rules-mcp` — вендор-копия апстрима (MIT), источник станции 1c-kd; в проекты не маппится, синк по [UPSTREAM.md](vendor/kd-rules-mcp/UPSTREAM.md) |
 | `templates/` | contour.json, profiles.example.yaml, db-instances.example.yaml (образец инстансов 1c-db), agents-section.md (секция AGENTS.md проекта) |
 | `deploy.json` | контракт v1 sot-zcode-marketplace (вендоринг в `<repo>/.zcode/`) |
-| `docs/` | migration-map, UNICA (каналы), KD-RULES (правила обмена КД), MIGRATION-FROM-OMP |
+| `docs/` | migration-map, UNICA (установка, скиллы и MCP), KD-RULES (правила обмена КД) |
 
 ## Поставка
 
@@ -56,12 +56,13 @@ python3 scripts/lint_skill_frontmatter.py         # скиллы под слот
 python3 scripts/doctor.py <проект>                # проверка контура в проекте
 ```
 
-## Миграция со старого omp-контура
+## Миграция раскладки
 
-`/1c-migrate-from-omp` или `scripts/migrate_from_omp.py <проект>` —
-атомарная замена `.omp/` на `.zcode/`, перенос эскалаций и аудита, критерий
-чистоты. Полная стратегия (пилот → парк, юзер-слой) —
-[docs/MIGRATION-FROM-OMP.md](docs/MIGRATION-FROM-OMP.md).
+`/1c-migrate` или `scripts/migrate_from_zcode.py <проект>` — перенос
+проектных входов из zcode-раскладки в `.dsh/1c`: `--check` различает
+«не переведён», «переведён и совпадает», «переведён с расхождением»;
+`--dry-run` печатает план. Omp-миграции в DSH нет — старое наследие
+переводится вручную по канону `1c-test-contour`.
 
 ## Соседи
 

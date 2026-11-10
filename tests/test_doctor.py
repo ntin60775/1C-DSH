@@ -199,9 +199,9 @@ def main() -> int:
 		# юнит-наследие omp-эпохи (erp-mini-кейс): tests/cfe жив, tests/e2e нет
 		(root / "tests/cfe/Тесты").mkdir(parents=True, exist_ok=True)
 		r = run_doctor(root)
-		check("чистое наследие — doctor ведёт в мигратор (#18)",
+		check("чистое наследие — doctor ведёт в перенос покрытия (#18)",
 		      "обязательная топология неполна: tests/e2e" in r.stdout
-		      and "migrate_from_omp" in r.stdout, r.stdout[:600])
+		      and "перенос покрытия" in r.stdout, r.stdout[:600])
 		check("чистое наследие — без «ПОЛНЫЙ ритуал»",
 		      "ПОЛНЫЙ ритуал" not in r.stdout, r.stdout[:600])
 		import shutil as _sh

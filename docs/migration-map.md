@@ -22,7 +22,7 @@
 | `1c-mcp-server` (MCP_Сервер) | НЕ переносится — заменён | MCP `1c-db` (1c-mcp-toolkit) + `skills/1c-db-data`; прод-гейт расширен на оба новых сервера |
 | стайл-гейт (новое, в omp — TTSR-правило) | `PostToolUse` | `hooks/bsl_style_gate.py`: чекер пака 1c-bsl-code-style по изменённым `.bsl`, advisory-отчёт; приоритет пака над стандартами/диагностикой — в `1c-contour` |
 | поставка | каталог + deploy-runner | `deploy.json` (контракт v1 sot-zcode-marketplace), вендоринг в `<repo>/.zcode/`; self-`marketplace.json` удалён |
-| миграция со старого контура | скрипт + команда | `scripts/migrate_from_omp.py`, `/1c-migrate-from-omp`, `docs/MIGRATION-FROM-OMP.md` |
+| миграция раскладки zcode → DSH | скрипт + команда | `scripts/migrate_from_zcode.py`, `/1c-migrate` |
 
 ## Переход на поверхность Unica 0.15 (v0.4.63, 2026-10-26)
 

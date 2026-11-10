@@ -1,23 +1,26 @@
 ---
-description: Проверка контура 1С в проекте: unica/канал, testpilot, конфиги, стайл-чекер, БСП-пак, shadow-дубли, состояние гейтов
+name: 1c-doctor
+description: "Проверка контура 1С в проекте: unica, testpilot, конфиги, стайл-чекер, БСП-пак, shadow-дубли, состояние гейтов"
+whenToUse: "Нужно проверить, что контур 1С в проекте собран и живой, — запустить doctor и разобрать FAIL/WARN."
+disable-model-invocation: true
 ---
 
 Прогони детерминированную проверку контура и разбери результат:
 
 ```bash
-python3 .zcode/1c/scripts/doctor.py "$(pwd)"
+python3 "$DSH_1C_ROOT/scripts/doctor.py" "$(pwd)"
 ```
 
-Мультистенд: без `.zcode/1c/db-instances.yaml` doctor отвечает
+Мультистенд: без `.dsh/1c/db-instances.yaml` doctor отвечает
 «моно-режим» (штатно, не WARN); с файлом — проверяет состав и коллизии
-каналов/дисплеев/портов, фактический url берёт из contour.local.json
+каналов/дисплеев/портов, фактический url берёт из `contour.local.json`
 (drift порта).
 
 Правила разбора:
 
-- **FAIL** — почини в этом же заходе, если это проектные файлы (разводка
-  `wire_config.py`, profiles.yaml); машинное (unica, pipx) — покажи
+- **FAIL** — почини в этом же заходе, если это проектные файлы
+  (`contour.json`, `profiles.yaml`); машинное (unica, pipx) — покажи
   пользователю точную команду установки.
 - **WARN** — сообщи пользователю списком, не чини молча.
 - Всё зелёное — подтвердись одной строкой и предложи тестовый unica-вызов
-  (`mcp__unica__project_status` с `cwd` корня), если сессия ещё не проверяла.
+  (`unica.view {}` — workspace и source-set'ы), если сессия ещё не проверяла.

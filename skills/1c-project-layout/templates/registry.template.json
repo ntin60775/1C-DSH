@@ -17,5 +17,5 @@
   },
   "deploy_log": [],
   "acceptance": [],
-  "notes": "Каркас реестра потребителей. Файл машино-локальный, ВНЕ git (.zcode/1c/registry.local.json в .gitignore). Правила — в схеме рядом (registry.schema.json) и навыке 1c-project-bootstrap; поля заполнять по факту, журналы — append-only."
+  "notes": "Каркас реестра потребителей. Файл машино-локальный, ВНЕ git (.dsh/1c/registry.local.json в .gitignore). Правила — в схеме рядом (registry.schema.json) и навыке 1c-project-bootstrap; поля заполнять по факту, журналы — append-only."
 }

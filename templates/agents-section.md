@@ -1,8 +1,8 @@
-<!-- BEGIN 1C CONTOUR (1c-zcode) -->
-## Контур 1С (1c-zcode)
+<!-- BEGIN 1C CONTOUR (dsh-1c-contour) -->
+## Контур 1С (dsh-1c-contour)
 
-Владелец секции — плагин 1c-zcode; правится контуром, не руками.
-Версия секции следует за тегом контура в `.zcode/deployed.json`.
+Владелец секции — плагин `dsh-1c-contour`; правится контуром, не руками.
+Гейты приходят с плагином, MCP-серверы — с пресетом `1c`.
 
 ### Поверхность Unica 0.15
 
@@ -26,14 +26,14 @@ dryRun: true|false}` (аргументы операции — ВЛОЖЕННО �
 
 1. Исходники 1С (`src/{cf,cfe,epf,erf}`) правятся только через Unica —
    прямая правка блокируется гейтом.
-   Разовый обход: `.zcode/unica-gate-escalations.txt`.
+   Разовый обход: `.dsh/1c/unica-gate-escalations.txt`.
 2. Мутации (`unica.apply`, `unica.run {op: push|upload|apply|reset}`) —
    только после непустой сверки с `unica.docs`. Пустой ответ не считается;
    источники — `platform-help` и `development-standard`,
    `configuration-documentation` в 0.15 отвечает `unsupported_source`;
    принятая задача (`status: working`) — не сверка, пока не дочитана через
    `unica.task.result`; поиск без совпадений — тоже не сверка.
-3. Инварианты пересборки — правила проекта (`.zcode/1c/contour.json` →
+3. Инварианты пересборки — правила проекта (`.dsh/1c/contour.json` →
    `unica.rebuild_rules`); включаются сверкой на стенде. Ключ `builder`
    в v8project.yaml не используется (0.15: per-operation `providers`).
 4. Адрес инфобазы и креды — только из `v8project.local.yaml`
@@ -43,7 +43,7 @@ dryRun: true|false}` (аргументы операции — ВЛОЖЕННО �
    полная загрузка — `push full: true`. Назначение всех полей и регламент
    переезда — навык `1c-project-layout`, `references/v8project.md`.
 5. Прод-контур по умолчанию (fail-closed): изменяющие инструменты
-   тест-контура блокируются; признак `test` — файл `.zcode/contour` со
+   тест-контура блокируются; признак `test` — файл `.dsh/contour` со
    словом test. Ключ `contour:` в `v8project.local.yaml` не писать:
    v8-runner 0.15 отвергает незнакомый верхнеуровневый ключ local-слоя.
 6. Третий идентичный повтор упавшей команды заблокирован.
@@ -75,8 +75,9 @@ push; пропуск любого — отклонение от процедур
 
 Тесты агент пишет сам, все на pytest: юниты в `tests/unit/`, e2e в
 `tests/e2e/`. Юниты покрывают уровень логики 1С (execute_code);
-e2e — поведение: write-first, readback, ЖР-сверка (workflows
-`1c-e2e-author` / `1c-e2e-run`) на уровнях API (HTTP) и GUI
-(testpilot). Данные — MCP `1c-db`; на второй-третьей базе — инстанс
-(`.zcode/1c/db-instances.yaml`, MCP `1c-db-<имя>`, скилл `1c-db-data`).
+e2e — поведение: write-first, readback, ЖР-сверка (инструмент `workflow`
+со скриптами `1c-e2e-author` / `1c-e2e-run` из репозитория контура) на
+уровнях API (HTTP) и GUI (testpilot). Данные — MCP `1c-db`; на
+второй-третьей базе — инстанс (`.dsh/1c/db-instances.yaml`, MCP
+`1c-db-<имя>`, скилл `1c-db-data`).
 <!-- END 1C CONTOUR -->

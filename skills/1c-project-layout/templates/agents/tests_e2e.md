@@ -2,10 +2,12 @@
 
 e2e проверяет поведение: API (HTTP-публикация), GUI (1c-testpilot). Юниты
 уровня логики (`execute_code` через MCP 1c-db) живут в `tests/unit/`.
-Тесты пишут workflows `1c-e2e-author` / `1c-e2e-run`.
+Тесты пишут скрипты `workflows/1c-e2e-author.dwf.ts` и
+`workflows/1c-e2e-run.dwf.ts` (вызов инструмента `workflow`).
 
 ## Правила
 - Стиль: write-first, readback, сверка ЖР; данные фикстур тесты создают и удаляют сами.
 - Базовый набор приёмки канала ставит скаффолд: `scaffold.py e2e-baseline --dir .` (самодостаточный test_contour_basics.py — самоподъём канала, пробы токенов, числа, метаданных, валидатора ссылок; только чтение). После приёмки контура набор снимается: `scaffold.py e2e-baseline --remove` (шаблонные файлы удаляются, правленые остаются, свои тесты не трогаются) — в любом проекте, включая полигон.
-- Прогон GUI: `bash .zcode/1c/scripts/run_e2e.sh <профиль>`; профили — `.zcode/testpilot/profiles.yaml`.
+- Прогон GUI: `bash "$DSH_1C_ROOT/scripts/run_e2e.sh" <профиль>`;
+  профили — `.dsh/1c/testpilot/profiles.yaml`.
 - База тестового контура без пользователей — авторизация не нужна, пока не появились пользователи.

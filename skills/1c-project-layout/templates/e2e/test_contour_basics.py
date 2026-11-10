@@ -1,4 +1,4 @@
-"""Базовый e2e-набор приёмки контура 1c-zcode.
+"""Базовый e2e-набор приёмки контура 1С на DSH.
 
 Проверяет живой канал 1c-db по канону скилла 1c-db-data: живость прокси и
 канала, прогрев словаря с токенами анонимизации, число без токена, структура
@@ -24,7 +24,7 @@ import urllib.request
 import pytest
 
 
-# ── Канал 1c-db: адрес из .zcode/1c/contour.json, самоподъём ──
+# ── Канал 1c-db: адрес из .dsh/1c/contour.json, самоподъём ──
 # Тесты читают живой канал через REST-фолбэк прокси и не пишут данные в базу.
 # Фикстура поднимает канал, если стенд молчит или пришёл без анонимизации:
 # целевое состояние — токенизированный канал, всегда и независимо от
@@ -35,21 +35,29 @@ import pytest
 def _find_root() -> pathlib.Path:
     here = pathlib.Path(__file__).resolve().parent
     for cand in (here, *here.parents):
-        if (cand / "v8project.yaml").is_file() or (cand / ".zcode" / "1c").is_dir():
+        if (cand / "v8project.yaml").is_file() or (cand / ".dsh" / "1c").is_dir():
             return cand
-    raise RuntimeError("корень проекта контура не найден (нет v8project.yaml и .zcode/1c)")
+    raise RuntimeError("корень проекта контура не найден (нет v8project.yaml и .dsh/1c)")
 
 
 ROOT = _find_root()
+DSH_1C_ROOT = os.environ.get("DSH_1C_ROOT", "")
+
+
+def _contour_script(name: str) -> pathlib.Path:
+    """Скрипт контура из пакета: $DSH_1C_ROOT/scripts/<name>."""
+    return pathlib.Path(DSH_1C_ROOT) / "scripts" / name
 
 
 def _origin() -> str:
     """База url канала без пути (http://host:port) — из contour.json."""
-    cfg = ROOT / ".zcode" / "1c" / "contour.json"
+    cfg = ROOT / ".dsh" / "1c" / "contour.json"
     contour = json.loads(cfg.read_text(encoding="utf-8")) if cfg.is_file() else {}
     url = (contour.get("1c_db") or {}).get("url") or ""
     if not url:
-        raise RuntimeError("в .zcode/1c/contour.json нет 1c_db.url — прогони wire_config.py")
+        raise RuntimeError(
+            "в .dsh/1c/contour.json нет 1c_db.url — контур не разведён "
+            "(навык 1c-project-bootstrap)")
     return url.rsplit("/", 1)[0]
 
 
@@ -89,10 +97,10 @@ def _anon_on(api_url: str) -> bool:
 
 
 def _raise_channel() -> None:
-    script = ROOT / ".zcode" / "1c" / "scripts" / "start_1c_db.sh"
+    script = _contour_script("start_1c_db.sh")
     if not script.is_file():
-        pytest.fail("стенд 1c-db молчит, а .zcode/1c/scripts/start_1c_db.sh нет — "
-                    "контур не разведён (навык 1c-project-bootstrap)")
+        pytest.fail("стенд 1c-db молчит, а $DSH_1C_ROOT/scripts/start_1c_db.sh нет — "
+                    "задай DSH_1C_ROOT (корень пакета контура)")
     env = dict(os.environ, CONTOUR_ANON="on")
     subprocess.run(["bash", str(script), str(ROOT), "--stop"],
                    env=env, timeout=120, capture_output=True)

@@ -1,17 +1,22 @@
 ---
-description: Подключение проекта 1С к контуру: contour.json, profiles.yaml, разводка config.json, секция AGENTS.md, gitignore
+name: 1c-bootstrap
+description: "Подключение проекта 1С к контуру: contour.json, profiles.yaml, секция AGENTS.md, gitignore"
+whenToUse: "Проект 1С подключается к контуру впервые или после обновления контура — собрать проектные конфиги и проверить их /1c-doctor."
+disable-model-invocation: true
 ---
 
 Подними контур в проекте по навыку `1c-project-bootstrap` (он же — после
-каждого обновления вендоренных файлов deploy-runner'ом):
+каждого обновления контура):
 
-1. Прочитай `.zcode/skills/1c-project-bootstrap/SKILL.md` и выполни шаги
-   1–7 для этого проекта (корень = cwd).
-2. Шаблоны бери из `.zcode/1c/templates/`; секцию AGENTS.md — только свою,
-   между маркерами `<!-- BEGIN 1C CONTOUR (1c-zcode) -->` /
+1. Загрузи навык `1c-project-bootstrap` и выполни его порядок для этого
+   проекта (корень = cwd).
+2. Шаблоны бери из `$DSH_1C_ROOT/templates/`, копию клади в
+   `.dsh/1c/templates/`; секцию AGENTS.md — только
+   свою, между маркерами `<!-- BEGIN 1C CONTOUR (dsh-1c-contour) -->` /
    `<!-- END 1C CONTOUR -->`, чужие секции не трогай.
-3. Закончили — прогони `/1c-doctor` и добейся зелёного.
+3. Гейты приходят с плагином `dsh-1c-contour`, MCP — с пресетом `1c`.
+4. Прогони `/1c-doctor` и добейся зелёного.
 
-`.zcode/1c/db-instances.yaml` (инстансы мультистенда) бутстрап не
+`.dsh/1c/db-instances.yaml` (инстансы мультистенда) бутстрап не
 создаёт — ленивый инит: файл появляется по первой задаче на вторую
 базу (сценарий — скилл `1c-db-data`, раздел «Несколько каналов»).
