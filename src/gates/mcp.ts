@@ -16,11 +16,12 @@
  */
 
 import { readFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import type { ContourProject, GateCall, GateState, PreDecision } from '../contract.js'
 import { contourPaths, mcpShortName } from '../contour.js'
 import { describeHolder } from '../lock.js'
+import { resolvedPath } from '../paths.js'
 
 /** Имя правила в журнале решений. */
 export const RULE = 'mcp-unsafe-gate'
@@ -56,12 +57,13 @@ function readText(path: string): string | null {
  * Первый найденный файл раскладки: новая `.dsh`, затем legacy `.zcode`.
  * @param root - корень дерева.
  * @param relative - путь внутри каталога раскладки.
- * @returns содержимое либо `null`.
+ * @returns содержимое и путь файла либо `null`.
  */
-function readLayoutFile(root: string, relative: string): string | null {
+function readLayoutFile(root: string, relative: string): { text: string; path: string } | null {
   for (const layout of ['.dsh', '.zcode']) {
-    const text = readText(join(root, layout, relative))
-    if (text !== null) return text
+    const path = join(root, layout, relative)
+    const text = readText(path)
+    if (text !== null) return { text, path }
   }
   return null
 }
@@ -75,7 +77,7 @@ export function contourOf(project: ContourProject | null): 'test' | 'prod' {
   if (project === null) return 'prod'
   const marker = readLayoutFile(project.root, 'contour')
   if (marker !== null) {
-    const value = marker.trim().toLowerCase()
+    const value = marker.text.trim().toLowerCase()
     if (value.startsWith('test')) return 'test'
     if (value.startsWith('prod')) return 'prod'
   }
@@ -119,9 +121,9 @@ export function escalations(project: ContourProject | null): { allowed: Set<stri
   const allowed = new Set<string>()
   let allTools = false
   if (project === null) return { allowed, allTools }
-  const text = readLayoutFile(project.root, 'mcp-write-allow.txt')
-  if (text === null) return { allowed, allTools }
-  for (const raw of text.split('\n')) {
+  const found = readLayoutFile(project.root, 'mcp-write-allow.txt')
+  if (found === null) return { allowed, allTools }
+  for (const raw of found.text.split('\n')) {
     const line = raw.split('#', 1)[0]?.trim() ?? ''
     if (line === '') continue
     if (line === '*') allTools = true
@@ -178,7 +180,9 @@ export function mutatingViaBash(command: string, project: ContourProject | null)
  * @returns строка подключения файловой базы.
  */
 function fileConnection(root: string, base: string): string {
-  return base.startsWith('/') ? `File=${base}` : `File=${resolve(join(root, base))}`
+  // Символические ссылки снимаются: ключ stand-замка совпадает с тем, что
+  // положил стартер, даже если до базы шли через ссылку.
+  return base.startsWith('/') ? `File=${resolvedPath(base)}` : `File=${resolvedPath(join(root, base))}`
 }
 
 /**
@@ -192,13 +196,13 @@ function fileConnection(root: string, base: string): string {
  */
 export function profileConnection(project: ContourProject | null, profile: string): string | null {
   if (profile === '' || project === null) return null
-  const text = readLayoutFile(project.root, 'testpilot/profiles.yaml')
-  if (text === null) return null
+  const found = readLayoutFile(project.root, 'testpilot/profiles.yaml')
+  if (found === null) return null
   let inProfiles = false
   let current: string | null = null
   let base: string | null = null
   let server = false
-  for (const line of text.split('\n')) {
+  for (const line of found.text.split('\n')) {
     const stripped = (line.split('#', 1)[0] ?? '').trimEnd()
     if (stripped.trim() === '') continue
     const first = line.slice(0, 1)
@@ -221,8 +225,10 @@ export function profileConnection(project: ContourProject | null, profile: strin
     else if (key.trim() === 'server') server = ['true', 'yes', '1'].includes(value.toLowerCase())
   }
   if (base === null || server) return null
-  const absolute = base.startsWith('/') ? base : resolve(join(project.root, '.dsh', 'testpilot', base))
-  return `File=${absolute}`
+  // Относительный `base` считается от каталога фактического файла профилей, а
+  // не от жёсткой раскладки: на legacy `.zcode` иначе разъедется ключ замка.
+  const absolute = base.startsWith('/') ? base : join(dirname(found.path), base)
+  return `File=${resolvedPath(absolute)}`
 }
 
 /**
@@ -240,17 +246,32 @@ export function standLockHit(
   project: ContourProject | null,
   state: GateState,
 ): ReturnType<GateState['standLockStatus']> {
+  const connection = connectionOf(call, project)
+  if (connection === null || project === null) return null
+  return state.standLockStatus({ tree: project.root, connection })
+}
+
+/**
+ * Строка подключения базы, на которую нацелен `launch_client`.
+ *
+ * Явные `base`/`server` перекрывают профиль; относительный `base`
+ * разрешается от корня дерева, относительный `base` профиля — от каталога
+ * фактического файла профилей.
+ * @param call - вызов инструмента.
+ * @param project - проект контура.
+ * @returns строка подключения либо `null`, когда база не файловая.
+ */
+export function connectionOf(call: GateCall, project: ContourProject | null): string | null {
   if (project === null) return null
   const args = typeof call.args === 'object' && call.args !== null && !Array.isArray(call.args)
     ? call.args as Record<string, unknown>
     : {}
   if (args['action'] !== 'launch_client') return null
   const base = String(args['base'] ?? '').trim()
-  const connection = base !== ''
-    ? (args['server'] === true || args['server'] === 'true' ? null : fileConnection(project.root, base))
-    : profileConnection(project, String(args['profile'] ?? ''))
-  if (connection === null) return null
-  return state.standLockStatus({ tree: project.root, connection })
+  if (base !== '') {
+    return args['server'] === true || args['server'] === 'true' ? null : fileConnection(project.root, base)
+  }
+  return profileConnection(project, String(args['profile'] ?? ''))
 }
 
 /**

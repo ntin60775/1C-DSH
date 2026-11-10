@@ -116,7 +116,7 @@ export interface GateState {
   /** Текущее время в секундах эпохи — как у эталона в `expires_ts`. */
   readonly nowSeconds: number
   /** Запись в журнал решений контура. */
-  audit(rule: string, action: string, reason: string, decision?: 'blocked' | 'confirmed'): void
+  audit(rule: string, action: string, reason: string, decision?: 'blocked' | 'confirmed' | 'advisory'): void
   /** Взять или продлить замок инфобазы. */
   acquireBaseLock(request: LockRequest): { readonly status: 'ok' } | { readonly status: 'busy'; readonly holder: LockRecord }
   /** Отпустить замок своего дерева. */

@@ -173,7 +173,7 @@ export function verdict(
 ): PostDecision {
   const { hot, cold } = splitReport(report, targets, spansByTarget)
   if (hot.length === 0 && cold.length > 0) {
-    state.audit(RULE, action, `нарушения вне изменённых строк (${cold.length}) — не блокируют`)
+    state.audit(RULE, action, `нарушения вне изменённых строк (${cold.length}) — не блокируют`, 'advisory')
     return {
       kind: 'accept',
       notice: `Стайл-чек: ${cold.length} нарушений в файле вне твоей правки `
@@ -211,13 +211,13 @@ async function handlePlan(call: GateCall, project: ContourProject, state: GateSt
   const label = `unica.apply план ${String(args['at'] ?? '')}`.trim()
   const texts = planBslTexts(args)
   if (texts.length === 0) {
-    state.audit(RULE, label, 'ops вне тел BSL-модулей — стиль не проверяется')
+    state.audit(RULE, label, 'ops вне тел BSL-модулей — стиль не проверяется', 'advisory')
     return { kind: 'accept' }
   }
   const plans = loadPlans(state)
   plans.push({ savedAt: state.nowSeconds, expiresAt: state.nowSeconds + BRIDGE_TTL_SECONDS, texts })
   savePlans(state, plans)
-  state.audit(RULE, label, `план сохранён (${texts.length} BSL-ops, TTL ${BRIDGE_TTL_SECONDS / 60} мин)`)
+  state.audit(RULE, label, `план сохранён (${texts.length} BSL-ops, TTL ${BRIDGE_TTL_SECONDS / 60} мин)`, 'advisory')
   const checker = state.styleChecker
   if (checker === undefined) return { kind: 'accept' }
   const warn = await checker.snippet(texts, project.root)
@@ -244,7 +244,7 @@ async function handleExecute(project: ContourProject, state: GateState): Promise
   if (plans.length === 0) return { kind: 'accept' }
   const { targets, spansByTarget, matched } = locatePlans(project.root, plans)
   if (targets.length === 0) {
-    state.audit(RULE, 'unica.apply исполнение', 'тексты сохранённых планов не найдены в .bsl — пропуск (планы оставлены)')
+    state.audit(RULE, 'unica.apply исполнение', 'тексты сохранённых планов не найдены в .bsl — пропуск (планы оставлены)', 'advisory')
     return { kind: 'accept' }
   }
   const checker = state.styleChecker

@@ -15,6 +15,8 @@ import { describe, expect, it } from 'vitest'
 
 import type { GateCall } from '../../src/contract.js'
 import { checkBsl, checkRights, evaluatePost as modulePost, escalationSkips } from '../../src/gates/bsl-module.js'
+import { evaluatePost as evaluateStylePlan } from '../../src/gates/bsl-style.js'
+import { connectionOf } from '../../src/gates/mcp.js'
 import { contourOf, evaluatePre as mcpPre, profileConnection } from '../../src/gates/mcp.js'
 import { docsResultIsMeaningful } from '../../src/gates/doc.js'
 import { resolveProject } from '../../src/paths.js'
@@ -189,6 +191,68 @@ describe('порт чекера стиля', () => {
     const fixture = createFixture()
     const checker = createStyleChecker({ env: { PATH: '/nonexistent' } })
     expect(await checker.run(['src/cf/M.bsl'], fixture.tree)).toBeNull()
+    rmSync(fixture.root, { recursive: true, force: true })
+  })
+})
+
+describe('правки ревью-панели', () => {
+  it('относительный base профиля считается от каталога фактического файла', () => {
+    // Legacy-раскладка: profiles.yaml лежит в .zcode, значит и base — оттуда.
+    const fixture = createFixture({
+      write: { 'tree/.zcode/testpilot/profiles.yaml': 'profiles:\n  main:\n    base: db\n' },
+    })
+    const project = resolveProject(fixture.tree)
+    expect(profileConnection(project, 'main')).toBe(`File=${fixture.tree}/.zcode/testpilot/db`)
+    rmSync(fixture.root, { recursive: true, force: true })
+  })
+
+  it('символическая ссылка в base снимается из строки подключения', async () => {
+    const { symlinkSync } = await import('node:fs')
+    const fixture = createFixture({ mkdir: ['tree/real-db'] })
+    symlinkSync(`${fixture.tree}/real-db`, `${fixture.tree}/link-db`)
+    const call: GateCall = {
+      tool: 'mcp__1c-testpilot__tc_session',
+      args: { action: 'launch_client', base: 'link-db' },
+      cwd: fixture.tree,
+    }
+    expect(connectionOf(call, resolveProject(fixture.tree))).toBe(`File=${fixture.tree}/real-db`)
+    rmSync(fixture.root, { recursive: true, force: true })
+  })
+
+  it('движок стиля получает подкоманду check один раз', async () => {
+    const { chmodSync, writeFileSync, readFileSync } = await import('node:fs')
+    const fixture = createFixture()
+    const recorder = `${fixture.root}/engine-argv.py`
+    writeFileSync(
+      recorder,
+      '#!/usr/bin/env python3\nimport sys\nopen(sys.argv[0] + ".args", "w").write("\\n".join(sys.argv[1:]))\nsys.exit(0)\n',
+      'utf8',
+    )
+    chmodSync(recorder, 0o755)
+    const checker = createStyleChecker({ env: { ...process.env, '1C_STYLE_ENGINE': recorder } })
+    expect(await checker.run(['src/cf/M.bsl'], fixture.tree)).toBe('')
+    const argv = readFileSync(`${recorder}.args`, 'utf8').split('\n')
+    expect(argv.filter((arg) => arg === 'check')).toHaveLength(1)
+    rmSync(fixture.root, { recursive: true, force: true })
+  })
+
+  it('план правки пишется в журнал как advisory', async () => {
+    const { readFileSync } = await import('node:fs')
+    const fixture = createFixture()
+    const state = stateOf(fixture)
+    const call: GateCall = {
+      tool: 'mcp__unica__apply',
+      args: { args: { ops: [{ op: 'code.replace', args: { at: 'CommonModule.X.Body', text: 'Процедура А()' } }] } },
+      cwd: fixture.tree,
+    }
+    await evaluateStylePlan(
+      { call, isError: false, denied: false, resultText: '' },
+      resolveProject(fixture.tree),
+      state,
+    )
+    const journal = `${fixture.stateDir}/logs/rule-audit.jsonl`
+    const entries = readFileSync(journal, 'utf8').trim().split('\n').map((line) => JSON.parse(line) as Record<string, unknown>)
+    expect(entries.at(-1)).toMatchObject({ rule: 'bsl-style-gate', decision: 'advisory' })
     rmSync(fixture.root, { recursive: true, force: true })
   })
 })

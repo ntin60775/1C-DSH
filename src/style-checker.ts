@@ -130,7 +130,9 @@ export function createStyleChecker(options: {
     targets: readonly string[],
     root: string,
   ): Promise<string | null> => {
-    const argv = [...resolved.argv, ...(resolved.checkContract ? ['check'] : []), ...targets]
+    // Подкоманда `check` уже в argv при контрактном движке: второй раз её не
+    // добавляем, иначе живой движок получит `check check <files>` и откажет.
+    const argv = [...resolved.argv, ...targets]
     const done = await runProcess(argv, root, timeoutMs)
     if (done.code === null || (done.code !== 0 && done.code !== 1)) return null
     if (done.code === 0) return ''

@@ -208,7 +208,7 @@ export function verdict(
   const hot = entries.filter((entry) => entry.hot && !isEscalated(skips, entry.file, entry.rule))
   const background = entries.filter((entry) => !(entry.hot && !isEscalated(skips, entry.file, entry.rule)))
   if (hot.length === 0) {
-    state.audit(RULE, action, `нарушения носителя вне правки/под эскалациями (${background.length})`)
+    state.audit(RULE, action, `нарушения носителя вне правки/под эскалациями (${background.length})`, 'advisory')
     return {
       kind: 'accept',
       notice: `Гейт носителя: ${background.length} нарушений вне твоей правки `
@@ -291,13 +291,13 @@ function handlePlan(call: GateCall, project: ContourProject, state: GateState): 
   const label = `unica.apply план ${String(args['at'] ?? '')}`.trim()
   const texts = planBslTexts(args)
   if (texts.length === 0) {
-    state.audit(RULE, label, 'ops вне тел BSL-модулей — носитель не проверяется')
+    state.audit(RULE, label, 'ops вне тел BSL-модулей — носитель не проверяется', 'advisory')
     return { kind: 'accept' }
   }
   const plans = loadPlans(state)
   plans.push({ savedAt: state.nowSeconds, expiresAt: state.nowSeconds + BRIDGE_TTL_SECONDS, texts })
   savePlans(state, plans)
-  state.audit(RULE, label, `план сохранён (${texts.length} BSL-ops)`)
+  state.audit(RULE, label, `план сохранён (${texts.length} BSL-ops)`, 'advisory')
   return { kind: 'accept' }
 }
 
@@ -323,6 +323,7 @@ function handleExecute(project: ContourProject, state: GateState): PostDecision 
         try {
           body = readFileSync(join(project.root, rel), 'utf8')
         } catch {
+          // Файл исчез после обхода — проверять нечего.
           continue
         }
         const span = spanOfNewText(body, text)
@@ -334,7 +335,7 @@ function handleExecute(project: ContourProject, state: GateState): PostDecision 
     if (found) matched.push(plan)
   }
   if (entries.length === 0 && matched.length === 0) {
-    state.audit(RULE, 'unica.apply исполнение', 'тексты планов не найдены среди свежих файлов — планы оставлены')
+    state.audit(RULE, 'unica.apply исполнение', 'тексты планов не найдены среди свежих файлов — планы оставлены', 'advisory')
     return { kind: 'accept' }
   }
   savePlans(state, plans.filter((plan) => !matched.includes(plan)))

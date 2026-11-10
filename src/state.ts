@@ -14,11 +14,18 @@ import { join } from 'node:path'
 import type { GateMemory, GateState, LockRecord, LockRequest, StyleCheckerPort } from './contract.js'
 import { acquireBaseLock, releaseBaseLock, standLockStatus } from './lock.js'
 
+/**
+ * Решение в журнале: `blocked` — отказ, `confirmed` — осознанное разрешение
+ * (эскалация), `advisory` — замечание без отказа (план правки, холодные
+ * нарушения вне правки). Набор совпадает с python-эталоном.
+ */
+export type AuditDecision = 'blocked' | 'confirmed' | 'advisory'
+
 /** Запись журнала решений гейтов — формат omp сохранён. */
 export interface AuditEntry {
   readonly rule: string
   readonly action: string
-  readonly decision: 'blocked' | 'confirmed'
+  readonly decision: AuditDecision
   readonly reason: string
   readonly timestamp: string
 }
@@ -92,7 +99,7 @@ export function createGateState(options: GateStateOptions): GateState {
     nowSeconds,
     memory: options.memory ?? detachedMemory(),
     ...options.styleChecker === undefined ? {} : { styleChecker: options.styleChecker },
-    audit(rule: string, action: string, reason: string, decision: 'blocked' | 'confirmed' = 'blocked'): void {
+    audit(rule: string, action: string, reason: string, decision: AuditDecision = 'blocked'): void {
       appendAudit(stateDir, {
         rule,
         action,

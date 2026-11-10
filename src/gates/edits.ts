@@ -169,6 +169,7 @@ function walkFiles(base: string): string[] {
   try {
     entries = readdirSync(base)
   } catch {
+    // Каталога исходников нет (или нет прав) — обход пуст, гейт молчит.
     return found
   }
   for (const entry of entries) {
@@ -177,6 +178,7 @@ function walkFiles(base: string): string[] {
     try {
       stat = statSync(path)
     } catch {
+      // Файл исчез между чтением каталога и stat — пропускаем.
       continue
     }
     if (stat.isDirectory()) {
@@ -225,6 +227,7 @@ export function freshBslFiles(root: string, sinceMs: number, slackMs: number): s
       try {
         if (statSync(join(base, relative)).mtimeMs >= cutoff) fresh.push(`${prefix}${relative}`)
       } catch {
+        // Файл исчез между обходом и stat — кандидатом не считается.
         continue
       }
     }

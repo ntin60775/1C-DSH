@@ -177,6 +177,7 @@ export function docsResultIsMeaningful(text: string): boolean {
   try {
     payload = JSON.parse(text)
   } catch {
+    // Не JSON — ответ судится по прежним текстовым маркерам пустоты.
     payload = null
   }
   if (typeof payload === 'object' && payload !== null && !Array.isArray(payload)) {
