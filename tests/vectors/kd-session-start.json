@@ -1,0 +1,57 @@
+[
+  {
+    "id": "kd-wakes-station",
+    "describe": "спящая станция поднимается стартовым скриптом",
+    "gate": "kd-session-start",
+    "kd": {
+      "url": "http://127.0.0.1:9/mcp",
+      "station": true,
+      "script": true
+    },
+    "steps": [
+      { "phase": "session", "expect": { "decision": "accept" } }
+    ],
+    "expectAfter": { "marker": true }
+  },
+  {
+    "id": "kd-no-station",
+    "describe": "станции нет на машине — молчим",
+    "gate": "kd-session-start",
+    "kd": {
+      "url": "http://127.0.0.1:9/mcp",
+      "station": false,
+      "script": true
+    },
+    "steps": [
+      { "phase": "session", "expect": { "decision": "accept" } }
+    ],
+    "expectAfter": { "marker": false }
+  },
+  {
+    "id": "kd-no-url",
+    "describe": "1c-kd не разведён — будить нечего",
+    "gate": "kd-session-start",
+    "kd": {
+      "station": true,
+      "script": true
+    },
+    "steps": [
+      { "phase": "session", "expect": { "decision": "accept" } }
+    ],
+    "expectAfter": { "marker": false }
+  },
+  {
+    "id": "kd-no-script",
+    "describe": "стартового скрипта в проекте нет — молчим",
+    "gate": "kd-session-start",
+    "kd": {
+      "url": "http://127.0.0.1:9/mcp",
+      "station": true,
+      "script": false
+    },
+    "steps": [
+      { "phase": "session", "expect": { "decision": "accept" } }
+    ],
+    "expectAfter": { "marker": false }
+  }
+]

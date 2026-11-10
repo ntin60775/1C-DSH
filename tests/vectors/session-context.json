@@ -1,0 +1,49 @@
+[
+  {
+    "id": "context-main-with-worktree",
+    "describe": "основное дерево сообщает об активном ворктри",
+    "gate": "session-context",
+    "git": "repo-with-worktree",
+    "steps": [
+      {
+        "phase": "session",
+        "expect": {
+          "decision": "accept",
+          "noticeIncludes": ["основное дерево", "(feature)", "Merge — здесь"]
+        }
+      }
+    ]
+  },
+  {
+    "id": "context-worktree-session",
+    "describe": "сессия в ворктри называет основное дерево",
+    "gate": "session-context",
+    "git": "worktree-session",
+    "steps": [
+      {
+        "phase": "session",
+        "expect": {
+          "decision": "accept",
+          "noticeIncludes": ["сессия в ворктри", "основное дерево", "(feature)"]
+        }
+      }
+    ]
+  },
+  {
+    "id": "context-main-alone",
+    "describe": "основное дерево без ворктри молчит",
+    "gate": "session-context",
+    "git": "repo",
+    "steps": [
+      { "phase": "session", "expect": { "decision": "accept", "noticeAbsent": true } }
+    ]
+  },
+  {
+    "id": "context-not-git",
+    "describe": "вне git-репозитория молчим",
+    "gate": "session-context",
+    "steps": [
+      { "phase": "session", "expect": { "decision": "accept", "noticeAbsent": true } }
+    ]
+  }
+]

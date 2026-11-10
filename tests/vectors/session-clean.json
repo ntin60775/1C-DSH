@@ -1,0 +1,56 @@
+[
+  {
+    "id": "clean-stale-lock",
+    "describe": "просроченный замок инфобазы снят стартом",
+    "gate": "session-clean",
+    "seed": { "staleLocks": 1 },
+    "steps": [
+      { "phase": "session", "expect": { "decision": "accept" } }
+    ],
+    "expectAfter": { "absent": ["ib-locks/stale-1.json"] }
+  },
+  {
+    "id": "clean-fresh-lock",
+    "describe": "живой замок старт не трогает",
+    "gate": "session-clean",
+    "seed": { "freshLocks": 1 },
+    "steps": [
+      { "phase": "session", "expect": { "decision": "accept" } }
+    ],
+    "expectAfter": { "present": ["ib-locks/fresh-1.json"] }
+  },
+  {
+    "id": "clean-old-state",
+    "describe": "старый файл состояния гейта снят, новый остался",
+    "gate": "session-clean",
+    "seed": {
+      "oldState": ["doc-gate/old.json"],
+      "newState": ["doc-gate/new.json"]
+    },
+    "steps": [
+      { "phase": "session", "expect": { "decision": "accept" } }
+    ],
+    "expectAfter": {
+      "absent": ["doc-gate/old.json"],
+      "present": ["doc-gate/new.json"]
+    }
+  },
+  {
+    "id": "clean-broken-lock",
+    "describe": "битый замок считается просроченным",
+    "gate": "session-clean",
+    "seed": { "brokenLocks": 1 },
+    "steps": [
+      { "phase": "session", "expect": { "decision": "accept" } }
+    ],
+    "expectAfter": { "absent": ["ib-locks/broken-1.json"] }
+  },
+  {
+    "id": "clean-noop",
+    "describe": "пустой каталог состояния — уборка молчит",
+    "gate": "session-clean",
+    "steps": [
+      { "phase": "session", "expect": { "decision": "accept" } }
+    ]
+  }
+]

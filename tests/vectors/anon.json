@@ -1,0 +1,179 @@
+[
+  {
+    "id": "anon-bash-raw",
+    "describe": "raw-режим в bash блокируется",
+    "gate": "anon",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "CONTOUR_ANON=off python3 probe.py" } },
+        "expect": {
+          "decision": "deny",
+          "code": "anon-raw",
+          "reasonIncludes": ["отключение анонимизации"]
+        }
+      }
+    ]
+  },
+  {
+    "id": "anon-write-deanon",
+    "describe": "включение API деанонимизации в файле блокируется",
+    "gate": "anon",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "write",
+          "args": { "file_path": "probe.py", "content": "DEANONYMIZATION_API_ENABLED = True\n" }
+        },
+        "expect": {
+          "decision": "deny",
+          "code": "anon-raw",
+          "reasonIncludes": ["отключение анонимизации"]
+        }
+      }
+    ]
+  },
+  {
+    "id": "anon-comment-allowed",
+    "describe": "строка-комментарий границу не нарушает",
+    "gate": "anon",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "# CONTOUR_ANON=off\necho ok" } },
+        "expect": { "decision": "allow" }
+      }
+    ]
+  },
+  {
+    "id": "anon-markdown-skipped",
+    "describe": "документация границы в markdown не блокируется",
+    "gate": "anon",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "write",
+          "args": { "file_path": "docs/anon.md", "content": "CONTOUR_ANON: off\n" }
+        },
+        "expect": { "decision": "allow" }
+      }
+    ]
+  },
+  {
+    "id": "anon-boundary-word",
+    "describe": "хвост слова значением не считается",
+    "gate": "anon",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "CONTOUR_ANON=offshore" } },
+        "expect": { "decision": "allow" }
+      }
+    ]
+  },
+  {
+    "id": "anon-key-case",
+    "describe": "имя переменной регистрозависимо",
+    "gate": "anon",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "contour_anon=off" } },
+        "expect": { "decision": "allow" }
+      }
+    ]
+  },
+  {
+    "id": "anon-value-case",
+    "describe": "значение регистронезависимо",
+    "gate": "anon",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "CONTOUR_ANON=OFF" } },
+        "expect": { "decision": "deny", "code": "anon-raw" }
+      }
+    ]
+  },
+  {
+    "id": "anon-json-quoted",
+    "describe": "JSON-присвоение с кавычками ловится",
+    "gate": "anon",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "bash",
+          "args": { "command": "python3 -c '{\"CONTOUR_ANON\": \"false\"}'" }
+        },
+        "expect": { "decision": "deny", "code": "anon-raw" }
+      }
+    ]
+  },
+  {
+    "id": "anon-edit-new-string",
+    "describe": "новая строка правки сканируется",
+    "gate": "anon",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "edit",
+          "args": { "file_path": "probe.py", "old_string": "old", "new_string": "CONTOUR_ANON = \"no\"" }
+        },
+        "expect": { "decision": "deny", "code": "anon-raw" }
+      }
+    ]
+  },
+  {
+    "id": "anon-patch-add",
+    "describe": "добавленная строка патча сканируется",
+    "gate": "anon",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "apply_patch",
+          "args": {
+            "patch": "*** Begin Patch\n*** Add File: probe.py\n+DEANONYMIZATION_API_ENABLED = True\n*** End Patch"
+          }
+        },
+        "expect": { "decision": "deny", "code": "anon-raw" }
+      }
+    ]
+  },
+  {
+    "id": "anon-patch-delete",
+    "describe": "удаление строки патча проходит",
+    "gate": "anon",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "apply_patch",
+          "args": {
+            "patch": "*** Begin Patch\n*** Update File: probe.py\n@@\n-CONTOUR_ANON=off\n+print(1)\n*** End Patch"
+          }
+        },
+        "expect": { "decision": "allow" }
+      }
+    ]
+  },
+  {
+    "id": "anon-heredoc",
+    "describe": "heredoc сканируется построчно",
+    "gate": "anon",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "bash",
+          "args": { "command": "cat <<EOF\nCONTOUR_ANON=off\nEOF" }
+        },
+        "expect": { "decision": "deny", "code": "anon-raw" }
+      }
+    ]
+  }
+]

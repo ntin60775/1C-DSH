@@ -1,0 +1,120 @@
+[
+  {
+    "id": "retry-third-block",
+    "describe": "третий идентичный вызов после двух ошибок блокируется",
+    "gate": "retry",
+    "steps": [
+      {
+        "phase": "result",
+        "call": { "tool": "bash", "args": { "command": "false" } },
+        "result": { "isError": true },
+        "expect": { "decision": "accept" }
+      },
+      {
+        "phase": "result",
+        "call": { "tool": "bash", "args": { "command": "false" } },
+        "result": { "isError": true },
+        "expect": { "decision": "accept" }
+      },
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "false" } },
+        "expect": {
+          "decision": "deny",
+          "code": "retry-discipline",
+          "reasonIncludes": ["уже падала 2 раза подряд"]
+        }
+      }
+    ]
+  },
+  {
+    "id": "retry-second-allowed",
+    "describe": "второй вызов после одной ошибки проходит",
+    "gate": "retry",
+    "steps": [
+      {
+        "phase": "result",
+        "call": { "tool": "bash", "args": { "command": "false" } },
+        "result": { "isError": true },
+        "expect": { "decision": "accept" }
+      },
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "false" } },
+        "expect": { "decision": "allow" }
+      }
+    ]
+  },
+  {
+    "id": "retry-different-command",
+    "describe": "другая команда не блокируется",
+    "gate": "retry",
+    "steps": [
+      {
+        "phase": "result",
+        "call": { "tool": "bash", "args": { "command": "false" } },
+        "result": { "isError": true },
+        "expect": { "decision": "accept" }
+      },
+      {
+        "phase": "result",
+        "call": { "tool": "bash", "args": { "command": "false" } },
+        "result": { "isError": true },
+        "expect": { "decision": "accept" }
+      },
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "true" } },
+        "expect": { "decision": "allow" }
+      }
+    ]
+  },
+  {
+    "id": "retry-success-resets",
+    "describe": "успешный вызов сбрасывает счётчик",
+    "gate": "retry",
+    "steps": [
+      {
+        "phase": "result",
+        "call": { "tool": "bash", "args": { "command": "false" } },
+        "result": { "isError": true },
+        "expect": { "decision": "accept" }
+      },
+      {
+        "phase": "result",
+        "call": { "tool": "bash", "args": { "command": "false" } },
+        "result": { "isError": false },
+        "expect": { "decision": "accept" }
+      },
+      {
+        "phase": "result",
+        "call": { "tool": "bash", "args": { "command": "false" } },
+        "result": { "isError": true },
+        "expect": { "decision": "accept" }
+      },
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "false" } },
+        "expect": { "decision": "allow" }
+      }
+    ]
+  },
+  {
+    "id": "retry-non-bash",
+    "describe": "ошибка не-bash инструмента счётчик не двигает",
+    "gate": "retry",
+    "steps": [
+      {
+        "phase": "result",
+        "call": { "tool": "write", "args": { "file_path": "x", "content": "" } },
+        "result": { "isError": true },
+        "expect": { "decision": "accept" }
+      },
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "false" } },
+        "expect": { "decision": "allow" }
+      }
+    ]
+  }
+]

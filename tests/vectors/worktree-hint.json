@@ -1,0 +1,137 @@
+[
+  {
+    "id": "hint-relative",
+    "describe": "относительный путь ворктри даёт заметку",
+    "gate": "worktree-hint",
+    "fixture": {
+      "mkdir": [
+        "tree/wt"
+      ]
+    },
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "bash",
+          "args": {
+            "command": "git worktree add wt -b feature"
+          }
+        },
+        "result": {
+          "isError": false
+        },
+        "expect": {
+          "decision": "accept",
+          "noticeIncludes": [
+            "ворктри создан:",
+            "wt"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "hint-absolute-with-flags",
+    "describe": "флаги со значением пропускаются, путь извлекается",
+    "gate": "worktree-hint",
+    "fixture": {
+      "mkdir": [
+        "wt"
+      ]
+    },
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "bash",
+          "args": {
+            "command": "git worktree add -b feature $TMP/wt"
+          }
+        },
+        "result": {
+          "isError": false
+        },
+        "expect": {
+          "decision": "accept",
+          "noticeIncludes": [
+            "ворктри создан:"
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "id": "hint-missing-dir",
+    "describe": "каталога нет — молчим",
+    "gate": "worktree-hint",
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "bash",
+          "args": {
+            "command": "git worktree add missing -b feature"
+          }
+        },
+        "result": {
+          "isError": false
+        },
+        "expect": {
+          "decision": "accept",
+          "noticeAbsent": true
+        }
+      }
+    ]
+  },
+  {
+    "id": "hint-error",
+    "describe": "упавший bash заметку не даёт",
+    "gate": "worktree-hint",
+    "fixture": {
+      "mkdir": [
+        "wt"
+      ]
+    },
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "bash",
+          "args": {
+            "command": "git worktree add wt -b feature"
+          }
+        },
+        "result": {
+          "isError": true
+        },
+        "expect": {
+          "decision": "accept",
+          "noticeAbsent": true
+        }
+      }
+    ]
+  },
+  {
+    "id": "hint-not-worktree",
+    "describe": "обычная bash-команда молчит",
+    "gate": "worktree-hint",
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "bash",
+          "args": {
+            "command": "git status"
+          }
+        },
+        "result": {
+          "isError": false
+        },
+        "expect": {
+          "decision": "accept",
+          "noticeAbsent": true
+        }
+      }
+    ]
+  }
+]

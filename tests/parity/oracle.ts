@@ -34,6 +34,8 @@ export interface OracleResult {
   readonly exitCode: number
   /** Причина в stderr при блоке. */
   readonly stderr: string
+  /** Контекст в stdout: `additionalContext` SessionStart/PostToolUse. */
+  readonly stdout: string
 }
 
 /** Интерпретатор python; переопределяется переменной `PYTHON`. */
@@ -49,16 +51,16 @@ function python(): string {
  */
 export function runOracle(
   event: unknown,
-  options: { stateDir: string; cwd: string; script?: string },
+  options: { stateDir: string; cwd: string; script?: string; env?: NodeJS.ProcessEnv },
 ): OracleResult {
   const script = options.script ?? GATE_SCRIPT
   const result = spawnSync(python(), [script], {
     input: JSON.stringify(event),
     cwd: options.cwd,
     encoding: 'utf8',
-    env: { ...process.env, ZCODE_1C_STATE_DIR: options.stateDir },
+    env: { ...options.env ?? process.env, ZCODE_1C_STATE_DIR: options.stateDir },
   })
-  return { exitCode: result.status ?? -1, stderr: result.stderr ?? '' }
+  return { exitCode: result.status ?? -1, stderr: result.stderr ?? '', stdout: result.stdout ?? '' }
 }
 
 /**
