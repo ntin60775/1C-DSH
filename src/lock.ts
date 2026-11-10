@@ -8,7 +8,7 @@
  */
 
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type { LockRecord } from './contract.js'
@@ -98,6 +98,38 @@ export function lockPath(stateDir: string, connection: string, tree: string): st
   return join(stateDir, 'ib-locks', `${lockKey(connection, tree)}.json`)
 }
 
+/**
+ * Вымести просроченные замки инфобаз (старт сессии).
+ *
+ * Живёт рядом с форматом замка, чтобы правило «просрочен» было одно:
+ * эталон делает так же (`ib_lock.purge_stale_locks`).
+ * @param stateDir - корень состояния контура.
+ * @param nowSeconds - текущее время в секундах эпохи.
+ * @returns сколько файлов удалено.
+ */
+export function purgeStaleLocks(stateDir: string, nowSeconds: number): number {
+  const directory = join(stateDir, 'ib-locks')
+  let entries: string[]
+  try {
+    entries = readdirSync(directory)
+  } catch {
+    return 0
+  }
+  let removed = 0
+  for (const name of entries) {
+    if (!name.endsWith('.json')) continue
+    const path = join(directory, name)
+    if (!isStaleLock(readLock(path) ?? {}, nowSeconds)) continue
+    try {
+      unlinkSync(path)
+      removed += 1
+    } catch {
+      // Уже удалён или нет прав — уборка не повод падать.
+    }
+  }
+  return removed
+}
+
 /** Прочитать запись замка; отсутствующий или битый файл — `null`. */
 function readLock(path: string): LockRecord | null {
   try {
@@ -116,7 +148,7 @@ function readLock(path: string): LockRecord | null {
  * @param nowSeconds - текущее время в секундах эпохи.
  * @returns истина, когда замок просрочен.
  */
-function isStale(lock: Partial<LockRecord>, nowSeconds: number): boolean {
+export function isStaleLock(lock: Partial<LockRecord>, nowSeconds: number): boolean {
   const expires = Number(lock.expires_ts ?? 0)
   return !Number.isFinite(expires) || expires <= nowSeconds
 }
@@ -163,7 +195,7 @@ export function acquireBaseLock(
 ): { status: 'ok' } | { status: 'busy'; holder: LockRecord } {
   const path = lockPath(stateDir, request.connection, request.tree)
   const existing = readLock(path)
-  if (existing !== null && !isStale(existing, nowSeconds) && existing.tree !== request.tree) {
+  if (existing !== null && !isStaleLock(existing, nowSeconds) && existing.tree !== request.tree) {
     return { status: 'busy', holder: existing }
   }
   const lock: LockRecord = {

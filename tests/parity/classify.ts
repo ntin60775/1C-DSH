@@ -22,6 +22,8 @@ export type OracleClass =
   | 'stand-lock'
   | 'bsl-style'
   | 'bsl-module'
+  | 'anon-raw'
+  | 'retry-discipline'
   | 'unknown'
 
 /** Маркеры блокирующих сообщений эталона — по одному на класс. */
@@ -35,6 +37,8 @@ const MARKERS: readonly { readonly marker: string; readonly code: Exclude<Oracle
   { marker: 'не поднимает второй клиент', code: 'stand-lock' },
   { marker: 'нарушает стиль BSL', code: 'bsl-style' },
   { marker: 'нарушает контракт носителя', code: 'bsl-module' },
+  { marker: 'отключение анонимизации', code: 'anon-raw' },
+  { marker: 'Третий идентичный повтор', code: 'retry-discipline' },
 ]
 
 /**

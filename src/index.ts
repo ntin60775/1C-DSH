@@ -4,7 +4,9 @@
  * Плагин только переводит события DSH в {@link GateCall} и обратно — вся
  * логика лежит в чистых функциях `gates/*` и сверяется с python-эталоном.
  *
- * - `agent/created` — состояние агента и проверка каталога сессии;
+ * - `agent/created` — состояние агента, уборка состояния, контекст старта и
+ *   пробуждение станции kd (побочные эффекты, не чистые гейты; субагентам
+ *   стартовые действия не нужны);
  * - `tools/pre-execute` — решения до вызова: правка исходников, изменяющие
  *   вызовы тест-контура, требование сверки с документацией;
  * - `tools/post-execute` — решения после вызова: флаг сверки, стиль BSL,
@@ -23,11 +25,17 @@ import type { PostToolDecision, PreToolDecision, ToolExecution, ToolExecutionRes
 import type {} from '@deepseek-ai/dsh-working-directory'
 
 import type { ExecutedCall, GateCall, GateState, PostDecision, PreDecision } from './contract.js'
+import { evaluatePre as evaluateAnonPre } from './gates/anon.js'
 import { evaluatePost as evaluateModulePost } from './gates/bsl-module.js'
 import { evaluatePost as evaluateStylePost } from './gates/bsl-style.js'
 import { evaluatePost as evaluateDocPost, evaluatePre as evaluateDocPre } from './gates/doc.js'
+import { ensureKdStation } from './gates/kd-session-start.js'
 import { evaluatePre as evaluateMcpPre } from './gates/mcp.js'
+import { evaluatePre as evaluateRetryPre, observeResult as observeRetryResult } from './gates/retry.js'
+import { cleanSessionState } from './gates/session-clean.js'
+import { sessionContext } from './gates/session-context.js'
 import { evaluatePost as evaluateSourcePost, evaluatePre as evaluateSourcePre } from './gates/unica-source.js'
+import { evaluatePost as evaluateWorktreePost } from './gates/worktree-hint.js'
 import { resolveProject } from './paths.js'
 import { observeResult, sessionStateOf } from './session.js'
 import { createGateState, defaultStateDir } from './state.js'
@@ -84,10 +92,36 @@ export function apply(ctx: Context): void {
 
   ctx.on('agent/created', async ({ agent }) => {
     sessionStateOf(agent)
+    let cwd = process.cwd()
     try {
-      await ctx.workingDirectory.ensure(agent)
+      cwd = await ctx.workingDirectory.ensure(agent)
     } catch (error: unknown) {
       ctx.logger.warn(`dsh-1c-contour: каталог сессии недоступен: ${String(error)}`)
+    }
+    // Стартовые гейты — для сессии человека; субагент получает свой cwd и
+    // не должен ни подметать состояние, ни будить станцию на каждое создание.
+    if (agent.session.header.origin === 'subagent') return
+    const project = resolveProject(cwd)
+
+    // Уборка и контекст — best-effort: старт сессии не роняем.
+    try {
+      const cleaned = cleanSessionState(defaultStateDir(), Date.now() / 1000)
+      if (cleaned.locks > 0 || cleaned.files > 0) {
+        ctx.logger.info(`dsh-1c-contour: выметено замков ${cleaned.locks}, файлов состояния ${cleaned.files}`)
+      }
+    } catch (error: unknown) {
+      ctx.logger.warn(`dsh-1c-contour: уборка состояния не удалась: ${String(error)}`)
+    }
+    try {
+      const context = sessionContext(project, cwd)
+      if (context !== null) agent.inject(contextMessage(context))
+    } catch (error: unknown) {
+      ctx.logger.warn(`dsh-1c-contour: контекст сессии не собран: ${String(error)}`)
+    }
+    try {
+      await ensureKdStation(project, cwd)
+    } catch (error: unknown) {
+      ctx.logger.warn(`dsh-1c-contour: станция 1c-kd не поднята: ${String(error)}`)
     }
   })
 
@@ -100,6 +134,8 @@ export function apply(ctx: Context): void {
       evaluateSourcePre(call, project, state),
       evaluateMcpPre(call, project, state),
       evaluateDocPre(call, project, state),
+      evaluateAnonPre(call, state),
+      evaluateRetryPre(call, project, state),
     ]
     for (const decision of decisions) {
       if (decision.kind === 'deny') {
@@ -134,6 +170,7 @@ export function apply(ctx: Context): void {
     collect(await evaluateDocPost(executed, project, state))
     collect(await evaluateStylePost(executed, project, state))
     collect(evaluateModulePost(executed, project, state))
+    collect(evaluateWorktreePost(executed, project, state))
 
     const downstream = await next()
     const contexts = notices.length === 0 ? [] : [contextMessage(notices.join('\n\n'))]
@@ -151,7 +188,11 @@ export function apply(ctx: Context): void {
 
   ctx.on('tools/result', (exec, result) => {
     const cwd = directoryOf(exec.agent)
-    observeResult(sessionStateOf(exec.agent), gateCall(exec, cwd), result, DENIED_CODE)
+    const project = resolveProject(cwd)
+    const call = gateCall(exec, cwd)
+    const state = gateState(exec.agent)
+    observeResult(sessionStateOf(exec.agent), call, result, DENIED_CODE)
+    observeRetryResult(state, call, project, result.isError, deniedBy(result))
   })
 }
 
