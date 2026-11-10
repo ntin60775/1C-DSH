@@ -51,7 +51,7 @@ ZCode перенесены только контурные конфиги (`wire
 | `.zcode/1c/contour.json`, `profiles.yaml`, `.zcode/config.json`, секция контура в AGENTS.md | `1c-project-bootstrap` |
 | `v8project.yaml` как контракт (правки после каркаса), source-set'ы расширений по мере появления | проект + скиллы юники (`cf-init`, `cfe-init`) |
 | Первый источник правды (dump ИБ → исходники, build исходники → ИБ) | unica (`unica.run`, канон в `1c-contour`) |
-| Миграция omp-наследия (`features`/`fixtures` → `docs/omp-migrated/tests`) | `scripts/migrate_from_omp.py` |
+| Миграция omp-наследия (`features`/`fixtures` → `docs/omp-migrated/tests`) | вручную, пакетного мигратора нет |
 | Vanessa-обвязка (VAParams, packagedef, env.json) | никому: стек не переносится |
 
 ## 4. Топология
@@ -102,7 +102,7 @@ source-set, юниты и e2e.
 (dealer-network-orders, erp-mini). Компоненты сверх минимума — `tools/mcp`
 и `docs` — по вопросам ритуала, не молчаливыми дефолтами. Юнит-наследие
 omp-эпохи (`tests/cfe`/`tests/epf` вместо `tests/e2e`) `check` опознаёт
-отдельной подсказкой: лечение — `migrate_from_omp.py` + демонтаж, не
+отдельной подсказкой: лечение — перенос покрытия вручную и демонтаж, не
 ритуал layout. Единственная правда о составе — `REQUIRED_MINIMUM` в
 `scaffold.py`; doctor зовёт `check` процессом и ретранслирует (FAIL
 «обязательная топология неполна» с советом полного ритуала), список не

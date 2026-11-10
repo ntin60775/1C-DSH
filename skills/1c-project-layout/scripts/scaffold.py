@@ -296,7 +296,7 @@ def cmd_v8project(args: argparse.Namespace) -> int:
 def append_missing(dst_rel: str, dry_run: bool) -> int:
 	"""Дозапись в .gitignore только недостающих строк; --force не действует:
 	append безвреден, перезапись чужих строк запрещена по разводке владельцев
-(layout — 1С-строки, 1c-project-bootstrap — .zcode-строки)."""
+(layout — 1С-строки, 1c-project-bootstrap — .dsh-строки)."""
 	template = read_template("gitignore.template")
 	template_lines = [ln for ln in template.splitlines() if ln.strip()]
 	dst = os.path.join(TARGET_DIR, dst_rel)
@@ -372,18 +372,17 @@ def cmd_check(args: argparse.Namespace) -> int:
             missing.append(rel)
     if missing:
         # Юнит-стек omp-эпохи вместо tests/e2e — другая болезнь и другое
-        # лечение: мигратор + демонтаж, не полный ритуал layout.
+        # лечение: перенос покрытия и демонтаж, не полный ритуал layout.
         legacy = [d for d in ("tests/cfe", "tests/epf")
                   if os.path.isdir(os.path.join(TARGET_DIR, d))]
         migrator = bool(legacy) and missing == ["tests/e2e"]
         if legacy:
             log(f"наследие: найден юнит-стек omp-эпохи ({', '.join(legacy)}) — "
                 "tests/e2e лечится переносом покрытия и демонтажём "
-                "(scripts/migrate_from_omp.py, см. MIGRATION-FROM-OMP.md), "
-                "не полным ритуалом layout")
+                "(канон скилла 1c-test-contour), не полным ритуалом layout")
         log(f"path\t{'migrator' if migrator else 'ritual'}")
         if migrator:
-            log("минимум топологии не выполнен — путь лечения выше (мигратор)")
+            log("минимум топологии не выполнен — путь лечения выше (перенос)")
         else:
             log("минимум топологии не выполнен — зови навык 1c-project-layout "
                 "ПОЛНЫМ ритуалом (все вопросы оператору: имя, kinds, components, "
@@ -444,7 +443,7 @@ def cmd_e2e_baseline(args: argparse.Namespace) -> int:
 	]
 	log(f"e2e-baseline: {statuses.count('exists')} skip, "
 	    f"{len(statuses) - statuses.count('exists')} файлов")
-	log("прогон: bash .zcode/1c/scripts/run_e2e.sh [профиль] tests/e2e")
+	log('прогон: bash "$DSH_1C_ROOT/scripts/run_e2e.sh" [профиль] tests/e2e')
 	log("снятие после приёмки (кроме полигона): scaffold.py e2e-baseline --remove")
 	return 0
 
@@ -478,7 +477,7 @@ def main(argv: list[str] | None = None) -> int:
 	common = make_common_parser()
 	parser = argparse.ArgumentParser(
 		prog="scaffold.py",
-		description="Scaffold топологии каталогов 1С-проекта контура 1c-zcode.",
+		description="Scaffold топологии каталогов 1С-проекта контура DSH.",
 	)
 	sub = parser.add_subparsers(dest="command", required=True)
 

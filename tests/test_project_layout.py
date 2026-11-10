@@ -217,13 +217,13 @@ def main() -> None:
 		gi_tpl = (REPO / "skills/1c-project-layout/templates/gitignore.template") \
 			.read_text(encoding="utf-8")
 		_lib.check("registry: gitignore-шаблон держит файл вне git",
-		           ".zcode/1c/registry.local.json" in gi_tpl)
+		           ".dsh/1c/registry.local.json" in gi_tpl)
 		_lib.check("инстансы Т4: gitignore-шаблон держит db-instances.yaml и "
 		           "contour.local.json вне git",
-		           ".zcode/1c/db-instances.yaml" in gi_tpl
-		           and ".zcode/1c/contour.local.json" in gi_tpl)
+		           ".dsh/1c/db-instances.yaml" in gi_tpl
+		           and ".dsh/1c/contour.local.json" in gi_tpl)
 		_lib.check("Т6: gitignore-шаблон держит tmp-файл local-записи вне git",
-		           ".zcode/1c/contour.local.json.tmp" in gi_tpl)
+		           ".dsh/1c/contour.local.json.tmp" in gi_tpl)
 
 		# ── 11. check: детектор обязательного минимума ──
 		p9 = os.path.join(tmp, "bare")
@@ -254,8 +254,9 @@ def main() -> None:
 		# юнит-наследие omp-эпохи: miss tests/e2e при tests/cfe|epf
 		os.makedirs(os.path.join(p9, "tests/cfe"))
 		r = sh("check", "--dir", p9)
-		_lib.check("check: юнит-наследие опознано подсказкой про мигратор",
-		           "migrate_from_omp" in r.stdout and "tests/cfe" in r.stdout,
+		_lib.check("check: юнит-наследие опознано подсказкой о переносе",
+		           "наследие" in r.stdout and "перенос" in r.stdout
+		           and "tests/cfe" in r.stdout,
 		           r.stdout[:500])
 		_lib.check("check: смешанное наследие (куча miss) — path\tritual",
 		           "path\tritual" in r.stdout, r.stdout[:500])
@@ -269,10 +270,10 @@ def main() -> None:
 		            "packagedef", "AGENTS.md"):
 			open(os.path.join(p10, rel), "w").close()
 		r = sh("check", "--dir", p10)
-		_lib.check("check: чистое наследие — финал про мигратор",
-		           r.returncode == 1 and "путь лечения выше (мигратор)" in r.stdout
+		_lib.check("check: чистое наследие — финал про перенос",
+		           r.returncode == 1 and "путь лечения выше (перенос)" in r.stdout
 		           and "ПОЛНЫМ ритуалом" not in r.stdout, r.stdout[-300:])
-		_lib.check("check: path-маркер migrator для чистого наследия",
+		_lib.check("check: path-маркер переноса для чистого наследия",
 		           "path\tmigrator" in r.stdout, r.stdout[-300:])
 		os.rmdir(os.path.join(p10, "vendor"))
 		r = sh("check", "--dir", p10)

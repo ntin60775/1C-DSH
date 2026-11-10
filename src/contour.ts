@@ -155,6 +155,10 @@ export function unicaVerb(toolName: string, server: string): string {
   const middle = rest.slice(0, index)
   let short = rest.slice(index + 2)
   if (short === '') return ''
+  // Клиент MCP обрезает имя под контракт function-name: точка становится
+  // подчёркиванием, а к имени дописывается `_<12 hex>` — хвост отбрасываем,
+  // иначе глагол `unica.apply` читался бы как `apply.8ba7af26408e`.
+  short = short.replace(/_[0-9a-f]{12}$/, '')
   const parts = middle.split('_')
   if (!parts.includes(server) && !parts.includes('unica')) return ''
   for (const prefix of ['unica.', 'unica_']) {

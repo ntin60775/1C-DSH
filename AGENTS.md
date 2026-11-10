@@ -7,8 +7,8 @@
 > [tickets/dsh-contour/](tickets/dsh-contour/); раздел переписывается в T9.
 
 ZCode-плагин контура 1С-разработки: нативный порт 1c-omp. Статус слоёв —
-docs/migration-map.md; каналы юники — docs/UNICA.md; миграция проектов —
-docs/MIGRATION-FROM-OMP.md.
+docs/migration-map.md; каналы юники — docs/UNICA.md; раскладка проектов —
+tickets/dsh-contour/T6-layout.md.
 
 ## Что знать до правки
 

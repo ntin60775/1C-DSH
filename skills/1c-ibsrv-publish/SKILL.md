@@ -1,7 +1,7 @@
 ---
 name: 1c-ibsrv-publish
 description: "Публикация 1С-базы на Linux без Apache: автономный сервер ibsrv (скелет конфига — ibcmd), настройка публикации и HTTP-сервисов (включая расширения), диагностика молчаливых отказов. Применяй при подъёме/диагностике HTTP-публикации, настройке 1c.publish в contour.json, разборе 503/401 на /hs/."
-when_to_use: "Нужна HTTP-публикация базы (API-тесты, OData, HTTP-сервисы) или она молчит/отдаёт не те коды; unica публикацию не умеет — пробел закрывает этот скилл."
+whenToUse: "Нужна HTTP-публикация базы (API-тесты, OData, HTTP-сервисы) или она молчит/отдаёт не те коды; unica публикацию не умеет — пробел закрывает этот скилл."
 ---
 
 # Публикация 1С-базы: ibsrv на Linux (без Apache и root)
@@ -98,8 +98,8 @@ gap 0.15; `panels.set`/`homePage.set` — интерфейс, не публик�
 ## Канон контура
 
 ```bash
-bash .zcode/1c/scripts/publish_ib.sh start   # → хвост E2E_PUBLISH_JSON {url, port, pid}
-bash .zcode/1c/scripts/publish_ib.sh stop
+bash "$DSH_1C_ROOT/scripts/publish_ib.sh" start   # → хвост E2E_PUBLISH_JSON {url, port, pid}
+bash "$DSH_1C_ROOT/scripts/publish_ib.sh" stop
 ```
 
 `E2E_PUBLISH_JSON` парсят API-тесты (`PUBLISH_URL` — см. скилл
