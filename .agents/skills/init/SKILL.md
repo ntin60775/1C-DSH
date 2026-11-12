@@ -1,6 +1,7 @@
 ---
 name: init
 description: "Инициализация точки входа OntoShip в проекте: блок в AGENTS.md, строки .gitignore по харнессу (четыре в DSH, шесть в ZCode), реестр ролей .agents/config.toml с бутстрап-выбором моделей и скелет docs/ops/continue.md, когда файла нет. Идемпотентно; пишет только AGENTS.md, .gitignore, .agents/config.toml и docs/ops/continue.md, а в AGENTS.md — только между маркерами ontoship. Используй после установки ядра, когда пользователь просит инициализировать или настроить OntoShip в этом проекте."
+whenToUse: "После установки ядра OntoShip пользователь просит инициализировать или настроить OntoShip в проекте: блок AGENTS.md, .gitignore, реестр ролей, скелет continue.md."
 ---
 
 # Init

@@ -1,59 +1,76 @@
 # 1C-DSH
 
-> **Переезд на DSH.** Репозиторий создан копией `1c-zcode` и очищен от
-> ZCode-слоя (юнит `dsh-contour`, спека —
-> [docs/plans/dsh-contour.md](docs/plans/dsh-contour.md)).
-> Нативный плагин, установка и документация — по тикетам T1–T10; до готовности
-> контура этот раздел ниже описывает прежний ZCode-контур и не является
-> инструкцией по установке.
+Контур 1С-разработки в DeepSeek Harness (DSH): нативный Host-плагин
+`dsh-1c-contour` — гейты правки исходников, пресет `1c`, скиллы, команды и
+MCP 1С-проекта. Репозиторий создан копией `1c-zcode` с историей; ZCode-слой
+снят юнитом `dsh-contour` (спека —
+[docs/plans/dsh-contour.md](docs/plans/dsh-contour.md)).
 
-ZCode-плагин контура 1С-разработки: гейты, e2e-тест-контур, workflows,
-bootstrap и миграция. Нативный порт [1c-omp](../1c-omp) на механики ZCode
-(карта переноса — [docs/migration-map.md](docs/migration-map.md)).
-
-Работает вместе с Unica 0.15+ (`mcp__unica__*`, мягкая зависимость — каналы
-и переключение в [docs/UNICA.md](docs/UNICA.md)) и новым тест-контуром
+Контур работает вместе с Unica 0.15+ (мягкая зависимость: каналы и
+переключение — [docs/UNICA.md](docs/UNICA.md)) и тест-контуром
 1c-testpilot + 1c-mcp-toolkit (объявляются на уровне проекта).
+
+## Установка с нуля
+
+Подробная процедура — [docs/dsh-install.md](docs/dsh-install.md). Коротко:
+
+1. **Требования.** DSH 0.2.2-rc.2+ (фикс `mcp-client`,
+   ntin60775/deepseek-harness#1), Node.js и pnpm, python3 (stdlib),
+   Unica 0.15.0-rc.5 глобально на машину ([docs/UNICA.md](docs/UNICA.md)).
+2. **Сборка.** `pnpm install && pnpm build` — TypeScript собирается в
+   `lib/`; в поставку идут `lib/`, скиллы, команды, патч, локаль и иконка.
+3. **Bundle.** Плагин-менеджер DSH ставит пакет `dsh-1c-contour` в профиль:
+   локальным path из этого репо или `git+https`. Патч бандла
+   (`cordis.patch.yml`) добавляет строки `1c-contour` (плагин) и `preset-1c`
+   (пресет «Контур 1С», id `1c`).
+4. **Пресет.** Выбрать пресет `1c` для сессии (или умолчанием профиля).
+   Доставка контура включается только в сессии 1С-проекта: вне его гейты
+   молчат, скиллов и MCP контура нет.
+5. **Проект.** Раскладку ZCode перевести на `.dsh/1c`
+   (`scripts/migrate_from_zcode.py`, команда `/1c-migrate`); новый проект
+   оснастить `/1c-bootstrap` (профили, contour.json, секция AGENTS.md).
+   Проверить установку: `python3 scripts/doctor.py <проект>` — семь
+   разделов, `--json` для машинной проверки.
+6. **Перезапуск хоста.** «Остановка» → «Запуск»: плагин и пресет
+   подхватываются новым поколением модулей.
+
+После установки в сессии 1С-проекта: 11 гейтов, 15 скиллов контура,
+скиллы Юники, 4 команды (`/1c-doctor`, `/1c-test`, `/1c-bootstrap`,
+`/1c-migrate`) и MCP `unica`, `1c-testpilot`, `1c-db` (+ инстансы), `1c-kd`.
 
 ## Состав
 
 | Путь | Что |
 |---|---|
-| `hooks/` | гейты (python3 stdlib, stateless, состояние в `~/.zcode/state/1c/`): `unica_source_gate` (правка только через Unica + инварианты пересборки + ворктри + замок ИБ), `doc_gate` (мутации после сверки с документацией), `retry_gate`, `mcp_gate` (прод-контур fail-closed), `anon_gate` (граница анонимизации: отключение raw-режима и включение API деанонимизации блокируется в командах и правках, исключений нет), `bsl_style_gate` (пак стайла), `ib_lock`, `session_clean` |
-| `skills/` | `1c-contour` (карта контура, приоритеты качества), `1c-bsl-review-standards` (формальный ревью BSL: стайл-пак + v8std), `1c-test-contour` (e2e), `1c-testpilot` (GUI-клиент), `1c-db-data` (данные базы), `1c-ibsrv-publish` (HTTP-публикация), `1c-ibcmd-delivery` (поставка исходников через ibcmd), `1c-kd-rules` + `kd2-rules-build` / `kd2-exchange-pitfalls` / `kd3-rules` (правила обмена КД 2/3 через MCP `1c-kd` — [docs/KD-RULES.md](docs/KD-RULES.md)), `1c-unica-worktree` / `1c-unica-artifacts` (каналы юники), `1c-project-bootstrap`, `1c-project-layout` (топология каталогов) |
+| `src/` | нативный плагин на TypeScript: адаптер событий (`index.ts`), контракт гейта (`contract.ts`), 11 гейтов (`gates/`), пресет и доставка (`preset/`), раскладка (`paths.ts`), замки (`lock.ts`), состояние (`state.ts`, `session.ts`); сборка `tsc` → `lib/` |
+| `skills/` | 15 скиллов контура: `1c-contour` (карта контура, приоритеты качества), `1c-bsl-review-standards`, `1c-test-contour`, `1c-testpilot`, `1c-db-data`, `1c-ibsrv-publish`, `1c-ibcmd-delivery`, `1c-kd-rules` + `kd2-rules-build` / `kd2-exchange-pitfalls` / `kd3-rules` (правила обмена КД — [docs/KD-RULES.md](docs/KD-RULES.md)), `1c-unica-worktree` / `1c-unica-artifacts`, `1c-project-bootstrap`, `1c-project-layout` |
 | `commands/` | `/1c-doctor`, `/1c-test`, `/1c-bootstrap`, `/1c-migrate` |
-| `workflows/` | `1c-e2e-author` (агент сам пишет e2e-тест), `1c-e2e-run` (прогон pytest без модели + ЖР-сверка и приёмка-кодом) |
-| `scripts/` | `wire_config.py` (разводка `.zcode/config.json`), `init_worktree.sh`, `migrate_from_zcode.py`, `install_unica_skills.py` (скиллы Юники), `doctor.py`, `lint_skill_frontmatter.py`, `run_e2e.sh` (автономный e2e-прогон с постпроверкой/зачисткой Е2Е-данных — [e2e_sweep.py](scripts/e2e_sweep.py)), `e2e_sweep.py` (зачистка и проверка остатков по маркеру), `install_testpilot.sh` (+ пакет [1c-onec-db](https://github.com/ntin60775/1c-onec-db) — фикстуры уровня логики), `install_1c_mcp_proxy.sh` (прокси 1c-mcp-toolkit), `start_1c_db.sh` (однофазный подъём стенда 1c-db: клиент с danger-флагами + прогрев; `--instance` — инстансы из db-instances.yaml), `publish_ib.sh` (HTTP-публикация тестовой базы для API-тестов), `unica_ping.py` (живость unica MCP для doctor), `bsl_review_join.py` (скрипт-джойн ревьюера 1c-bsl-review-standards: сохранённые ответы unica.check × routing × журнал исключений → размеченные находки и строки отчёта, [спека](docs/BSL-REVIEW-JOIN-SPEC.md)), `install_kd_rules.sh` + `start_kd_rules.sh` (станция kd-rules-mcp: MCP `1c-kd`, правила обмена КД — [docs/KD-RULES.md](docs/KD-RULES.md)) |
-| `vendor/` | `kd-rules-mcp` — вендор-копия апстрима (MIT), источник станции 1c-kd; в проекты не маппится, синк по [UPSTREAM.md](vendor/kd-rules-mcp/UPSTREAM.md) |
-| `templates/` | contour.json, profiles.example.yaml, db-instances.example.yaml (образец инстансов 1c-db), agents-section.md (секция AGENTS.md проекта) |
-| `deploy.json` | контракт v1 sot-zcode-marketplace (вендоринг в `<repo>/.zcode/`) |
-| `docs/` | migration-map, UNICA (установка, скиллы и MCP), KD-RULES (правила обмена КД) |
+| `workflows/` | `1c-e2e-author` (агент пишет e2e-тест), `1c-e2e-run` (прогон pytest без модели + ЖР-сверка и приёмка-кодом) |
+| `scripts/` | `doctor.py` (проверка установки и проекта), `migrate_from_zcode.py` (перевод раскладки), `install_unica_skills.py` (скиллы Юники), `contour_paths.py` (таблица раскладок), `ib_lock.py` (замки python/bash-скриптов), `wire_config.py` (legacy-разводка, снятие — Т10), `lint_skill_frontmatter.py`, стартеры стенда и публикация (`start_1c_db.sh`, `publish_ib.sh`, `run_e2e.sh`, `e2e_sweep.py`), `bsl_review_join.py`, `install_kd_rules.sh` + `start_kd_rules.sh` (станция `1c-kd`), `unica_ping.py` |
+| `tests/` | vitest: юниты (`unit/`), паритет по векторам (`parity/`, `vectors/` — 11 гейтов, оракул без python); python-набор скриптов (`test_*.py`) |
+| `vendor/` | `kd-rules-mcp` — вендор-копия апстрима (MIT), источник станции `1c-kd`; правки запрещены, синк по [UPSTREAM.md](vendor/kd-rules-mcp/UPSTREAM.md) |
+| `templates/` | contour.json, profiles.example.yaml, db-instances.example.yaml, agents-section.md (секция AGENTS.md проекта) |
+| `docs/` | KB контура: [индекс](docs/README.md), установка, гейты, каноны текстов |
+| `.agents/skills/` | процессные скиллы OntoShip (ship, critic, grilling, kb-*, to-tickets, init, testing, onto-doc) и реестр ролей `.agents/config.toml` |
 
-## Поставка
+## Гейты
 
-Основной путь — **вендоринг раннером** sot-zcode-marketplace в проекты 1С
-(контур меняет данные проекта: `.zcode/config.json`, секция AGENTS.md,
-профили тестов):
-
-```bash
-python3 <sot-zcode-marketplace>/deploy/deploy-plugin.py install 1c-zcode <проект>
-```
-
-Глобальная установка из маркетплейса тоже возможна (манифест валиден), но
-основной путь — вендоринг: гейты вне 1С-проектов молча no-op.
-
-После установки: `python3 .zcode/1c/scripts/wire_config.py <проект>` +
-перезапуск сессии; далее `/1c-bootstrap` (профили, contour.json, секция
-AGENTS.md) и `/1c-doctor`.
+Одиннадцать гейтов живут на событиях DSH `agent/created`,
+`tools/pre-execute`, `tools/post-execute`, `tools/result`; решение — чистая
+функция над вызовом инструмента, регрессия — машиночитаемые векторы
+`tests/vectors/`. Состав, решения и входы — [docs/dsh-gates.md](docs/dsh-gates.md).
 
 ## Проверить без 1С
 
-Всё исполняемое контура — python3 stdlib, платформа и база не нужны:
+Гейты и скрипты проверяются без платформы и базы:
 
 ```bash
-for t in tests/test_*.py; do python3 "$t"; done   # гейты: прогон как процесс
-python3 scripts/lint_skill_frontmatter.py         # скиллы под слоты ZCode
-python3 scripts/doctor.py <проект>                # проверка контура в проекте
+pnpm install
+pnpm test        # vitest: юниты + паритет по векторам
+pnpm typecheck
+for t in tests/test_*.py; do python3 "$t"; done   # скрипты контура
+python3 scripts/lint_skill_frontmatter.py         # скиллы под слоты DSH
+python3 .agents/skills/kb-search/gitmark.py lint --strict   # KB
 ```
 
 ## Миграция раскладки
@@ -64,20 +81,23 @@ python3 scripts/doctor.py <проект>                # проверка ко�
 `--dry-run` печатает план. Канон раскладки — `.dsh/1c/` для всех входов
 гейтов; плагин читает `.dsh/1c`, затем промежуточную `.dsh/` и legacy
 `.zcode/1c` и `.zcode`, состояние — `${DSH_1C_STATE_DIR:-~/.dsh/state/1c}`
-(legacy `ZCODE_1C_STATE_DIR` ещё читается).
+(legacy `ZCODE_1C_STATE_DIR` ещё читается; снятие legacy — Т10).
 Omp-миграции в DSH нет — старое наследие переводится вручную по канону
 `1c-test-contour`.
 
 ## Соседи
 
+- `1c-omp` — донор исходного порта (история переноса —
+  [docs/migration-map.md](docs/migration-map.md)); в DSH-контуре не участвует.
 - `1c-bsl-code-style` — пак стиля BSL (приоритет 1 над стандартами и
-  стат-анализом), отдельный репо, вендорится рядом.
+  стат-анализом), отдельный репо, вендорится в проект.
 - `1c-ssl-skills` (зеркало `brake71/1c-ssl-skills`, MIT) — скилл `bsp`:
-  публичный API БСП 3.1.11.
+  публичный API БСП.
 - `kd-rules-mcp` ([egordoronchenko/kd-rules-mcp](https://github.com/egordoronchenko/kd-rules-mcp),
   MIT) — вендорится в `vendor/`, ставится станцией на машину (MCP `1c-kd`,
   [docs/KD-RULES.md](docs/KD-RULES.md)).
-- Unica — внешний плагин, ставится на машину (см. docs/UNICA.md).
+- Unica — внешний плагин, бинарники глобально на машину
+  ([docs/UNICA.md](docs/UNICA.md)).
 
 ## Лицензия
 
