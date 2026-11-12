@@ -115,7 +115,7 @@ toolkit = tmp / "toolkit"
 env7 = dict(os.environ)
 env7["HOME"] = str(fhome)
 env7["ONEC_MCP_TOOLKIT_DIR"] = str(toolkit)
-env7["ZCODE_1C_STATE_DIR"] = str(tmp / "state")  # stand-замки стартов — в tmp
+env7["DSH_1C_STATE_DIR"] = str(tmp / "state")  # stand-замки стартов — в tmp
 env7["WAIT_DEADLINE"] = "2"
 env7["ONEC_PLATFORM"] = str(fake_client)
 
@@ -123,9 +123,9 @@ env7["ONEC_PLATFORM"] = str(fake_client)
 def contour_t7(root, port):
     root = root.resolve()  # скрипт резолвит ROOT — и тест строит пути оттуда же
     root.mkdir(parents=True, exist_ok=True)
-    (root / ".zcode" / "1c").mkdir(parents=True, exist_ok=True)
+    (root / ".dsh" / "1c").mkdir(parents=True, exist_ok=True)
     (root / "tools" / "mcp").mkdir(parents=True, exist_ok=True)
-    (root / ".zcode" / "1c" / "contour.json").write_text(
+    (root / ".dsh" / "1c" / "contour.json").write_text(
         f'{{"1c_db": {{"epf_path": "tools/mcp/Mock.epf",'
         f' "url": "http://127.0.0.1:{port}/mcp"}}}}',
         encoding="utf-8")
@@ -136,7 +136,7 @@ def contour_t7(root, port):
 def write_t7_instances(root, names):
     # канал задан явно: имя с точкой (base.2) вне charset канала, а дефолт
     # канала — имя инстанса; гашение идёт по пути копии, канал тут не при чём
-    (root / ".zcode" / "1c" / "db-instances.yaml").write_text(
+    (root / ".dsh" / "1c" / "db-instances.yaml").write_text(
         "instances:\n" + "".join(
             f"  {n}:\n    channel: {n.replace('.', '-')}\n"
             f"    connection: File=build/ib/{n}\n"
@@ -321,7 +321,7 @@ try:
     # в записях валидный явно — на базовом дереве записи проходят (rc 0) и
     # кейс различает деревья именно по имени
     def write_bad_name(name: str):
-        (t7b / ".zcode" / "1c" / "db-instances.yaml").write_text(
+        (t7b / ".dsh" / "1c" / "db-instances.yaml").write_text(
             "instances:\n"
             f"  {name}:\n"
             "    channel: ch1\n"

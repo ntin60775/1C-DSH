@@ -30,9 +30,9 @@
 #   start_1c_db.sh <project-root> --proxy-only / --stop-proxy
 #   start_1c_db.sh <project-root> --print-config  # url порт epf mode channel — и выход
 #   start_1c_db.sh <project-root> --instance base2  # стенд инстанса: связь,
-#                   # канал и дисплей — из .zcode/1c/db-instances.yaml
+#                   # канал и дисплей — из .dsh/1c/db-instances.yaml
 #
-# Конфиг (.zcode/1c/contour.json → "1c_db"):
+# Конфиг (.dsh/1c/contour.json → "1c_db"):
 #   url      — MCP-endpoint (по умолчанию http://127.0.0.1:6003/mcp)
 #   epf_path — обработка относительно корня (tools/mcp/, в git не кладём).
 #              Не задан — раннер выбирает файл под ОС хоста сам
@@ -45,8 +45,8 @@
 #   mode     — "proxy" (Linux, по умолчанию) | "embedded" (Windows)
 #   channel  — канал изоляции прокси (опционально, ?channel=)
 #
-# Инстансы (.zcode/1c/db-instances.yaml, машино-локальный; образец —
-# .zcode/1c/templates/db-instances.example.yaml): --instance X поднимает
+# Инстансы (.dsh/1c/db-instances.yaml, машино-локальный; образец —
+# $DSH_1C_ROOT/templates/db-instances.example.yaml): --instance X поднимает
 # стенд записи instances.X — связь, user, password, канал (перекрывает
 # 1c_db.channel contour.json) и дисплей (действует с --headless) из записи;
 # клиент/Xvfb/WM — рантайм-ключи от sha1(корень|X) (конфликтов двух
@@ -68,7 +68,7 @@
 # обновление обработки — руками, каталог инстанса удаляется перед стартом.
 #
 # Порт (мультистенд Т6): желаемый — 1c_db.url из contour.json; фактический
-# — машино-локальный факт в .zcode/1c/contour.local.json (url + желаемый
+# — машино-локальный факт в .dsh/1c/contour.local.json (url + желаемый
 # desired_url; local применяется, пока желаемый в contour не изменился —
 # смена url снимает дрейф порта). Арбитраж — атомарная пара «проверил —
 # занял» flock'ом на pid-файле прокси: победитель поднимает прокси на
@@ -77,8 +77,8 @@
 # проигравший гонку старт ждёт факта победителя (local) и переиспользует
 # — второго процесса прокси у проекта не бывает. HTTP-проба и ss-владелец
 # — только выбор кандидата и диагностика, арбитраж — только замок. Окно
-# 10 портов; исчерпание — exit 2. Смена порта на живой ZCode-сессии:
-# перезапусти wire_config.py — он разведёт config по фактическому url из
+# 10 портов; исчерпание — exit 2. Смена порта на живой сессии DSH:
+# перезапусти сессию — пресет разведёт MCP по фактическому url из
 # contour.local.json (drift применяется, пока желаемый в contour не менялся).
 #
 # Зомби-прокси (юнит #56 Т4): живость усыновлённого прокси при старте —
@@ -421,7 +421,7 @@ elif mode == "release":
 PY
 }
 
-# ── инстансы 1c-db: чтение .zcode/1c/db-instances.yaml, fail-loud (мультистенд,
+# ── инстансы 1c-db: чтение .dsh/1c/db-instances.yaml, fail-loud (мультистенд,
 # #37 Готово 1) ──
 # Разбор минимальный построчный (верхний instances:, имя инстанса, поля) с
 # отказом на табах, посторонних ключах, скалярах вместо словарей и непоследовательном
@@ -432,7 +432,7 @@ instances_py() { # $1 — имя инстанса; годная запись —
 	python3 - "$ROOT" "$1" <<'PY'
 import re, sys, pathlib
 
-SAMPLE = ".zcode/1c/templates/db-instances.example.yaml"
+SAMPLE = "$DSH_1C_ROOT/templates/db-instances.example.yaml"
 FIELDS = {"channel", "connection", "user", "password", "display", "publish_port"}
 
 def fail(msg):
@@ -472,7 +472,7 @@ def strip_comment(val):
 
 root = pathlib.Path(sys.argv[1])
 name = sys.argv[2]
-cfg = root / ".zcode" / "1c" / "db-instances.yaml"
+cfg = root / ".dsh" / "1c" / "db-instances.yaml"
 rel = cfg.relative_to(root)
 if not cfg.is_file():
     what = f"нет {rel}" if not cfg.exists() else f"{rel} — не файл, а каталог"
@@ -655,7 +655,7 @@ else:
     epf = EPF_STEM + ".epf"
 mode = "proxy" if sys.platform.startswith("linux") else "embedded"
 db = {}
-cfg = root / ".zcode" / "1c" / "contour.json"
+cfg = root / ".dsh" / "1c" / "contour.json"
 try:
     db = json.loads(cfg.read_text(encoding="utf-8")).get("1c_db") or {}
     url = db.get("url") or url
@@ -665,7 +665,7 @@ except Exception:
     pass
 # желаемый оператором url: local применяется, только пока не разошёлся с ним
 wanted_url = url
-loc = root / ".zcode" / "1c" / "contour.local.json"
+loc = root / ".dsh" / "1c" / "contour.local.json"
 try:
     raw = json.loads(loc.read_text(encoding="utf-8"))
     l1c = raw.get("1c_db") if isinstance(raw, dict) else {}
@@ -697,7 +697,7 @@ fi
 # Порт валиден? (мультистенд Т6: арбитраж — арифметика по портам, url
 # обязан нести числовой порт, иначе замена :$PORT невозможна)
 if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then
-	echo "✗ 1c_db.url: нечисловой порт «$PORT» — исправь url в .zcode/1c/contour.json" >&2
+	echo "✗ 1c_db.url: нечисловой порт «$PORT» — исправь url в .dsh/1c/contour.json" >&2
 	exit 2
 fi
 if [[ "$URL" != *":$PORT"* ]]; then
@@ -748,7 +748,7 @@ alive() { curl -so /dev/null --max-time 3 -w '%{http_code}' "$URL" 2>/dev/null |
 local_db_url() {
 	python3 - "$ROOT" <<'PY' 2>/dev/null || true
 import json, sys, pathlib
-p = pathlib.Path(sys.argv[1]) / ".zcode" / "1c" / "contour.local.json"
+p = pathlib.Path(sys.argv[1]) / ".dsh" / "1c" / "contour.local.json"
 raw = json.loads(p.read_text(encoding="utf-8"))
 l1c = raw.get("1c_db") if isinstance(raw, dict) else {}
 if isinstance(l1c, dict):
@@ -1081,7 +1081,7 @@ if [[ $DBMODE == proxy && $MODE != stop ]]; then
 			_cand=$((_cand + 1))
 		done
 		if [[ $_ok -eq 0 ]]; then
-			echo "✗ свободного порта нет: $PORT–$((PORT + 9)) заняты — расчисти или задай 1c_db.url в .zcode/1c/contour.json (смена порта снимает дрейф local)" >&2
+			echo "✗ свободного порта нет: $PORT–$((PORT + 9)) заняты — расчисти или задай 1c_db.url в .dsh/1c/contour.json (смена порта снимает дрейф local)" >&2
 			exit 2
 		fi
 		# fd замка закрываем себе: у прокси наследованная копия держит
@@ -1141,14 +1141,14 @@ if [[ $DBMODE == proxy && $MODE != stop ]]; then
 		fi
 		echo "✓ прокси отвечает: $URL (pid $(cat "$PROXY_PIDFILE" 2>/dev/null))"
 		# фактический порт — в local-слой (единственный носитель факта, Т6;
-		# gitignored по правилу Т4). Читают его doctor/wire_config — следующий
-		# юнит; до того ZCode-сессии подключены к прежнему url: перенеси
-		# фактический url в 1c_db.url contour.json и перегенерируй config
+		# gitignored по правилу Т4). Читают его doctor и пресет DSH; живая
+		# сессия подключена к прежнему url: перезапусти сессию либо перенеси
+		# фактический url в 1c_db.url contour.json
 		python3 - "$ROOT" "$URL" "${LOCAL_DESIRED_URL:-}" <<'PY'
 import json, os, sys, pathlib
 root, url = pathlib.Path(sys.argv[1]), sys.argv[2]
 desired = sys.argv[3] or url
-p = root / ".zcode" / "1c" / "contour.local.json"
+p = root / ".dsh" / "1c" / "contour.local.json"
 data = {}
 try:
     raw = json.loads(p.read_text(encoding="utf-8"))
@@ -1170,7 +1170,7 @@ tmp = p.with_name(p.name + ".tmp")
 tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 os.replace(tmp, p)  # атомарно: читатели (doctor) не видят полуфайл
 PY
-		echo "• порт $PORT зафиксирован в .zcode/1c/contour.local.json"
+		echo "• порт $PORT зафиксирован в .dsh/1c/contour.local.json"
 	else
 		echo "✗ прокси не поднялся; смотри $PROXY_LOG" >&2
 		# диагностика, не арбитраж: владелец порта, если им оказался
@@ -1336,7 +1336,7 @@ if [[ ! -f "$EPF" ]]; then
 		echo "  Windows → MCP_Toolkit.epf, macOS → MCP_Toolkit_macos.epf;"
 		echo "  источник — build/ клона $TOOLKIT или релиз того же тега"
 		echo "  (github.com/ROCTUP/1c-mcp-toolkit/releases), либо явный"
-		echo "  1c_db.epf_path в .zcode/1c/contour.json"
+		echo "  1c_db.epf_path в .dsh/1c/contour.json"
 	} >&2
 	{ ls "$ROOT/tools/mcp/" 2>/dev/null | sed 's/^/  в tools\/mcp\/: /'; } || true
 	exit 2

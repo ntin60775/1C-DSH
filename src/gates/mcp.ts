@@ -6,10 +6,9 @@
  * меняющие данные или состояние сессии — нет. Прод-контур блокирует их до
  * эскалации, тест-контур пропускает, отсутствие признака считается продом.
  *
- * Признак контура: файл `contour` в раскладке проекта (канон `.dsh/1c`, затем
- * промежуточная `.dsh` и legacy `.zcode/1c`, `.zcode`) со словом
- * `test`/`prod`; ключ `contour:` в `v8project*.yaml` — только обратная
- * совместимость старых проектов.
+ * Признак контура: файл `contour` в раскладке проекта (канон `.dsh/1c`,
+ * затем промежуточная `.dsh`) со словом `test`/`prod`; ключ `contour:` в
+ * `v8project*.yaml` — только обратная совместимость старых проектов.
  *
  * Второй гард — stand-замок: `launch_client` не поднимает второй клиент на
  * файловую базу профиля.
@@ -55,8 +54,7 @@ function readText(path: string): string | null {
 }
 
 /**
- * Первый найденный файл раскладки: канон `.dsh/1c`, промежуточная `.dsh`,
- * legacy `.zcode/1c` и `.zcode`.
+ * Первый найденный файл раскладки: канон `.dsh/1c`, промежуточная `.dsh`.
  * @param root - корень дерева.
  * @param relative - путь внутри каталога раскладки.
  * @returns содержимое, путь файла и подпись раскладки либо `null`.
@@ -229,7 +227,7 @@ export function profileConnection(project: ContourProject | null, profile: strin
   }
   if (base === null || server) return null
   // Относительный `base` считается от каталога фактического файла профилей, а
-  // не от жёсткой раскладки: на legacy `.zcode` иначе разъедется ключ замка.
+  // не от жёсткой раскладки: иначе разъедется ключ замка.
   const absolute = base.startsWith('/') ? base : join(dirname(found.path), base)
   return `File=${resolvedPath(absolute)}`
 }
@@ -291,7 +289,7 @@ function blockMessage(
   project: ContourProject,
   contour: string,
 ): string {
-  const layout = contourPaths(project).layoutDir
+  const layout = contourPaths().layoutDir
   return [
     `Инструмент ${short} (сервер ${server}) меняет данные/состояние базы,`,
     `а контур проекта — ${contour} (mcp-unsafe-gate).`,
@@ -377,7 +375,7 @@ export function evaluatePre(
     state.audit(
       RULE,
       `${short} (${server}, ${project.root})`,
-      `эскалация из ${label ?? `${contourPaths(project).layoutDir}/mcp-write-allow.txt`}`,
+      `эскалация из ${label ?? `${contourPaths().layoutDir}/mcp-write-allow.txt`}`,
       'confirmed',
     )
     return { kind: 'allow', code: 'none' }

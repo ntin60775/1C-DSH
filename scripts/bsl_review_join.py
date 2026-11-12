@@ -32,9 +32,7 @@ from pathlib import Path
 SCHEMA = "bsl-review-join/1"
 DEFAULT_ROUTING = "../skills/1c-bsl-review-standards/references/routing.md"
 EXCEPTIONS_CANDIDATES = (".dsh/1c/standards-exceptions.yaml",
-                        ".dsh/standards-exceptions.yaml",
-                        ".zcode/1c/standards-exceptions.yaml",
-                        ".zcode/standards-exceptions.yaml")
+                        ".dsh/standards-exceptions.yaml")
 LOCATION_KEYS = ("location", "range", "span", "position")
 CURSOR_KEYS = ("cursor", "next_cursor")
 REPORT_CLASSES = ("query-performance", "metric")

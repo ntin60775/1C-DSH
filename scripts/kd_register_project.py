@@ -32,7 +32,7 @@ start_kd_rules.sh --stop && start_kd_rules.sh.
   python3 kd_register_project.py . --unregister   # убрать запись из станции
 
 Переменные: KD_RULES_STATION — путь станции (умолчание
-~/.local/share/1c-zcode/kd-rules-mcp); KD_RULES_PYTHON — интерпретатор с
+~/.local/share/1c-dsh/kd-rules-mcp); KD_RULES_PYTHON — интерпретатор с
 pyyaml (умолчание .venv станции). Скрипту нужен pyyaml: если текущий python
 его не имеет, скрипт перезапускается интерпретатором станции.
 """
@@ -43,10 +43,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-DEFAULT_STATION = Path.home() / ".local" / "share" / "1c-zcode" / "kd-rules-mcp"
+DEFAULT_STATION = Path.home() / ".local" / "share" / "1c-dsh" / "kd-rules-mcp"
 
 STUB_HEADER = (
-    "# Проекты подключает kd_register_project.py из скриптов контура 1c-zcode;\n"
+    "# Проекты подключает kd_register_project.py из скриптов контура dsh-1c-contour;\n"
     "# поля (bases, rules_dir, writable_extensions) — projects.example.yaml рядом.\n"
 )
 

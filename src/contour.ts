@@ -18,25 +18,26 @@ export const ESCALATION_FILE_NAME = 'unica-gate-escalations.txt'
 
 /** Канонические пути раскладки проекта для сообщений гейта. */
 export interface ContourPaths {
-  /** Каталог раскладки проекта: `.dsh/1c` либо legacy `.zcode/1c`. */
+  /** Каталог раскладки проекта: канон `.dsh/1c`. */
   readonly layoutDir: string
   /** Путь allowlist'а эскалаций в канонической раскладке. */
   readonly escalationFile: string
-  /** Скрипт инициализации ворктри в канонической раскладке. */
+  /** Скрипт инициализации ворктри: канон `$DSH_1C_ROOT/scripts` пакета. */
   readonly initWorktreeScript: string
 }
 
 /**
- * Пути раскладки проекта: канон `.dsh/1c` по умолчанию, legacy `.zcode/1c` пока читается.
- * @param project - найденный проект контура либо `null` вне проекта.
+ * Пути раскладки проекта: канон `.dsh/1c`; скрипты живут в пакете контура
+ * (`$DSH_1C_ROOT`), проект их не вендорит. Раскладка одна — путь от
+ * проекта не зависит.
  * @returns пути для сообщений гейта и поиска файлов.
  */
-export function contourPaths(project: ContourProject | null): ContourPaths {
-  const layoutDir = layoutDirOf(project)
+export function contourPaths(): ContourPaths {
+  const layoutDir = layoutDirOf()
   return {
     layoutDir,
     escalationFile: `${layoutDir}/${ESCALATION_FILE_NAME}`,
-    initWorktreeScript: `${layoutDir}/scripts/init_worktree.sh`,
+    initWorktreeScript: '$DSH_1C_ROOT/scripts/init_worktree.sh',
   }
 }
 
@@ -370,7 +371,7 @@ export interface EscalationReport {
  * Прочитать allowlist эскалаций для дерева цели.
  *
  * Порядок поиска: дерево цели, затем каталог сессии (ворктри против
- * основного дерева). Внутри дерева — `.dsh` первым, legacy `.zcode` вторым.
+ * основного дерева). Внутри дерева — `.dsh/1c` первым, `.dsh` вторым.
  * Неподошедшие строки не выбрасываются молча: они попадают в разбор.
  * @param targetRoot - дерево целевого файла.
  * @param sessionCwd - каталог сессии.
@@ -385,7 +386,7 @@ export function escalationEntries(targetRoot: string, sessionCwd: string): Escal
         raw = readFileSync(path, 'utf8')
       } catch {
         // Файла нет — смотрим следующую раскладку. Файл есть, но не читается —
-        // это несовпадение, а не отсутствие: молча уступать legacy-файлу нельзя.
+        // это несовпадение, а не отсутствие: молча уступать другой раскладке нельзя.
         if (!existsSync(path)) continue
         return {
           found: true,

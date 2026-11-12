@@ -5,17 +5,17 @@
   bundle  — пакет `dsh-1c-contour` стоит в профиле DSH, строки его патча
             (плагин и пресет) применены, сборка `lib/` на месте;
   preset  — пресет `1c` объявлен в патче bundle и выбран по умолчанию;
-  skills  — 15 контурных скиллов и 4 команды в пакете, скиллы Юники на
+  skills  — 15 контурных скиллов и 3 команды в пакете, скиллы Юники на
             машине, пользовательских копий-затенений нет;
   mcp     — записи `unica`, `1c-testpilot`, `1c-db` (+ инстансы), `1c-kd`
             из проектных входов и их живость;
-  layout  — раскладка проекта: канон `.dsh/1c` либо legacy `.zcode/1c`;
+  layout  — раскладка проекта: канон `.dsh/1c` и промежуточная `.dsh`;
   project — `v8project.yaml`, платформа, обязательный минимум топологии,
             `build/out`, движок стиля, запись в реестре проектов;
   state   — корень состояния контура, замки инфобаз, журнал гейтов.
 
-Реестр проектов (`projects.json` в корне состояния) создаёт мигратор;
-doctor сверяет запись с фактом и дописывает в неё свой результат.
+Реестр проектов (`projects.json` в корне состояния) ведётся при переводе
+парка; doctor сверяет запись с фактом и дописывает в неё свой результат.
 
 Выход: 0 — FAIL нет (WARN допустимы), 1 — есть FAIL. `--json` печатает
 только JSON: у каждого раздела есть `status` (`ok`/`warn`/`fail`) и `code`
@@ -41,14 +41,15 @@ from contour_paths import (  # noqa: E402
 	LAYOUT_DIRS,
 	REGISTRY,
 	actual_db_url,
+	channel_url,
 	find_input,
 	kd_url,
 	load_json,
+	parse_instances_at,
 	read_text,
 	state_root,
 	update_registry,
 )
-from wire_config import channel_url, parse_instances_at  # noqa: E402
 
 BUNDLE = "dsh-1c-contour"
 PLUGIN_ROW = "1c-contour"
@@ -63,7 +64,7 @@ CONTOUR_SKILLS = {
 	"1c-test-contour", "1c-testpilot", "1c-unica-artifacts", "1c-unica-worktree",
 	"kd2-exchange-pitfalls", "kd2-rules-build", "kd3-rules",
 }
-CONTOUR_COMMANDS = {"1c-bootstrap", "1c-doctor", "1c-migrate", "1c-test"}
+CONTOUR_COMMANDS = {"1c-bootstrap", "1c-doctor", "1c-test"}
 SECTION_ORDER = ("bundle", "preset", "skills", "mcp", "layout", "project", "state")
 TAGS = {"ok": "OK  ", "warn": "WARN", "fail": "FAIL"}
 
@@ -402,7 +403,7 @@ def check_preset(report: Report, dsh_home: Path, bundle: dict):
 # ── 3. skills ───────────────────────────────────────────────────────────────
 
 def check_skills(report: Report, dsh_home: Path, bundle: dict, root: Path):
-	"""15 контурных скиллов, 4 команды, скиллы Юники, затенения."""
+	"""15 контурных скиллов, 3 команды, скиллы Юники, затенения."""
 	if not bundle:
 		report.fail("skills", "скиллы не проверены: пакет bundle не найден",
 		            code="skills.unchecked")
@@ -798,7 +799,7 @@ def check_mcp(report: Report, root: Path, no_ping: bool) -> dict:
 		                "url": project["dbUrl"], "state": "down", "detail": detail})
 
 	station = Path(os.environ.get("KD_RULES_STATION")
-	               or Path.home() / ".local" / "share" / "1c-zcode" / "kd-rules-mcp")
+	               or Path.home() / ".local" / "share" / "1c-dsh" / "kd-rules-mcp")
 	server = {"name": "1c-kd", "transport": "streamable-http", "url": project["kdUrl"]}
 	if not (station / "pyproject.toml").is_file():
 		report.warn("mcp", f"1c-kd: станция правил обмена не установлена ({station}) — "
@@ -823,65 +824,26 @@ def check_mcp(report: Report, root: Path, no_ping: bool) -> dict:
 
 # ── 5. layout ───────────────────────────────────────────────────────────────
 
-def migrator_check(root: Path):
-	"""`migrate_from_zcode.py --check`: (код, вывод); скрипта нет — (None, '')."""
-	script = Path(__file__).resolve().parent / "migrate_from_zcode.py"
-	if not script.is_file():
-		return None, ""
-	try:
-		done = subprocess.run([sys.executable, str(script), str(root), "--check"],
-		                      capture_output=True, text=True, timeout=120)
-	except subprocess.TimeoutExpired:
-		return None, "мигратор не ответил за 120 с"
-	return done.returncode, (done.stdout + done.stderr).strip()
-
-
 def check_layout(report: Report, root: Path) -> None:
-	"""Канон `.dsh/1c` и legacy `.zcode/1c`: что найдено и не разошлось ли."""
-	found, canon, legacy = {}, [], []
+	"""Раскладки DSH (канон `.dsh/1c`, промежуточная `.dsh`): что найдено."""
+	found = {}
 	for relative in INPUTS:
 		for name in LAYOUT_DIRS:
 			path = root / name / relative
 			if not path.is_file():
 				continue
 			found.setdefault(relative, f"{name}/{relative}")
-			(legacy if name.startswith(".zcode") else canon).append(relative)
-	canon, legacy = sorted(set(canon)), sorted(set(legacy))
+			break
 	layout = {"found": found, "missing": [rel for rel in INPUTS if rel not in found],
-	          "canon": len(canon), "legacy": len(legacy), "dir": None}
+	          "canon": len(found), "dir": None}
 	if "contour.json" not in found:
 		report.warn("layout", "проектные входы не найдены: ни .dsh/1c/contour.json, ни "
-		            ".zcode/1c — контур не развёрнут (команда /1c-bootstrap)",
+		            ".dsh — контур не развёрнут (команда /1c-bootstrap)",
 		            code="layout.missing")
-	elif not legacy:
+	else:
 		layout["dir"] = ".dsh/1c"
 		report.ok("layout", f"раскладка .dsh/1c: {len(found)} входов из {len(INPUTS)} "
 		          f"({', '.join(sorted(found))})")
-	elif not canon:
-		layout["dir"] = ".zcode/1c"
-		report.warn("layout", f"проект на legacy-раскладке .zcode/1c ({len(legacy)} "
-		            f"входов) — канон .dsh/1c; перевод: scripts/migrate_from_zcode.py",
-		            code="layout.legacy")
-	else:
-		layout["dir"] = ".dsh/1c"
-		code, output = migrator_check(root)
-		tail = output.splitlines()[-1] if output else ""
-		if code == 0:
-			report.ok("layout", f"канон .dsh/1c совпадает с legacy-слоем "
-			          f"({len(canon)} входов в каноне, мигратор --check: 0)")
-		elif code == 1:
-			report.warn("layout", "мигратор: канон не полон — часть входов осталась "
-			            f"только в .zcode ({tail})", code="layout.partial")
-		elif code == 2:
-			report.fail("layout", "мигратор: канон переведён с расхождением — "
-			            f"правки разъехались ({tail})", code="layout.diverged")
-		elif code is None:
-			report.warn("layout", f"сверка с legacy не выполнена: "
-			            f"{tail or 'migrate_from_zcode.py не найден'}",
-			            code="layout.check-failed")
-		else:
-			report.warn("layout", f"migrate_from_zcode.py --check не отработал "
-			            f"(код {code}): {tail[:200]}", code="layout.check-failed")
 	report.sections["layout"].update(layout)
 
 
@@ -1094,23 +1056,23 @@ def registry_path() -> Path:
 	return state_root()[0] / REGISTRY
 
 
-# Раскладка записи реестра по каталогу раскладки из канон-таблицы.
-REGISTRY_LAYOUT = {LAYOUT_DIRS[0]: "dsh", LAYOUT_DIRS[2]: "zcode"}
+# Раскладка записи реестра: канон DSH (legacy-раскладки сняты в Т10).
+REGISTRY_LAYOUT = {LAYOUT_DIRS[0]: "dsh"}
 
 
 def check_registry(report: Report, root: Path) -> None:
 	"""Запись проекта в реестре: есть и совпадает с фактом.
 
-	Реестр создаёт мигратор; отсутствие записи — WARN (парк переводится
-	по одному), расхождение записи с фактом — WARN: факт главнее, запись
-	обновит мигратор. Версия в записи — на момент перевода, не пин.
+	Реестр ведётся при переводе парка; отсутствие записи — WARN,
+	расхождение записи с фактом — WARN: факт главнее, запись обновляет
+	оператор. Версия в записи — на момент перевода, не пин.
 	Машинное поле `registry` раздела project: ok / missing / diverged /
 	unreadable.
 	"""
 	path = registry_path()
 	if not path.is_file():
 		report.warn("project", f"реестр проектов отсутствует ({path}) — "
-		            "запись создаёт мигратор", code="project.registry-missing",
+		            "запись создаёт перевод проекта в парк", code="project.registry-missing",
 		            registry="missing")
 		return
 	data, error = load_json(path)
@@ -1122,7 +1084,7 @@ def check_registry(report: Report, root: Path) -> None:
 	entry = data["projects"].get(str(root))
 	if not isinstance(entry, dict):
 		report.warn("project", f"проекта нет в реестре ({path}) — запись "
-		            "создаёт мигратор", code="project.registry-missing",
+		            "создаёт перевод проекта в парк", code="project.registry-missing",
 		            registry="missing")
 		return
 	layout_dir = report.sections["layout"].get("dir")
@@ -1131,13 +1093,18 @@ def check_registry(report: Report, root: Path) -> None:
 	if entry.get("path") != str(root):
 		problems.append("путь")
 	if actual is None:
+		if entry.get("layout") == "none":
+			# Контур не развёрнут: запись честно несёт none — подтверждаем.
+			report.ok("project", "реестр: контур не развёрнут, запись подтверждает "
+			            "(раскладка none)", registry="ok")
+			return
 		problems.append("раскладка не определена (входы контура не найдены)")
 	elif entry.get("layout") != actual:
 		problems.append("раскладка")
 	if problems:
 		report.warn("project", f"реестр разошёлся с фактом: "
-		            f"{', '.join(problems)} — факт главнее, запись обновит "
-		            "мигратор", code="project.registry-diverged",
+		            f"{', '.join(problems)} — факт главнее, обнови запись "
+		            "реестра", code="project.registry-diverged",
 		            registry="diverged")
 		return
 	report.ok("project", f"реестр: запись совпадает с фактом (раскладка "
@@ -1187,17 +1154,13 @@ def check_project(report: Report, root: Path, project: dict) -> None:
 
 
 # ── 7. state ────────────────────────────────────────────────────────────────
-# Корень состояния — contour_paths.state_root (общий с мигратором).
+# Корень состояния — contour_paths.state_root (общий слой раскладок).
 
 
 def check_state(report: Report) -> None:
 	"""Состояние гейтов: корень, замки инфобаз и стендов, журнал решений."""
 	root, source = state_root()
 	data = {"dir": str(root), "source": source}
-	if source == "ZCODE_1C_STATE_DIR":
-		report.warn("state", f"состояние читается из legacy-переменной "
-		            f"ZCODE_1C_STATE_DIR ({root}) — переезд на DSH_1C_STATE_DIR",
-		            code="state.legacy-env")
 	locks = sorted((root / "ib-locks").glob("*.json")) if (root / "ib-locks").is_dir() else []
 	stand_locks = sorted((root / "stand-locks").glob("*.json")) \
 		if (root / "stand-locks").is_dir() else []

@@ -126,15 +126,15 @@ toolkit = tmp / "toolkit"
 env5 = dict(os.environ)
 env5["HOME"] = str(fhome)
 env5["ONEC_MCP_TOOLKIT_DIR"] = str(toolkit)
-env5["ZCODE_1C_STATE_DIR"] = str(tmp / "state")  # stand-замки стартов — в tmp
+env5["DSH_1C_STATE_DIR"] = str(tmp / "state")  # stand-замки стартов — в tmp
 # Бюджет ожидания клиента: 2 с под параллельной нагрузкой истекали,
 # старт уходил в heal-ветку прокси и составная проверка статей падала
 # (флейк панели Т8). 10 с — запас груженой машины; мок локальный.
 env5["WAIT_DEADLINE"] = "10"
 env5["ONEC_PLATFORM"] = str(fake_sh)
 # изоляция state и для процесса теста: acquire_stand_lock (критерий 3)
-# должен писать в тот же каталог, что читает старт (env5["ZCODE_1C_STATE_DIR"])
-os.environ["ZCODE_1C_STATE_DIR"] = str(tmp / "state")
+# должен писать в тот же каталог, что читает старт (env5["DSH_1C_STATE_DIR"])
+os.environ["DSH_1C_STATE_DIR"] = str(tmp / "state")
 
 
 def contour_t5(root, port, conn_rel):
@@ -142,9 +142,9 @@ def contour_t5(root, port, conn_rel):
     Mono-резолв скрипта (resolve_infobase_connection) вернёт File=<abs>."""
     root = root.resolve()
     root.mkdir(parents=True, exist_ok=True)
-    (root / ".zcode" / "1c").mkdir(parents=True, exist_ok=True)
+    (root / ".dsh" / "1c").mkdir(parents=True, exist_ok=True)
     (root / "tools" / "mcp").mkdir(parents=True, exist_ok=True)
-    (root / ".zcode" / "1c" / "contour.json").write_text(
+    (root / ".dsh" / "1c" / "contour.json").write_text(
         f'{{"1c_db": {{"epf_path": "tools/mcp/Mock.epf",'
         f' "url": "http://127.0.0.1:{port}/mcp"}}}}',
         encoding="utf-8")
@@ -316,7 +316,7 @@ try:
     # ── критерий 2 (инстансы): сирота инстанса — стартом инстанса ──
     root4 = contour_t5(tmp / "t5d", free_port(), "build/ib/main")
     roots.append(root4)
-    (root4 / ".zcode" / "1c" / "db-instances.yaml").write_text(
+    (root4 / ".dsh" / "1c" / "db-instances.yaml").write_text(
         "instances:\n"
         "  solo1:\n    channel: solo1\n    connection: File=build/ib/s1\n"
         "    user: si\n    password: pi\n",

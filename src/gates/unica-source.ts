@@ -429,7 +429,7 @@ export function evaluatePre(
     if (target === null) return { kind: 'allow', code: 'none' }
     effective = target
   }
-  const paths = contourPaths(effective)
+  const paths = contourPaths()
 
   const unica = unicaCall(call, effective)
   if (unica !== null) {

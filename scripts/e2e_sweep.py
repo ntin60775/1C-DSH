@@ -24,7 +24,7 @@ run_e2e.sh сам находит остатки по маркеру, удаля�
                   клиент не подключен.
 
 Опции: --marker S (по умолчанию Е2Е-), --url U (по умолчанию из
-.zcode/1c/contour.json 1c_db.url, иначе http://127.0.0.1:6003/mcp; url
+.dsh/1c/contour.json 1c_db.url, иначе http://127.0.0.1:6003/mcp; url
 может нести ?channel=<канал> — мультистенд #37: прогон на инстансе
 идёт в его канал, run_e2e.sh --instance передаёт такой url сам, ЖР-сверка
 workflow идёт в тот же канал),
@@ -261,7 +261,7 @@ def proxy_url(root: Path, explicit: str) -> str:
 		return env
 	data = {}
 	try:
-		data = json.loads((root / ".zcode" / "1c" / "contour.json")
+		data = json.loads((root / ".dsh" / "1c" / "contour.json")
 		                  .read_text(encoding="utf-8"))
 	except (OSError, json.JSONDecodeError):
 		pass

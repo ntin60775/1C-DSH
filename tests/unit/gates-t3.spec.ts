@@ -5,7 +5,7 @@
  * Здесь то, чего у эталона нет или что он проверял только на legacy-раскладке:
  * приоритет `.dsh`, override поверхности, порт чекера стиля.
  *
- * invariant: новая раскладка `.dsh` читается первой, legacy `.zcode` — вторым.
+ * invariant: канон `.dsh/1c` читается первым, промежуточная `.dsh` — второй.
  * @module tests/unit/gates-t3.spec
  */
 
@@ -46,9 +46,9 @@ describe('mcp: раскладка и поверхность', () => {
     rmSync(fixture.root, { recursive: true, force: true })
   })
 
-  it('.dsh/contour перекрывает legacy .zcode/contour', () => {
+  it('.dsh/1c/contour перекрывает промежуточную .dsh/contour', () => {
     const fixture = createFixture({
-      write: { 'tree/.zcode/contour': 'test\n', 'tree/.dsh/contour': 'prod\n' },
+      write: { 'tree/.dsh/contour': 'test\n', 'tree/.dsh/1c/contour': 'prod\n' },
     })
     expect(contourOf(resolveProject(fixture.tree))).toBe('prod')
     rmSync(fixture.root, { recursive: true, force: true })
@@ -76,7 +76,7 @@ describe('mcp: раскладка и поверхность', () => {
   it('серверный профиль в строку подключения не разрешается', () => {
     const fixture = createFixture({
       write: {
-        'tree/.zcode/testpilot/profiles.yaml': 'profiles:\n  main:\n    base: db\n    server: true\n  file:\n    base: $TMP/tree/db\n',
+        'tree/.dsh/testpilot/profiles.yaml': 'profiles:\n  main:\n    base: db\n    server: true\n  file:\n    base: $TMP/tree/db\n',
       },
     })
     const project = resolveProject(fixture.tree)
@@ -116,8 +116,8 @@ describe('module: разборы', () => {
   it('эскалация читается из .dsh первой', () => {
     const fixture = createFixture({
       write: {
-        'tree/.zcode/bsl-module-gate-escalations.txt': 'directive-in-common-module:старое\n',
-        'tree/.dsh/bsl-module-gate-escalations.txt': 'directive-in-common-module:новое\n',
+        'tree/.dsh/bsl-module-gate-escalations.txt': 'directive-in-common-module:старое\n',
+        'tree/.dsh/1c/bsl-module-gate-escalations.txt': 'directive-in-common-module:новое\n',
       },
     })
     const skips = escalationSkips(resolveProject(fixture.tree))
@@ -197,12 +197,12 @@ describe('порт чекера стиля', () => {
 
 describe('правки ревью-панели', () => {
   it('относительный base профиля считается от каталога фактического файла', () => {
-    // Legacy-раскладка: profiles.yaml лежит в .zcode, значит и base — оттуда.
+    // Промежуточная раскладка: profiles.yaml лежит в .dsh, значит и base — оттуда.
     const fixture = createFixture({
-      write: { 'tree/.zcode/testpilot/profiles.yaml': 'profiles:\n  main:\n    base: db\n' },
+      write: { 'tree/.dsh/testpilot/profiles.yaml': 'profiles:\n  main:\n    base: db\n' },
     })
     const project = resolveProject(fixture.tree)
-    expect(profileConnection(project, 'main')).toBe(`File=${fixture.tree}/.zcode/testpilot/db`)
+    expect(profileConnection(project, 'main')).toBe(`File=${fixture.tree}/.dsh/testpilot/db`)
     rmSync(fixture.root, { recursive: true, force: true })
   })
 

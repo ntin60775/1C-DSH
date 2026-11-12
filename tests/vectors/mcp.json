@@ -28,7 +28,7 @@
     "gate": "mcp",
     "fixture": {
       "write": {
-        "tree/.zcode/contour": "test\n"
+        "tree/.dsh/1c/contour": "test\n"
       }
     },
     "steps": [
@@ -47,12 +47,12 @@
     ]
   },
   {
-    "id": "mcp-legacy-contour-allows",
-    "describe": "legacy .zcode/contour со словом test работает",
+    "id": "mcp-flat-contour-allows",
+    "describe": "промежуточная .dsh/contour со словом test работает",
     "gate": "mcp",
     "fixture": {
       "write": {
-        "tree/.zcode/contour": "test\n"
+        "tree/.dsh/contour": "test\n"
       }
     },
     "steps": [
@@ -76,7 +76,7 @@
     "gate": "mcp",
     "fixture": {
       "write": {
-        "tree/.zcode/mcp-write-allow.txt": "# разово\nexecute_code\n"
+        "tree/.dsh/1c/mcp-write-allow.txt": "# разово\nexecute_code\n"
       }
     },
     "steps": [
@@ -100,7 +100,7 @@
     "gate": "mcp",
     "fixture": {
       "write": {
-        "tree/.zcode/mcp-write-allow.txt": "*\n"
+        "tree/.dsh/1c/mcp-write-allow.txt": "*\n"
       }
     },
     "steps": [
@@ -181,7 +181,7 @@
     "gate": "mcp",
     "fixture": {
       "write": {
-        "tree/.zcode/testpilot/profiles.yaml": "profiles:\n  main:\n    base: $TMP/tree/db\n"
+        "tree/.dsh/1c/testpilot/profiles.yaml": "profiles:\n  main:\n    base: $TMP/tree/db\n"
       }
     },
     "seedStandLock": {

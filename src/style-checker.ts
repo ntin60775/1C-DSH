@@ -26,13 +26,11 @@ export const ENGINE_ENV = '1C_STYLE_ENGINE'
 /** Имя внешнего движка в PATH. */
 export const ENGINE_NAME = 'bsl-style-engine'
 
-/** Скрипты пака в порядке приоритета: новая раскладка, затем legacy. */
+/** Скрипты пака в порядке приоритета: канон и промежуточные раскладки DSH. */
 const PACK_CHECKERS: readonly string[] = [
   '.dsh/1c/skills/1c-bsl-code-style/scripts/bsl_style_check.py',
   '.dsh/skills/1c-bsl-code-style/scripts/bsl_style_check.py',
-  '.zcode/skills/1c-bsl-code-style/scripts/bsl_style_check.py',
   '.dsh/style/scripts/bsl_style_check.py',
-  '.zcode/style/scripts/bsl_style_check.py',
 ]
 
 /** Найденный способ проверки. */

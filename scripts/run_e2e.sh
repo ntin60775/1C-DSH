@@ -2,10 +2,10 @@
 # run_e2e.sh — автономный e2e-прогон 1С: pytest + Python API 1c-testpilot.
 #
 # Использование: run_e2e.sh [--instance ИМЯ] [профиль] [каталог-тестов]
-#   --instance — инстанс мультистенда из .zcode/1c/db-instances.yaml
+#   --instance — инстанс мультистенда из .dsh/1c/db-instances.yaml
 #                (мультистенд #37); без флага берётся из env E2E_INSTANCE
 #                или поля instance профиля; нет нигде — main;
-#   профиль    — имя из .zcode/testpilot/profiles.yaml (по умолчанию main);
+#   профиль    — имя из .dsh/1c/testpilot/profiles.yaml (по умолчанию main);
 #   каталог    — по умолчанию tests/e2e.
 #
 # Инстанс адресует постпроверку и ЖР-сверку в его канал: свип получает
@@ -26,8 +26,8 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 # Чужой корень = громкий отказ: git rev-parse из чужого репо успешен молча,
 # а профили/база/гейты от него — не те (регрессия publish_ib 2026-10-05)
-if [ ! -f "$ROOT/v8project.yaml" ] && [ ! -d "$ROOT/.zcode/1c" ]; then
-	echo "✗ корень $ROOT не похож на проект контура (нет v8project.yaml и .zcode/1c/) — запусти из корня проекта" >&2
+if [ ! -f "$ROOT/v8project.yaml" ] && [ ! -d "$ROOT/.dsh/1c" ]; then
+	echo "✗ корень $ROOT не похож на проект контура (нет v8project.yaml и .dsh/1c/) — запусти из корня проекта" >&2
 	exit 2
 fi
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -55,7 +55,7 @@ fi
 
 "$PY" -c 'import pytest' 2>/dev/null || "$PY" -m pip install -q 'pytest>=8,<10'
 
-PROFILES="$ROOT/.zcode/testpilot/profiles.yaml"
+PROFILES="$ROOT/.dsh/1c/testpilot/profiles.yaml"
 [ -f "$PROFILES" ] || { echo "✗ нет $PROFILES — прогони bootstrap контура" >&2; exit 2; }
 [ -d "$ROOT/$TESTS" ] || [ -f "$ROOT/$TESTS" ] || {
 	echo "✗ нет e2e-тестов: $TESTS" >&2
@@ -126,16 +126,16 @@ if [ -n "$INSTANCE" ]; then
 	eval "$(SELF="$SELF_DIR" ROOT="$ROOT" INSTANCE="$INSTANCE" python3 - <<'PY'
 import os, shlex, sys, pathlib
 sys.path.insert(0, os.environ["SELF"])
-import wire_config as wc
+import contour_paths as cp
 root, name = pathlib.Path(os.environ["ROOT"]), os.environ["INSTANCE"]
-path = root / ".zcode" / "1c" / "db-instances.yaml"
-if not path.is_file():
-    print("E2E_INSTANCE_FAIL=" + shlex.quote(f"нет {path} — ленивый инит: "
-          "создай по образцу .zcode/1c/templates/db-instances.example.yaml "
+hit = cp.find_input(root, "db-instances.yaml")
+if hit is None:
+    print("E2E_INSTANCE_FAIL=" + shlex.quote("нет db-instances.yaml в раскладке проекта — ленивый инит: "
+          "создай .dsh/1c/db-instances.yaml по образцу $DSH_1C_ROOT/templates/db-instances.example.yaml "
           "(скилл 1c-db-data)"))
     sys.exit(0)
 try:
-    rec = {i["name"]: i for i in wc.parse_instances(root)}.get(name)
+    rec = {i["name"]: i for i in cp.parse_instances_at(hit[0])}.get(name)
 except ValueError as e:
     print("E2E_INSTANCE_FAIL=" + shlex.quote(f"db-instances.yaml: {e}"))
     sys.exit(0)
@@ -143,9 +143,18 @@ if rec is None:
     print("E2E_INSTANCE_FAIL=" + shlex.quote(
         f"инстанса {name} нет в db-instances.yaml — фолбэка на main нет"))
     sys.exit(0)
+def read_json(rel):
+    found = cp.find_input(root, rel)
+    if found is None:
+        return {}
+    data, err = cp.load_json(found[0])
+    if err:
+        print(f"WARN: {err} — адрес 1c-db взят по умолчанию", file=sys.stderr)
+    return data or {}
 channel = rec["channel"] or rec["name"]
+base = cp.actual_db_url(read_json("contour.json"), read_json("contour.local.json"))
 print("E2E_CHANNEL=" + shlex.quote(channel))
-print("E2E_DB_URL=" + shlex.quote(wc.channel_url(wc.actual_db_url(root), channel)))
+print("E2E_DB_URL=" + shlex.quote(cp.channel_url(base, channel)))
 PY
 )"
 	if [ -n "${E2E_INSTANCE_FAIL:-}" ]; then

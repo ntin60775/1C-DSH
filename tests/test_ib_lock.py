@@ -34,14 +34,11 @@ import ib_lock  # noqa: E402
 def main() -> int:
 	with tempfile.TemporaryDirectory(prefix="ib-lock-") as tmp:
 		os.environ["DSH_1C_STATE_DIR"] = tmp
-		os.environ.pop("ZCODE_1C_STATE_DIR", None)
 		conn = "Srvr=host;Ref=erp;Usr=u;Pwd=secret;"
 
-		# ── корень состояния: DSH-переменная старше legacy ──
-		os.environ["ZCODE_1C_STATE_DIR"] = tmp + "-legacy"
-		check("корень: DSH_1C_STATE_DIR приоритетнее legacy",
+		# ── корень состояния: DSH-переменная (spec: решение 7, Т10) ──
+		check("корень: DSH_1C_STATE_DIR задаёт корень состояния",
 		      str(ib_lock.state_root()) == tmp, str(ib_lock.state_root()))
-		os.environ.pop("ZCODE_1C_STATE_DIR", None)
 
 		# ── литералы ключей: заморожены python-писателем, TS-сторона
 		# сверяет тот же литерал (tests/unit/lock.spec.ts) — дрейф любой

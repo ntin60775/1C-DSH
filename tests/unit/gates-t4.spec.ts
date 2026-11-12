@@ -7,19 +7,22 @@
  *
  * spec: Т4 — «шесть гейтов на TS»; критерии — deny raw-режима, блок третьего
  * повтора, подсказка ворктри, уборка замка, контекст старта, обе ветки kd.
+ * spec: Т10 — станция КД: url только из contour.json, скрипт — канон пакета
+ * (`$DSH_1C_ROOT`), каталог станции `1c-dsh`, шов `KD_START_SCRIPT`.
  * @module tests/unit/gates-t4.spec
  */
 
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
 import type { GateCall, GateState } from '../../src/contract.js'
 import { evaluatePre as anonPre, scanText } from '../../src/gates/anon.js'
-import { ensureKdStation, kdUrl, startScript, stationAlive } from '../../src/gates/kd-session-start.js'
+import { ensureKdStation, kdUrl, startScript, stationAlive, stationDir } from '../../src/gates/kd-session-start.js'
 import { evaluatePre as retryPre, observeResult as retryResult } from '../../src/gates/retry.js'
 import { cleanSessionState } from '../../src/gates/session-clean.js'
 import { sessionContext } from '../../src/gates/session-context.js'
@@ -27,6 +30,9 @@ import { evaluatePost as worktreePost, extractPath } from '../../src/gates/workt
 import { resolveProject } from '../../src/paths.js'
 import { createGateState } from '../../src/state.js'
 import { createFixture } from '../helpers/fixture.js'
+
+/** Корень репозитория: канон пакета для стартового скрипта станции. */
+const REPO_ROOT = new URL('../..', import.meta.url).pathname
 
 /** Корни временных деревьев, которые надо снести после теста. */
 const roots: string[] = []
@@ -310,40 +316,40 @@ describe('session_context: где сессия', () => {
 })
 
 describe('kd_session_start: пробуждение станции', () => {
-  it('URL берётся из contour.json, затем из config.json', () => {
+  it('URL берётся из contour.json; без него — пусто', () => {
     const fixture = fixtureOf({ contour: { '1c_kd': { url: 'http://contour/mcp' } } })
-    expect(kdUrl(resolveProject(fixture.tree), fixture.tree)).toBe('http://contour/mcp')
-    const plain = fixtureOf({ write: { 'tree/.zcode/config.json': '{"mcp":{"servers":{"1c-kd":{"url":"http://cfg/mcp"}}}}' } })
-    expect(kdUrl(resolveProject(plain.tree), plain.tree)).toBe('http://cfg/mcp')
+    expect(kdUrl(resolveProject(fixture.tree))).toBe('http://contour/mcp')
     const none = fixtureOf()
-    expect(kdUrl(resolveProject(none.tree), none.tree)).toBe('')
+    expect(kdUrl(resolveProject(none.tree))).toBe('')
+    expect(kdUrl(null)).toBe('')
   })
 
-  it('скрипт старта ищется в .dsh, затем в .zcode', () => {
-    const dsh = fixtureOf()
-    const dshScript = join(dsh.tree, '.dsh', '1c', 'scripts', 'start_kd_rules.sh')
-    mkdirSync(join(dsh.tree, '.dsh', '1c', 'scripts'), { recursive: true })
-    writeFileSync(dshScript, '#!/bin/sh\n', 'utf8')
-    expect(startScript(dsh.tree)).toBe(dshScript)
-    const legacy = fixtureOf()
-    const legacyScript = join(legacy.tree, '.zcode', '1c', 'scripts', 'start_kd_rules.sh')
-    mkdirSync(join(legacy.tree, '.zcode', '1c', 'scripts'), { recursive: true })
-    writeFileSync(legacyScript, '#!/bin/sh\n', 'utf8')
-    expect(startScript(legacy.tree)).toBe(legacyScript)
+  it('скрипт старта — канон пакета контура, переопределяется KD_START_SCRIPT', () => {
+    const packageScript = startScript({})
+    expect(packageScript).toBe(join(REPO_ROOT, 'scripts', 'start_kd_rules.sh'))
+    const custom = fixtureOf()
+    const customScript = join(custom.root, 'kd-start.sh')
+    writeFileSync(customScript, '#!/bin/sh\n', 'utf8')
+    expect(startScript({ KD_START_SCRIPT: customScript })).toBe(customScript)
+    expect(startScript({ KD_START_SCRIPT: join(custom.root, 'absent.sh') })).toBeNull()
+  })
+
+  it('каталог станции по умолчанию — 1c-dsh, переопределяется KD_RULES_STATION', () => {
+    expect(stationDir({})).toBe(join(homedir(), '.local', 'share', '1c-dsh', 'kd-rules-mcp'))
+    expect(stationDir({ KD_RULES_STATION: '/tmp/station' })).toBe('/tmp/station')
   })
 
   it('спящая станция поднимается, живая — нет', async () => {
-    const fixture = fixtureOf({ write: { 'tree/.zcode/config.json': '{"mcp":{"servers":{"1c-kd":{"url":"http://127.0.0.1:9/mcp"}}}}' } })
+    const fixture = fixtureOf({ contour: { '1c_kd': { url: 'http://127.0.0.1:9/mcp' } } })
     const station = join(fixture.root, 'station')
     mkdirSync(station, { recursive: true })
     writeFileSync(join(station, 'pyproject.toml'), '[project]\nname = "kd"\n', 'utf8')
     const marker = join(fixture.root, 'wake.txt')
-    const script = join(fixture.tree, '.dsh', '1c', 'scripts', 'start_kd_rules.sh')
-    mkdirSync(join(fixture.tree, '.dsh', '1c', 'scripts'), { recursive: true })
+    const script = join(fixture.root, 'kd-start.sh')
     writeFileSync(script, `#!/bin/sh\necho "$@" > "${marker}"\n`, 'utf8')
     const env = { ...process.env, KD_RULES_STATION: station }
 
-    expect(await ensureKdStation(resolveProject(fixture.tree), fixture.tree, env)).toBe(true)
+    expect(await ensureKdStation(resolveProject(fixture.tree), { ...env, KD_START_SCRIPT: script })).toBe(true)
     for (let attempt = 0; attempt < 40 && !existsSync(marker); attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 50))
     }
@@ -358,19 +364,30 @@ describe('kd_session_start: пробуждение станции', () => {
     const port = typeof address === 'object' && address !== null ? address.port : 0
     const aliveUrl = `http://127.0.0.1:${port}/mcp`
     rmSync(marker, { force: true })
-    const aliveFixture = fixtureOf({ write: { 'tree/.zcode/config.json': JSON.stringify({ mcp: { servers: { '1c-kd': { url: aliveUrl } } } }) }, contour: {} })
+    const aliveFixture = fixtureOf({ contour: { '1c_kd': { url: aliveUrl } } })
     expect(await stationAlive(aliveUrl)).toBe(true)
-    const aliveScript = join(aliveFixture.tree, '.dsh', '1c', 'scripts', 'start_kd_rules.sh')
-    mkdirSync(join(aliveFixture.tree, '.dsh', '1c', 'scripts'), { recursive: true })
+    const aliveScript = join(aliveFixture.root, 'kd-start.sh')
     writeFileSync(aliveScript, `#!/bin/sh\necho "$@" > "${marker}"\n`, 'utf8')
-    expect(await ensureKdStation(resolveProject(aliveFixture.tree), aliveFixture.tree, env)).toBe(false)
+    expect(await ensureKdStation(resolveProject(aliveFixture.tree), { ...env, KD_START_SCRIPT: aliveScript })).toBe(false)
     expect(existsSync(marker)).toBe(false)
     await new Promise<void>((resolve) => server.close(() => resolve()))
   })
 
   it('без станции и без проекта молчит', async () => {
     const fixture = fixtureOf()
-    expect(await ensureKdStation(null, fixture.tree, { ...process.env, KD_RULES_STATION: join(fixture.root, 'none') })).toBe(false)
+    expect(await ensureKdStation(null, { ...process.env, KD_RULES_STATION: join(fixture.root, 'none') })).toBe(false)
+  })
+
+  it('недоступный скрипт — молчим (шов KD_START_SCRIPT)', async () => {
+    const fixture = fixtureOf({ contour: { '1c_kd': { url: 'http://127.0.0.1:9/mcp' } } })
+    const station = join(fixture.root, 'station')
+    mkdirSync(station, { recursive: true })
+    writeFileSync(join(station, 'pyproject.toml'), '[project]\nname = "kd"\n', 'utf8')
+    expect(await ensureKdStation(resolveProject(fixture.tree), {
+      ...process.env,
+      KD_RULES_STATION: station,
+      KD_START_SCRIPT: join(fixture.root, 'absent-kd-start.sh'),
+    })).toBe(false)
   })
 })
 

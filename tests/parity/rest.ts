@@ -59,7 +59,6 @@ export interface RestScenario {
     readonly write?: Readonly<Record<string, string>>
     readonly mkdir?: readonly string[]
     readonly contour?: unknown
-    readonly layout?: 'zcode' | 'dsh'
   }
   /** Подготовка git: репозиторий, репозиторий с ворктри, сессия в ворктри. */
   readonly git?: 'repo' | 'repo-with-worktree' | 'worktree-session'
@@ -93,6 +92,8 @@ export interface RestRuntime {
   readonly project: ContourProject | null
   readonly state: GateState
   readonly station: string
+  /** Стартовый скрипт станции: подмена для гейта, `null` — недоступен. */
+  readonly kdScript: string | null
 }
 
 /** Ответ шага в общем виде. */
@@ -130,7 +131,6 @@ export function prepare(scenario: RestScenario): RestRuntime {
     ...scenario.fixture?.write === undefined ? {} : { write: scenario.fixture.write },
     ...scenario.fixture?.mkdir === undefined ? {} : { mkdir: scenario.fixture.mkdir },
     ...scenario.fixture?.contour === undefined ? {} : { contour: scenario.fixture.contour },
-    ...scenario.fixture?.layout === undefined ? {} : { layout: scenario.fixture.layout },
   })
   const worktreePath = join(fixture.root, 'wt')
   if (scenario.git === 'repo' || scenario.git === 'repo-with-worktree' || scenario.git === 'worktree-session') {
@@ -169,15 +169,20 @@ export function prepare(scenario: RestScenario): RestRuntime {
     mkdirSync(station, { recursive: true })
     writeFileSync(join(station, 'pyproject.toml'), '[project]\nname = "kd"\n', 'utf8')
   }
+  // Стартовый скрипт живёт в пакете контура; в фикстуре — подмена с маркером.
+  // script: false — скрипт недоступен (null-шов гейта).
+  let kdScript: string | null = null
   if (scenario.kd?.script === true) {
-    const script = join(fixture.tree, '.zcode', '1c', 'scripts', 'start_kd_rules.sh')
-    writePath(script, `#!/bin/sh\necho "$@" > "${join(fixture.root, 'marker')}"\n`)
+    kdScript = join(fixture.root, 'kd-start.sh')
+    writePath(kdScript, `#!/bin/sh\necho "$@" > "${join(fixture.root, 'marker')}"\n`)
   }
   if (scenario.kd?.url !== undefined) {
-    writePath(
-      join(fixture.tree, '.zcode', 'config.json'),
-      JSON.stringify({ mcp: { servers: { '1c-kd': { url: scenario.kd.url } } } }),
-    )
+    // Канон адреса станции — contour.json → 1c_kd.url (пресет и гейт).
+    const contourPath = join(fixture.tree, '.dsh', '1c', 'contour.json')
+    const existing = existsSync(contourPath)
+      ? JSON.parse(readFileSync(contourPath, 'utf8')) as Record<string, unknown>
+      : {}
+    writePath(contourPath, JSON.stringify({ ...existing, '1c_kd': { url: scenario.kd.url } }))
   }
 
   const store = new Map<string, unknown>()
@@ -191,7 +196,7 @@ export function prepare(scenario: RestScenario): RestRuntime {
       },
     },
   })
-  return { fixture, cwd, project: resolveProject(cwd), state, station }
+  return { fixture, cwd, project: resolveProject(cwd), state, station, kdScript }
 }
 
 /** Освободить окружение. */
@@ -246,9 +251,10 @@ export async function stepTs(
     case 'session-context':
       return { decision: 'accept', code: 'accept', text: sessionContext(runtime.project, runtime.cwd) ?? '' }
     case 'kd-session-start': {
-      await ensureKdStation(runtime.project, runtime.cwd, {
+      await ensureKdStation(runtime.project, {
         ...process.env,
         KD_RULES_STATION: runtime.station,
+        KD_START_SCRIPT: runtime.kdScript ?? join(runtime.fixture.root, 'absent-kd-start.sh'),
       })
       return { decision: 'accept', code: 'accept', text: '' }
     }

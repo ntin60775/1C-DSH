@@ -8,9 +8,9 @@
 
 ## 1. Зачем
 
-Донор `1c-omp` имел `bootstrap.py` с топологией vanessa-эры; при порте на
-ZCode перенесены только контурные конфиги (`wire_config.py`,
-`init_worktree.sh`), а топология выпала. migration-map.md при этом помечает
+Донор `1c-omp` имел `bootstrap.py` с топологией vanessa-эры; при порте
+перенесены только контурные конфиги и инициализация ворктри, а топология
+выпала. migration-map.md при этом помечает
 перенос навыка как сделанный — провал не виден. Что это стоило на живом
 деплое:
 
@@ -48,7 +48,7 @@ ZCode перенесены только контурные конфиги (`wire
 
 | Файл/слой | Владелец |
 |---|---|
-| `.zcode/1c/contour.json`, `profiles.yaml`, `.zcode/config.json`, секция контура в AGENTS.md | `1c-project-bootstrap` |
+| `.dsh/1c/contour.json`, `profiles.yaml`, секция контура в AGENTS.md | `1c-project-bootstrap` |
 | `v8project.yaml` как контракт (правки после каркаса), source-set'ы расширений по мере появления | проект + скиллы юники (`cf-init`, `cfe-init`) |
 | Первый источник правды (dump ИБ → исходники, build исходники → ИБ) | unica (`unica.run`, канон в `1c-contour`) |
 | Миграция omp-наследия (`features`/`fixtures` → `docs/omp-migrated/tests`) | вручную, пакетного мигратора нет |
@@ -107,7 +107,7 @@ omp-эпохи (`tests/cfe`/`tests/epf` вместо `tests/e2e`) `check` опо
 `scaffold.py`; doctor зовёт `check` процессом и ретранслирует (FAIL
 «обязательная топология неполна» с советом полного ритуала), список не
 дублируется. `tools/` — ответ на «где служебные узкие скрипты проекта»
-(вендоренная поставка контура — `.zcode/1c/scripts`, не путать);
+(скрипты контура живут в пакете DSH — `$DSH_1C_ROOT/scripts`, не путать);
 `vendor/` — вендоренный внешний код с фиксацией источника и лицензии.
 
 ## 5. Скрипт `scripts/scaffold.py`
@@ -142,7 +142,7 @@ scaffold.py all …    # structure + v8project + git
   недостающие строки. Владение строками разведено: layout — 1С-артефакты
   (`build/`, `src/cf/ConfigDumpInfo.xml`, `src/cf/DumpFilesIndex.txt`,
   `src/cf/.build/`, `.build/unica`, `tools/mcp/`), `1c-project-bootstrap` —
-  `.zcode`-строки. Обе стороны append-only, конфликтов нет.
+  строки машино-локальных входов `.dsh/1c`. Обе стороны append-only, конфликтов нет.
 - **`.gitattributes`** — целиком за layout (другого владельца в контуре
   нет): текст из проверенного живым `unica.check` файла (`eol=crlf` для
   bsl/xml/os, binary для png/cf/cfe/epf/erf/архивов). Закрывает падение
@@ -231,8 +231,8 @@ tests/e2e) дословно; для `src/cf`, `tools/mcp`, `docs` — по то�
 
 ## 9. Поставка
 
-- `deploy.json` + mapping `skills/1c-project-layout → .zcode/skills/…`
-  (skills в plugin.json уже каталогом — автоподхват);
+- бандл `dsh-1c-contour`: скиллы и скрипты идут в `files` пакета
+  (доставка пресета DSH, автоподхват каталогом);
 - версия — следующий минорный тег контура; правки `1c-project-bootstrap`
   (перекрёстные ссылки) — тем же релизом;
 - migration-map.md: строку переноса `1c-project-bootstrap` уточнить —

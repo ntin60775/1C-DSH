@@ -11,25 +11,24 @@
 ## Архитектура
 
 ```
-ZCode-сессия (проект 1С)                     машина
-└─ .zcode/config.json → mcp.servers["1c-kd"]  (wire_config: {{kd_url}})
-   └─ http://127.0.0.1:8060/mcp  ← станция ~/.local/share/1c-zcode/kd-rules-mcp
+DSH-сессия (проект 1С, пресет 1c)            машина
+└─ MCP-запись «1c-kd» пресета (url из contour.json → 1c_kd.url)
+   └─ http://127.0.0.1:8060/mcp  ← станция ~/.local/share/1c-dsh/kd-rules-mcp
       ├─ код из vendor/kd-rules-mcp (install_kd_rules.sh, uv sync, .venv)
       ├─ projects.yaml (+ projects.local.yaml — машинные пути, не в git)
       ├─ workspace/  ← сервер пишет сюда и в rules_dir проектов (writable)
       └─ cache/      ← кэш структур конфигураций (ключ включает хеш загрузчика)
 ```
 
-Станция одна на машину; в проекты вендорится только скилл-слой и скрипты,
-не код сервера. Сервис stateless к сессиям ZCode: рестарт сессии соединение
-пересоздаёт, состояние станции (открытые проекты правил — снимки в `workspace`)
-не теряет.
+Станция одна на машину; проект несёт входы контура и стиль-пак, скиллы и
+MCP-записи доставляет пресет DSH, код сервера не вендорится. Сервис
+stateless к сессиям: рестарт сессии соединение пересоздаёт, состояние
+станции (открытые проекты правил — снимки в `workspace`) не теряет.
 
 ## Разводка и конфигурация
 
-- `scripts/mcp_fragments.json`: фрагмент `1c-kd` с шаблоном `{{kd_url}}`;
-  `scripts/wire_config.py` подставляет URL из `contour.json → 1c_kd.url`
-  (умолчание `http://127.0.0.1:8060/mcp`, каркас создаёт `scaffold_contour`).
+- MCP-запись `1c-kd` строит пресет (`src/preset/config.ts`): URL из
+  `contour.json → 1c_kd.url` (умолчание `http://127.0.0.1:8060/mcp`).
 - Сервер настраивается только env `KD2_*` (`KD2_HOST/KD2_PORT/KD2_PROJECTS_FILE/
   KD2_WORKSPACE/KD2_CACHE_DIR/KD2_TOKEN/KD2_LOG_LEVEL`) — их задаёт
   `start_kd_rules.sh`; в конфиге проекта настраивается лишь URL.

@@ -140,10 +140,10 @@ python3 bsl_review_join.py --node <addr> --check-out FILE [--check-out FILE…] 
 вердикт workspace и группы диагностик, не полный поток находок); страницы
 одного узла — повторением `--check-out`.
 По умолчанию routing берётся относительно скрипта
-(`../skills/1c-bsl-review-standards/references/routing.md` — mapping
-`scripts/ → .zcode/1c/scripts/` и скилла уже есть в deploy.json, новых
-mappings не нужно), exceptions — `<project>/.dsh/1c/standards-exceptions.yaml`
-(при отсутствии — промежуточная `.dsh/` и legacy `.zcode/1c`, `.zcode`).
+(`../skills/1c-bsl-review-standards/references/routing.md` — пакет контура
+несёт скрипт и скилл рядом), exceptions —
+`<project>/.dsh/1c/standards-exceptions.yaml`
+(при отсутствии — промежуточная `.dsh/`).
 Коды возврата: `0` — прогон отработал (есть находки или чисто — решает
 агент по JSON), `2` — fail-closed по любому из входов.
 

@@ -5,7 +5,7 @@ args:
     description: "Каталог или файл e2e-тестов pytest относительно корня проекта; пусто — tests/e2e"
   profile:
     type: string
-    description: "Имя профиля тестовой базы из .zcode/testpilot/profiles.yaml"
+    description: "Имя профиля тестовой базы из .dsh/1c/testpilot/profiles.yaml"
     default: "main"
 description: "E2E-прогон 1С без человека: pytest + Python API 1c-testpilot (тест-клиент поднимается сам в приватном Xvfb), при фейле — расследование, независимая ЖР-сверка, анти-ложно-зелёный вердикт кодом"
 whenToUse: "Прогнать e2e-тесты 1С (tests/e2e) на тестовой базе и получить доказательный вердикт: приёмка после правок, регресс, прогон равный CI"
@@ -57,7 +57,7 @@ const runner = agent("e2e-прогонщик", {
 });
 const run = await runner.ask<RunOutcome>(
 	"Выполни в корне проекта команду:\n" +
-		"  bash .zcode/1c/scripts/run_e2e.sh " + profile + " " + tests + "\n" +
+		"  bash \"$DSH_1C_ROOT/scripts/run_e2e.sh\" " + profile + " " + tests + "\n" +
 		"Это может занять несколько минут (поднимается тест-клиент 1С) — задай таймаут не меньше 300000. " +
 		"Из вывода возьми: последнюю строку вида E2E_SUMMARY_JSON {...} (распарси JSON в поле summary; " +
 		"если строки нет — summary=null) и последние ~80 строк вывода (в поле tail). " +
@@ -95,7 +95,7 @@ if (run.exitCode !== 0 || (run.summary !== null && run.summary.collected === 0))
 			"test-results/ (артефакты, скриншоты, junit), сами тесты tests/e2e/, и при " +
 			"необходимости развести форму Python API testpilot " +
 			"($HOME/.local/venvs/1c-testpilot/bin/python, Client из testpilot, профиль из " +
-			".zcode/testpilot/profiles.yaml). Канон — скилл .zcode/skills/1c-test-contour/SKILL.md. " +
+			".dsh/1c/testpilot/profiles.yaml). Канон — скилл 1c-test-contour ($DSH_1C_ROOT/skills/1c-test-contour/SKILL.md). " +
 			"Базу не мутируй: только чтение форм/данных.",
 	});
 	diagnosis = await investigator.ask<string>(

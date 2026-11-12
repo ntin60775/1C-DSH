@@ -6,7 +6,7 @@
  * сессии и, если это проект 1С:
  *
  * - поднимает провайдер скиллов в области агента — 15 контурных скиллов,
- *   4 команды (`/1c-*`) и скиллы Юники с машины; вне проекта 1С их нет;
+ *   3 команды (`/1c-*`) и скиллы Юники с машины; вне проекта 1С их нет;
  * - монтирует MCP-серверы проекта (`unica`, `1c-testpilot`, `1c-db` с
  *   инстансами, `1c-kd`) в области агента: `unica` получает cwd проекта и
  *   глобальный кэш рантаймов, адреса тулкита — из `.dsh/1c`;
@@ -18,7 +18,7 @@
  * @module dsh-1c-contour/preset
  */
 
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
@@ -111,7 +111,7 @@ export function planDelivery(
   project: ContourProject,
   options: { readonly root: string; readonly home: string; readonly env?: NodeJS.ProcessEnv },
 ): Delivery {
-  const dataDir = dataDirOf(project, existsSync)
+  const dataDir = dataDirOf(project)
   const reading = readProject(dataDir, readText)
   const deliveryEnv: DeliveryEnv = options.env === undefined
     ? { packageRoot: options.root, home: options.home }

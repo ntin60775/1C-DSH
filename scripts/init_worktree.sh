@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # init_worktree.sh — инициализация воркспейса Unica и базы в git-ворктри
 # (порт 1c-omp skills/1c-project-bootstrap/scripts/init-worktree.sh под
-# контур 1c-zcode). Запускать из основного дерева или из ворктри.
+# контур dsh-1c-contour). Запускать из основного дерева или из ворктри.
 #
 # Использование:
 #   init_worktree.sh /path/to/worktree
 #   init_worktree.sh /path/to/worktree --empty-ib     # файловая база: не копировать, создать пустую
-#   init_worktree.sh /path/to/worktree --test-contour # пометить дерево тестовым (.zcode/contour):
+#   init_worktree.sh /path/to/worktree --test-contour # пометить дерево тестовым (.dsh/1c/contour):
 #                                                     # изменяющие инструменты тест-контура не блокируются
 #
 # Что делает:
@@ -19,9 +19,9 @@
 #      с предупреждением: старый тест-стек выведен из контура
 #   6. Проверяет результат
 #
-# НЕ делает (в отличие от канона omp): не ставит плагины — контур
-# вендорится в git (.zcode/, deploy-журнал), в ворктри попадает checkout'ом;
-# проверка .zcode/config.json — шаг 6.
+# НЕ делает (в отличие от канона omp): не ставит плагины — контур живёт в
+# пакете DSH на машине ($DSH_1C_ROOT), проектные данные попадают в ворктри
+# checkout'ом; машино-локальные входы копируются шагом 1б, проверка — шаг 6.
 #
 # База:
 #   File=<относительный путь> — у каждого дерева своя файловая база.
@@ -29,7 +29,7 @@
 #       с --empty-ib — пустая база (годится для сборки из исходников).
 #   Srvr=<сервер>;Ref=<база> — база ОДНА на все деревья: изоляции нет и быть
 #       не может, поэтому одновременно с базой работает одно дерево — это
-#       разводит замок хука unica-source-gate (TTL 20 минут).
+#       разводит замок гейта unica_source_gate (TTL 20 минут).
 #
 # ВАЖНО: только реальные копии, НЕ симлинки.
 
@@ -48,13 +48,13 @@ done
 WORKTREE="${ARGS[0]:-.}"
 WORKTREE="$(cd "$WORKTREE" && pwd)"
 
-# Признак контура для хука mcp-gate: в тестовом дереве изменяющие инструменты
+# Признак контура для гейта mcp: в тестовом дереве изменяющие инструменты
 # 1c-testpilot/1c-db не блокируются, в проде — да. Без признака дерево
 # считается прод-контуром (fail-closed).
 if [[ $TEST_CONTOUR -eq 1 ]]; then
-	mkdir -p "$WORKTREE/.zcode"
-	printf 'test\n' >"$WORKTREE/.zcode/contour"
-	echo "• контур помечен тестовым: .zcode/contour (изменяющие вызовы тест-контура свободны)"
+	mkdir -p "$WORKTREE/.dsh/1c"
+	printf 'test\n' >"$WORKTREE/.dsh/1c/contour"
+	echo "• контур помечен тестовым: .dsh/1c/contour (изменяющие вызовы тест-контура свободны)"
 fi
 
 GIT_COMMON_DIR="$(git -C "$WORKTREE" rev-parse --git-common-dir 2>/dev/null || true)"
@@ -112,6 +112,16 @@ else
 	echo "✗ нет $MAIN_TREE/v8project.local.yaml — креды и платформа не перенесены" >&2
 	ERRORS=$((ERRORS + 1))
 fi
+
+# 1б. Машино-локальные входы контура: креды профилей, drift порта, инстансы.
+# В git они не живут (gitignore), checkout'ом в ворктри не попадают.
+for f in .dsh/1c/contour.local.json .dsh/1c/testpilot/profiles.yaml .dsh/1c/db-instances.yaml; do
+	if [[ -f "$MAIN_TREE/$f" && ! -f "$WORKTREE/$f" ]]; then
+		mkdir -p "$(dirname "$WORKTREE/$f")"
+		cp -p "$MAIN_TREE/$f" "$WORKTREE/$f"
+		echo "✓ $f (машино-локальный)"
+	fi
+done
 
 # 2. build/tools/
 mkdir -p "$WORKTREE/build"
@@ -195,7 +205,7 @@ elif [[ "$CONNECTION" == File=* ]]; then
 else
 	echo "⚠ база серверная и общая для всех деревьев: $CONNECTION"
 	echo "  изоляции здесь нет и быть не может — одновременные операции разводит"
-	echo "  замок хука unica-source-gate (TTL 20 минут)."
+	echo "  замок гейта unica_source_gate (TTL 20 минут)."
 fi
 
 # 5. build/hash-storages/ — инкрементальное состояние сборки
@@ -210,7 +220,7 @@ fi
 echo ""
 echo "=== Проверка воркспейса ==="
 MISSING=0
-REQUIRED=(v8project.local.yaml v8project.yaml .zcode/config.json .zcode/testpilot/profiles.yaml)
+REQUIRED=(v8project.local.yaml v8project.yaml .dsh/1c/contour.json .dsh/1c/testpilot/profiles.yaml)
 for f in "${REQUIRED[@]}"; do
 	if [[ -f "$WORKTREE/$f" ]]; then
 		echo "✓ $f"
@@ -236,8 +246,8 @@ fi
 
 echo ""
 echo "Воркспейс готов. Проверь: unica.project.status { \"cwd\": \"$WORKTREE\" }"
-echo "Контур самодостаточен (вендорен в git); если .zcode/config.json правился"
-echo "под эту машину — прогони: python3 .zcode/1c/scripts/wire_config.py \"$WORKTREE\""
+echo "Контур живёт в пакете DSH на машине; MCP-записи пресет строит из входов"
+echo "проекта. Проверь установку: python3 \"\$DSH_1C_ROOT/scripts/doctor.py\" \"$WORKTREE\""
 if [[ "$CONNECTION" == Srvr=* ]]; then
 	echo "База общая: перед операциями убедись, что в основном дереве никто не грузит."
 fi

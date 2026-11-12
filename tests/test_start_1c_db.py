@@ -42,7 +42,7 @@ def print_config(proj: Path):
 
 
 def write_cfg(proj: Path, cfg: str):
-    d = proj / ".zcode" / "1c"
+    d = proj / ".dsh" / "1c"
     d.mkdir(parents=True, exist_ok=True)
     (d / "contour.json").write_text(cfg, encoding="utf-8")
 
@@ -144,14 +144,14 @@ wait_client тест2 && echo "ok=$n"
     hooks_dir = str(REPO / "scripts")
     state_dir = tmp / "state"
     # тестовый процесс и harness/скрипт должны видеть один каталог состояния
-    os.environ["ZCODE_1C_STATE_DIR"] = str(state_dir)
+    os.environ["DSH_1C_STATE_DIR"] = str(state_dir)
     func = subprocess.run(
         ["bash", "-c", f"sed -n '/^stand_lock_py()/,/^}}/p' {SCRIPT}"],
         capture_output=True, text=True).stdout
     harness = (f"set -uo pipefail\n"
                f"ROOT={shlex.quote(str(proj))}\n"
                f"HOOKS_DIR={shlex.quote(hooks_dir)}\n"
-               f"export ZCODE_1C_STATE_DIR={shlex.quote(str(state_dir))}\n"
+               f"export DSH_1C_STATE_DIR={shlex.quote(str(state_dir))}\n"
                f"{func}\n"
                f'"$@"\n')
     hpath = tmp / "guard-harness.sh"
@@ -225,7 +225,7 @@ wait_client тест2 && echo "ok=$n"
         harness_srv = (f"set -uo pipefail\n"
                        f"ROOT={shlex.quote(str(srv))}\n"
                        f"HOOKS_DIR={shlex.quote(hooks_dir)}\n"
-                       f"export ZCODE_1C_STATE_DIR={shlex.quote(str(state_dir))}\n"
+                       f"export DSH_1C_STATE_DIR={shlex.quote(str(state_dir))}\n"
                        f"{func}\n"
                        f'"$@"\n')
         hsrv = tmp / "guard-harness-srv.sh"
@@ -285,7 +285,7 @@ wait_client тест2 && echo "ok=$n"
                and "connection" in r.stderr,
                f"err={r.stderr[:300]!r}")
 
-    cfg_dir = proj / ".zcode" / "1c"
+    cfg_dir = proj / ".dsh" / "1c"
     cfg_dir.mkdir(parents=True)
     cfg = cfg_dir / "db-instances.yaml"
 
@@ -462,8 +462,8 @@ wait_client тест2 && echo "ok=$n"
     rt.mkdir()
     (rt / "v8project.local.yaml").write_text(
         'infobases:\n  origin:\n    connection: File=build/ib\n', encoding="utf-8")
-    (rt / ".zcode" / "1c").mkdir(parents=True)
-    (rt / ".zcode" / "1c" / "db-instances.yaml").write_text(
+    (rt / ".dsh" / "1c").mkdir(parents=True)
+    (rt / ".dsh" / "1c" / "db-instances.yaml").write_text(
         "instances:\n"
         "  base2:\n"
         "    channel: ch2\n"
@@ -507,8 +507,8 @@ wait_client тест2 && echo "ok=$n"
     # тот же инстанс в другом проекте: ключ обязан зависеть и от корня
     other_proj = tmp / "rt2"
     other_proj.mkdir()
-    (other_proj / ".zcode" / "1c").mkdir(parents=True)
-    (other_proj / ".zcode" / "1c" / "db-instances.yaml").write_text(
+    (other_proj / ".dsh" / "1c").mkdir(parents=True)
+    (other_proj / ".dsh" / "1c" / "db-instances.yaml").write_text(
         "instances:\n  base2:\n    connection: File=build/ib\n"
         "    user: u\n    password: p\n", encoding="utf-8")
     _, kv4 = prelude_paths(other_proj, "--instance", "base2")
@@ -532,7 +532,7 @@ wait_client тест2 && echo "ok=$n"
                f"kv1={kv1}, kv4={kv4}")
 
     # print-config несёт канал инстанса (перекрытие contour.json), дефолт — имя
-    (rt / ".zcode" / "1c" / "contour.json").write_text(
+    (rt / ".dsh" / "1c" / "contour.json").write_text(
         '{"1c_db": {"url": "http://127.0.0.1:6123/mcp", "channel": "mn"}}',
         encoding="utf-8")
     fields = run_instance(rt, "--instance", "base2").stdout.split()
@@ -577,7 +577,7 @@ wait_client тест2 && echo "ok=$n"
                f"rc={r.returncode}, out={r.stdout!r}, err={r.stderr[:200]!r}")
     # канал/дисплей валидируются: недопустимый канал схлопывает инстансы
     # в default у прокси (изоляция ломается), display с двоеточием ломает путь
-    (rt / ".zcode" / "1c" / "db-instances.yaml").write_text(
+    (rt / ".dsh" / "1c" / "db-instances.yaml").write_text(
         "instances:\n  base2:\n    connection: File=build/ib/base2\n"
         "    user: u\n    password: p\n    channel: База2\n",
         encoding="utf-8")
@@ -586,7 +586,7 @@ wait_client тест2 && echo "ok=$n"
     _lib.check("Т5: кириллический канал — отказ (не тихий default)",
                r.returncode == 2 and "channel" in r.stderr and "default" in r.stderr,
                f"rc={r.returncode}, err={r.stderr[:300]!r}")
-    (rt / ".zcode" / "1c" / "db-instances.yaml").write_text(
+    (rt / ".dsh" / "1c" / "db-instances.yaml").write_text(
         "instances:\n  base2:\n    connection: File=build/ib/base2\n"
         "    user: u\n    password: p\n    display: :98\n",
         encoding="utf-8")
@@ -596,7 +596,7 @@ wait_client тест2 && echo "ok=$n"
                r.returncode == 2 and "без двоеточия" in r.stderr,
                f"rc={r.returncode}, err={r.stderr[:300]!r}")
     # восстановить полную запись для последующих проверок
-    (rt / ".zcode" / "1c" / "db-instances.yaml").write_text(
+    (rt / ".dsh" / "1c" / "db-instances.yaml").write_text(
         "instances:\n"
         "  base2:\n"
         "    channel: ch2\n"
@@ -820,9 +820,9 @@ wait_client тест2 && echo "ok=$n"
 
     def contour_with_url(root):
         root.mkdir(parents=True, exist_ok=True)
-        (root / ".zcode" / "1c").mkdir(parents=True, exist_ok=True)
+        (root / ".dsh" / "1c").mkdir(parents=True, exist_ok=True)
         (root / "tools" / "mcp").mkdir(parents=True, exist_ok=True)
-        (root / ".zcode" / "1c" / "contour.json").write_text(
+        (root / ".dsh" / "1c" / "contour.json").write_text(
             f'{{"1c_db": {{"epf_path": "tools/mcp/Mock.epf",'
             f' "url": "http://127.0.0.1:{WP}/mcp"}}}}',
             encoding="utf-8")
@@ -903,7 +903,7 @@ wait_client тест2 && echo "ok=$n"
             capture_output=True).returncode == 0
 
     def local_url(root):
-        p = root / ".zcode" / "1c" / "contour.local.json"
+        p = root / ".dsh" / "1c" / "contour.local.json"
         try:
             return (json_loads(p)).get("1c_db", {}).get("url")
         except Exception:
@@ -957,7 +957,7 @@ wait_client тест2 && echo "ok=$n"
                    f"rc={r.returncode}, out={r.stdout[-400:]!r}, err={r.stderr[-200:]!r}")
         _lib.check("Т6: фактический url и желаемый — в contour.local.json",
                    local_url(rt) == f"http://127.0.0.1:{FP}/mcp"
-                   and json_loads(rt / ".zcode" / "1c" / "contour.local.json")
+                   and json_loads(rt / ".dsh" / "1c" / "contour.local.json")
                    ["1c_db"].get("desired_url") == f"http://127.0.0.1:{WP}/mcp",
                    f"local={local_url(rt)!r}")
         _lib.check("Т6: замок держит живой прокси (fd наследован pidfile)",
@@ -1063,7 +1063,7 @@ wait_client тест2 && echo "ok=$n"
         # смена желаемого оператором снимает дрейф: local (desired_url=WP)
         # больше не совпадает с новым желаемым TP → порт из contour
         TP = free_port()
-        (rt / ".zcode" / "1c" / "contour.json").write_text(
+        (rt / ".dsh" / "1c" / "contour.json").write_text(
             f'{{"1c_db": {{"epf_path": "tools/mcp/Mock.epf",'
             f' "url": "http://127.0.0.1:{TP}/mcp"}}}}',
             encoding="utf-8")
