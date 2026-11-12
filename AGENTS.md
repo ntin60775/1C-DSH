@@ -31,10 +31,10 @@
 - **Состояние — `${DSH_1C_STATE_DIR:-~/.dsh/state/1c}`.** Сессия — память
   агента + файлы по `session_id`; замки ИБ — файлы (sha1-ключ, TTL 20 мин,
   без учёток, 0600, атомарно), stand-замок — pid-владелец без TTL.
-  Legacy `ZCODE_1C_STATE_DIR` ещё читается; снятие — Т10.
+  Legacy-переменная ZCode снята в Т10 после перевода парка.
 - **Раскладка проекта — `.dsh/1c/` для всех входов гейтов.** Порядок
-  чтения: `.dsh/1c` → `.dsh` → `.zcode/1c` → `.zcode` (одна таблица
-  `LAYOUT_DIRS`). Нечитаемый вход канона останавливает поиск (fail-closed).
+  чтения: `.dsh/1c` → `.dsh` (одна таблица `LAYOUT_DIRS`); legacy-раскладки
+  ZCode сняты в Т10. Нечитаемый вход канона останавливает поиск (fail-closed).
 - **Бандл:** `package.json` (`dsh.bundle.patch`), `cordis.patch.yml`
   (строки `1c-contour` и `preset-1c`), локаль, иконка; сборка TS → `lib/`.
   В поставку (`files`) идут `lib/`, скиллы, команды, скрипты, шаблоны,
@@ -108,7 +108,7 @@ fi
 pnpm test          # tests/parity + tests/unit, сборка lib/ не нужна
 pnpm typecheck
 
-# 2b. Скрипты контура (doctor, мигратор, стартеры, замки) — python-набор
+# 2b. Скрипты контура (doctor, стартеры, замки) — python-набор
 for t in tests/test_*.py; do python3 "$t" || echo "ПРОВАЛ: $t"; done
 
 # 3. Скиллы под слоты DSH

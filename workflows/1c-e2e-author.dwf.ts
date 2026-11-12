@@ -8,7 +8,7 @@ args:
     description: "Имя теста (kebab-case) для tests/e2e/test_<name>.py; пусто — автор придумает из goal"
   profile:
     type: string
-    description: "Имя профиля тестовой базы из .zcode/testpilot/profiles.yaml"
+    description: "Имя профиля тестовой базы из .dsh/1c/testpilot/profiles.yaml"
     default: "main"
 description: "Агент сам пишет e2e-тест 1С (pytest + Python API 1c-testpilot): разведка формы, тест с readback-проверками, прогон до зелёного, коммит. Человек ничего не нажимает"
 whenToUse: "Нужно покрыть бизнес-сценарий 1С e2e-тестом: новая приёмка, регресс на найденный баг, фиксация эталонного потока. Сценарий пишется агентом, не записывается за человеком"
@@ -66,11 +66,11 @@ const author = agent("автор e2e-теста", {
 	system:
 		"Ты — автор e2e-тестов 1С. Носитель сценария — код: pytest + Python API 1c-testpilot " +
 		"в tests/e2e/ проекта. Человек в цикле не участвует: тест-клиент testpilot поднимает сам " +
-		"по профилю (base из .zcode/testpilot/profiles.yaml, desktop: isolated — приватный Xvfb).\n\n" +
+		"по профилю (base из .dsh/1c/testpilot/profiles.yaml, desktop: isolated — приватный Xvfb).\n\n" +
 		"Канон работы:\n" +
 		"1. Разведка формы — Python API, не по памяти. Окружение: $HOME/.local/venvs/1c-testpilot/bin/python. " +
 		"Из корня проекта:\n" +
-		"   TC1C_PROFILES_FILE=.zcode/testpilot/profiles.yaml <venv-python> -c '...'\n" +
+		"   TC1C_PROFILES_FILE=.dsh/1c/testpilot/profiles.yaml <venv-python> -c '...'\n" +
 		"   from testpilot import Client; c = Client(profile=\"" + profile + "\") — клиент поднимется сам; " +
 		"c.execute_command(command=\"e1cib/data/Справочник.X\"), c.find_object(cls=\"ManagedForm\"), " +
 		"form.get_context() — имена формы и элементов, c.call(\"find_objects\", cls=\"Edit\", ...) — поля. " +
@@ -94,12 +94,12 @@ const author = agent("автор e2e-теста", {
 		"попадать в Наименование (справочники) и Номер (документы), его ищет sweep. В конце удаляй " +
 		"созданное; run_e2e.sh сам дочищает остатки (e2e_sweep) и красит прогон, если не смог. " +
 		"Чужие данные не мутируй.\n" +
-		"5. Прогон и итерации: bash .zcode/1c/scripts/run_e2e.sh " + profile + " <путь к файлу> — " +
+		"5. Прогон и итерации: bash \"$DSH_1C_ROOT/scripts/run_e2e.sh\" " + profile + " <путь к файлу> — " +
 		"таймаут не меньше 300000. До зелёного не больше 6 итераций; не сошлось — честные blockers, " +
 		"не выдумывай зелёный.\n" +
 		"6. Финальный прогон гонит весь файл. Закоммить ТОЛЬКО файл теста: " +
 		"git add <файл> && git commit -m \"e2e: <что покрыл>\".\n\n" +
-		"Справка по API и граблям: скилл .zcode/skills/1c-test-contour/SKILL.md. Отвечай по-русски.",
+		"Справка по API и граблям: скилл 1c-test-contour ($DSH_1C_ROOT/skills/1c-test-contour/SKILL.md). Отвечай по-русски.",
 });
 const authored = await author.ask<AuthorResult>(
 	"Напиши e2e-тест по требованию:\n" + goal + "\n\n" +

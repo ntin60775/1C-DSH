@@ -61,7 +61,7 @@ class Fixture:
 
 	def env(self, extra=None) -> dict:
 		env = dict(os.environ)
-		for name in ("DSH_1C_STATE_DIR", "ZCODE_1C_STATE_DIR", "UNICA_LAUNCHER",
+		for name in ("DSH_1C_STATE_DIR", "UNICA_LAUNCHER",
 		             "DSH_1C_TESTPILOT", "KD_RULES_STATION", "1C_STYLE_ENGINE",
 		             "UNICA_RUNTIME_CACHE_DIR"):
 			env.pop(name, None)
@@ -166,11 +166,10 @@ V8PROJECT = "workPath: build\nformat: DESIGNER\nsource-set:\n  - name: main\n   
 V8LOCAL = "infobases:\n  origin:\n    connection: 'File=build/ib'\n"
 
 
-def write_project(fx: Fixture, *, layout: str = "dsh", contour=None,
+def write_project(fx: Fixture, *, contour=None,
                   local=None, topology: bool = True) -> Path:
 	root = fx.project
-	folder = ".dsh/1c" if layout == "dsh" else ".zcode/1c"
-	data = root / folder
+	data = root / ".dsh/1c"
 	(data / "testpilot").mkdir(parents=True, exist_ok=True)
 	(data / "contour").write_text("test\n", encoding="utf-8")
 	# Стиль-движок и платформа — заглушки: раздел project чист до проверки
@@ -394,37 +393,20 @@ def main() -> int:
 		check("неизвестный флаг — exit 2 и причина в stderr",
 		      typo.returncode == 2 and "--nope" in typo.stderr, typo.stderr[:300])
 
-		# ── 6. Раскладка: legacy — WARN, канон — OK ──
-		fx_legacy = Fixture(Path(tmp) / "legacy")
-		make_launcher(fx_legacy)
-		make_testpilot(fx_legacy)
-		write_install(fx_legacy, make_package(Path(tmp) / "legacy" / "pkgsrc"))
-		write_project(fx_legacy, layout="zcode")
-		legacy = fx_legacy.report()
-		check("legacy-раскладка — WARN layout.legacy, exit 0",
-		      legacy["result"].returncode == 0
-		      and legacy["data"]["layout"]["code"] == "layout.legacy",
-		      json.dumps(legacy["data"]["layout"])[:400])
-		check("legacy-раскладка ведёт в мигратор",
-		      "migrate_from_zcode.py" in legacy["result"].stdout,
-		      legacy["result"].stdout[-500:])
-
-		# ── 7. Канон и legacy разошлись: мигратор --check = 2, FAIL ──
-		fx_diverged = Fixture(Path(tmp) / "diverged")
-		make_launcher(fx_diverged)
-		make_testpilot(fx_diverged)
-		write_install(fx_diverged, make_package(Path(tmp) / "diverged" / "pkgsrc"))
-		write_project(fx_diverged)
-		legacy_dir = fx_diverged.project / ".zcode" / "1c"
-		legacy_dir.mkdir(parents=True)
-		(legacy_dir / "contour.json").write_text(
-			json.dumps({"1c_db": {"url": "http://127.0.0.1:9/mcp"}}), encoding="utf-8")
-		diverged = fx_diverged.report()
-		check("канон разошёлся с legacy — exit 1",
-		      diverged["result"].returncode == 1, diverged["result"].stdout[-400:])
-		check("канон разошёлся с legacy — код layout.diverged",
-		      diverged["data"]["layout"]["code"] == "layout.diverged",
-		      json.dumps(diverged["data"]["layout"])[:400])
+		# ── 6. Раскладка: входы не найдены — WARN layout.missing ──
+		# spec: docs/plans/dsh-contour.md, «Готово» 9 — раскладка одна, DSH;
+		# проект без входов контура не развёрнут (bootstrap — команда оператора).
+		fx_empty = Fixture(Path(tmp) / "no-layout")
+		make_launcher(fx_empty)
+		make_testpilot(fx_empty)
+		write_install(fx_empty, make_package(Path(tmp) / "no-layout" / "pkgsrc"))
+		write_project(fx_empty)
+		(fx_empty.project / ".dsh" / "1c" / "contour.json").unlink()
+		empty = fx_empty.report()
+		check("входы контура не найдены — WARN layout.missing, exit 0",
+		      empty["result"].returncode == 0
+		      and empty["data"]["layout"]["code"] == "layout.missing",
+		      json.dumps(empty["data"]["layout"])[:400])
 
 		# ── 8. Чужой профиль и невключённый bundle — разные коды ──
 		fx_profile = Fixture(Path(tmp) / "profile")
@@ -472,21 +454,20 @@ def main() -> int:
 		      and "1c-project-layout" in topo["result"].stdout,
 		      topo["result"].stdout[-600:])
 
-		# ── 11. Состояние: legacy-переменная — WARN, корень из env ──
+		# ── 11. Состояние: корень из DSH-переменной ──
+		# spec: docs/plans/dsh-contour.md, решение 7 — состояние задаёт
+		# DSH_1C_STATE_DIR; legacy-переменная ZCode снята (Т10).
 		fx_state = Fixture(Path(tmp) / "state")
 		make_launcher(fx_state)
 		make_testpilot(fx_state)
 		write_install(fx_state, make_package(Path(tmp) / "state" / "pkgsrc"))
 		write_project(fx_state)
-		legacy_state = Path(tmp) / "state" / "legacy-state"
+		env_state = Path(tmp) / "state" / "env-state"
 		state_report = fx_state.report(
-			extra_env={"ZCODE_1C_STATE_DIR": str(legacy_state)})
-		check("legacy-переменная состояния — WARN state.legacy-env",
-		      state_report["data"]["state"]["status"] == "warn"
-		      and state_report["data"]["state"]["code"] == "state.legacy-env",
-		      json.dumps(state_report["data"]["state"])[:400])
-		check("корень состояния взят из переменной",
-		      state_report["data"]["state"]["dir"] == str(legacy_state),
+			extra_env={"DSH_1C_STATE_DIR": str(env_state)})
+		check("корень состояния взят из DSH_1C_STATE_DIR",
+		      state_report["data"]["state"]["dir"] == str(env_state)
+		      and state_report["data"]["state"]["source"] == "DSH_1C_STATE_DIR",
 		      json.dumps(state_report["data"]["state"])[:400])
 
 		# ── 12. Инстансы 1c-db: коллизия ловится, MCP-запись названа ──
@@ -509,7 +490,7 @@ def main() -> int:
 
 		# ── 13. Реестр проектов: нет записи, расхождение, битый файл ──
 		# spec: docs/plans/dsh-contour.md, «Готово» 9 — реестр читают doctor
-		# и оператор; запись создаёт мигратор.
+		# и оператор; запись создаёт перевод проекта в парк.
 		fx_noreg = Fixture(Path(tmp) / "no-registry")
 		make_launcher(fx_noreg)
 		make_testpilot(fx_noreg)
@@ -530,7 +511,7 @@ def main() -> int:
 		write_install(fx_div, make_package(Path(tmp) / "registry-diverged" / "pkgsrc"))
 		write_project(fx_div)
 		write_registry(fx_div, entry={"path": str(fx_div.project),
-		                              "layout": "zcode",
+		                              "layout": "none",
 		                              "contour_version": "9.9.9",
 		                              "migrated_at": "2026-11-12"})
 		div = fx_div.report()

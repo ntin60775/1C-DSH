@@ -3,10 +3,13 @@
 на чужом инстансе, приоритет флаг > env > поле профиля, свип получает
 --url с ?channel=, фактический url из contour.local.json (drift Т6).
 
-Полный pytest-прогон не нужен: TESTPILOT_PYTHON указывает на обёртку
-(import pytest → 0, -m pytest → 0, остальное — настоящий python3, чтобы
-heredoc'ы скрипта исполнились), а свип — заглушка рядом со скриптом
-(SWEEP резолвится от каталога скрипта) и записывает полученный --url.
+Скрипт вызывается из фейкового пакета (run_e2e.sh + contour_paths.py +
+свип-заглушка рядом), корень проекта — каталог вызова: модель DSH
+($DSH_1C_ROOT/scripts, проект не вендорит скрипты). Полный pytest-прогон
+не нужен: TESTPILOT_PYTHON указывает на обёртку (import pytest → 0,
+-m pytest → 0, остальное — настоящий python3, чтобы heredoc'ы скрипта
+исполнились), а свип — заглушка рядом со скриптом (SWEEP резолвится от
+каталога скрипта) и записывает полученный --url.
 Запуск: python3 tests/test_run_e2e.py
 """
 import json
@@ -40,27 +43,28 @@ INSTANCES = (
 
 
 def make_proj(root: Path, *, instances=None, profile_instance=False, drift=False):
-	(root / ".zcode" / "1c").mkdir(parents=True, exist_ok=True)
-	(root / ".zcode" / "testpilot").mkdir(parents=True, exist_ok=True)
+	(root / ".dsh" / "1c").mkdir(parents=True, exist_ok=True)
+	(root / ".dsh" / "1c" / "testpilot").mkdir(parents=True, exist_ok=True)
 	(root / "v8project.yaml").write_text("infobases:\n  origin:\n", encoding="utf-8")
-	(root / ".zcode" / "1c" / "contour.json").write_text(
+	(root / ".dsh" / "1c" / "contour.json").write_text(
 		json.dumps({"1c_db": {"url": "http://127.0.0.1:6999/mcp"}}), encoding="utf-8")
 	if drift:
-		(root / ".zcode" / "1c" / "contour.local.json").write_text(json.dumps(
+		(root / ".dsh" / "1c" / "contour.local.json").write_text(json.dumps(
 			{"1c_db": {"url": "http://127.0.0.1:6998/mcp",
 			           "desired_url": "http://127.0.0.1:6999/mcp"}}), encoding="utf-8")
 	(root / "tests" / "e2e").mkdir(parents=True, exist_ok=True)
 	block = "    base: build/ib\n    password: p\n"
 	if profile_instance:
 		block += "    instance: inst2\n"
-	(root / ".zcode" / "testpilot" / "profiles.yaml").write_text(
+	(root / ".dsh" / "1c" / "testpilot" / "profiles.yaml").write_text(
 		"profiles:\n  main:\n" + block, encoding="utf-8")
 	if instances is not None:
-		(root / ".zcode" / "1c" / "db-instances.yaml").write_text(instances, encoding="utf-8")
-	sdir = root / ".zcode" / "1c" / "scripts"
-	sdir.mkdir(exist_ok=True)
+		(root / ".dsh" / "1c" / "db-instances.yaml").write_text(instances, encoding="utf-8")
+	# фейковый пакет контура: скрипт + общий модуль раскладок рядом
+	sdir = root / ".pkg" / "scripts"
+	sdir.mkdir(parents=True, exist_ok=True)
 	shutil.copy(RUN, sdir / "run_e2e.sh")
-	shutil.copy(REPO / "scripts" / "wire_config.py", sdir / "wire_config.py")
+	shutil.copy(REPO / "scripts" / "contour_paths.py", sdir / "contour_paths.py")
 	# свип-заглушка: запоминает переданный --url, отчёт machine-readable
 	(sdir / "e2e_sweep.py").write_text(
 		"import sys, pathlib\n"
@@ -85,7 +89,7 @@ def make_proj(root: Path, *, instances=None, profile_instance=False, drift=False
 
 def run(root: Path, py: Path, *args: str, env_extra=None):
 	return subprocess.run(
-		["bash", str(root / ".zcode" / "1c" / "scripts" / "run_e2e.sh"), *args],
+		["bash", str(root / ".pkg" / "scripts" / "run_e2e.sh"), *args],
 		capture_output=True, text=True, cwd=str(root),
 		env=dict(os.environ, TESTPILOT_PYTHON=str(py), **(env_extra or {})),
 		timeout=120)

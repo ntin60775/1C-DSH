@@ -119,13 +119,13 @@ function isDir(path: string): boolean {
  * Каталоги раскладки в порядке приоритета для проектного входа.
  *
  * Канон — `.dsh/1c/`: там лежат все входы контура. `.dsh/` без `1c` читается
- * как промежуточная раскладка ранних тикетов, `.zcode/1c/` и `.zcode/` —
- * legacy на время переезда парка (снимается в Т10).
+ * как промежуточная раскладка ранних тикетов. Legacy-раскладки ZCode сняты
+ * после перевода парка (Т10): проект читается только в DSH-раскладках.
  */
-export const LAYOUT_DIRS: readonly string[] = ['.dsh/1c', '.dsh', '.zcode/1c', '.zcode']
+export const LAYOUT_DIRS: readonly string[] = ['.dsh/1c', '.dsh']
 
 /**
- * Кандидаты пути проектного входа: канон, промежуточная раскладка, legacy.
+ * Кандидаты пути проектного входа: канон и промежуточная раскладка.
  * @param root - корень дерева 1С.
  * @param relative - путь внутри каталога раскладки.
  * @returns пути в порядке приоритета.
@@ -139,9 +139,9 @@ export function layoutCandidates(root: string, relative: string): string[] {
  *
  * Отсутствие файла — переход к следующему кандидату. Существующий, но не
  * читаемый вход останавливает поиск: молча уступать следующей раскладке
- * нельзя, иначе сломанный канон подменяется старым legacy-файлом (для
- * признака контура это означало бы «test» вместо «prod» и разрешённые
- * мутации на проде).
+ * нельзя, иначе сломанный канон подменяется другим файлом (для признака
+ * контура это означало бы «test» вместо «prod» и разрешённые мутации
+ * на проде).
  * @param root - корень дерева 1С.
  * @param relative - путь внутри каталога раскладки.
  * @param read - чтение файла как текста; `null` — файла нет либо он не читается.
@@ -162,25 +162,21 @@ export function findLayoutFile(
 }
 
 /**
- * Каталог раскладки проекта для путей и сообщений гейтов.
- * @param project - проект контура либо `null`.
- * @returns `.dsh/1c` для канона и промежуточной раскладки, `.zcode/1c` для legacy.
+ * Каталог раскладки проекта для путей и сообщений гейтов — канон `.dsh/1c`.
+ * @returns каталог раскладки DSH.
  */
-export function layoutDirOf(project: ContourProject | null): string {
-  return project?.layout === 'zcode' ? LAYOUT_DIRS[2] as string : LAYOUT_DIRS[0] as string
+export function layoutDirOf(): string {
+  return LAYOUT_DIRS[0] as string
 }
 
 /**
- * Каталог данных контура проекта: `.dsh/1c` первым, legacy `.zcode/1c` вторым.
+ * Каталог данных контура проекта: канон `.dsh/1c`.
  * @param root - корень дерева 1С.
  * @returns каталог, в котором лежит `contour.json`, и его раскладка.
  */
-export function contourDir(root: string): { dir: string; layout: 'dsh' | 'zcode' } | null {
+export function contourDir(root: string): { dir: string; layout: 'dsh' } | null {
   if (isFile(join(root, '.dsh', '1c', 'contour.json'))) {
     return { dir: join(root, '.dsh', '1c'), layout: 'dsh' }
-  }
-  if (isFile(join(root, '.zcode', '1c', 'contour.json'))) {
-    return { dir: join(root, '.zcode', '1c'), layout: 'zcode' }
   }
   return null
 }
@@ -201,8 +197,7 @@ export function readJsonObject(path: string): Record<string, unknown> {
  * Определить проект контура от каталога сессии.
  *
  * Идём вверх до первого каталога с конфигом контура, маркером v8project или
- * парой «каталог раскладки + `src/`». Конфиг в `.dsh/1c` перекрывает legacy
- * `.zcode/1c` того же дерева: раскладка одна, но обе читаются на переезде.
+ * парой «каталог раскладки + `src/`». Раскладка одна — DSH (`.dsh/1c`).
  * @param start - каталог сессии.
  * @returns проект либо `null`, когда сессия вне проекта 1С.
  */
@@ -216,7 +211,7 @@ export function resolveProject(start: string): ContourProject | null {
     if (PROJECT_MARKERS.some((marker) => isFile(join(current, marker)))) {
       return { root: current, layout: 'markers', contour: {} }
     }
-    if ((isDir(join(current, '.dsh')) || isDir(join(current, '.zcode'))) && isDir(join(current, 'src'))) {
+    if (isDir(join(current, '.dsh')) && isDir(join(current, 'src'))) {
       return { root: current, layout: 'markers', contour: {} }
     }
     const parent = dirname(current)

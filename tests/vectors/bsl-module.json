@@ -158,7 +158,7 @@
     "fixture": {
       "write": {
         "tree/src/cf/CommonModules/Общий/Ext/Module.bsl": "&НаКлиенте\nПроцедура А()\nКонецПроцедуры\n",
-        "tree/.zcode/bsl-module-gate-escalations.txt": "directive-in-common-module:CommonModules/Общий\n"
+        "tree/.dsh/1c/bsl-module-gate-escalations.txt": "directive-in-common-module:CommonModules/Общий\n"
       }
     },
     "steps": [

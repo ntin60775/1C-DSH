@@ -26,17 +26,17 @@ MCP 1С-проекта. Репозиторий создан копией `1c-zco
 4. **Пресет.** Выбрать пресет `1c` для сессии (или умолчанием профиля).
    Доставка контура включается только в сессии 1С-проекта: вне его гейты
    молчат, скиллов и MCP контура нет.
-5. **Проект.** Раскладку ZCode перевести на `.dsh/1c`
-   (`scripts/migrate_from_zcode.py`, команда `/1c-migrate`); новый проект
-   оснастить `/1c-bootstrap` (профили, contour.json, секция AGENTS.md).
-   Проверить установку: `python3 scripts/doctor.py <проект>` — семь
-   разделов, `--json` для машинной проверки.
+5. **Проект.** Новый проект оснастить `/1c-bootstrap` (профили,
+   contour.json, секция AGENTS.md). Проверить установку:
+   `python3 scripts/doctor.py <проект>` — семь разделов, `--json` для
+   машинной проверки. Парк переведён на `.dsh/1c` (Т10); состояние
+   каждого проекта — в реестре `projects.json` корня состояния.
 6. **Перезапуск хоста.** «Остановка» → «Запуск»: плагин и пресет
    подхватываются новым поколением модулей.
 
 После установки в сессии 1С-проекта: 11 гейтов, 15 скиллов контура,
-скиллы Юники, 4 команды (`/1c-doctor`, `/1c-test`, `/1c-bootstrap`,
-`/1c-migrate`) и MCP `unica`, `1c-testpilot`, `1c-db` (+ инстансы), `1c-kd`.
+скиллы Юники, 3 команды (`/1c-doctor`, `/1c-test`, `/1c-bootstrap`)
+и MCP `unica`, `1c-testpilot`, `1c-db` (+ инстансы), `1c-kd`.
 
 ## Состав
 
@@ -44,9 +44,9 @@ MCP 1С-проекта. Репозиторий создан копией `1c-zco
 |---|---|
 | `src/` | нативный плагин на TypeScript: адаптер событий (`index.ts`), контракт гейта (`contract.ts`), 11 гейтов (`gates/`), пресет и доставка (`preset/`), раскладка (`paths.ts`), замки (`lock.ts`), состояние (`state.ts`, `session.ts`); сборка `tsc` → `lib/` |
 | `skills/` | 15 скиллов контура: `1c-contour` (карта контура, приоритеты качества), `1c-bsl-review-standards`, `1c-test-contour`, `1c-testpilot`, `1c-db-data`, `1c-ibsrv-publish`, `1c-ibcmd-delivery`, `1c-kd-rules` + `kd2-rules-build` / `kd2-exchange-pitfalls` / `kd3-rules` (правила обмена КД — [docs/KD-RULES.md](docs/KD-RULES.md)), `1c-unica-worktree` / `1c-unica-artifacts`, `1c-project-bootstrap`, `1c-project-layout` |
-| `commands/` | `/1c-doctor`, `/1c-test`, `/1c-bootstrap`, `/1c-migrate` |
+| `commands/` | `/1c-doctor`, `/1c-test`, `/1c-bootstrap` |
 | `workflows/` | `1c-e2e-author` (агент пишет e2e-тест), `1c-e2e-run` (прогон pytest без модели + ЖР-сверка и приёмка-кодом) |
-| `scripts/` | `doctor.py` (проверка установки и проекта), `migrate_from_zcode.py` (перевод раскладки), `install_unica_skills.py` (скиллы Юники), `contour_paths.py` (таблица раскладок), `ib_lock.py` (замки python/bash-скриптов), `wire_config.py` (legacy-разводка, снятие — Т10), `lint_skill_frontmatter.py`, стартеры стенда и публикация (`start_1c_db.sh`, `publish_ib.sh`, `run_e2e.sh`, `e2e_sweep.py`), `bsl_review_join.py`, `install_kd_rules.sh` + `start_kd_rules.sh` (станция `1c-kd`), `unica_ping.py` |
+| `scripts/` | `doctor.py` (проверка установки и проекта), `install_unica_skills.py` (скиллы Юники), `contour_paths.py` (таблица раскладок, разбор инстансов, реестр), `ib_lock.py` (замки python/bash-скриптов), `lint_skill_frontmatter.py`, стартеры стенда и публикация (`start_1c_db.sh`, `publish_ib.sh`, `run_e2e.sh`, `e2e_sweep.py`), `bsl_review_join.py`, `install_kd_rules.sh` + `start_kd_rules.sh` (станция `1c-kd`), `kd_register_project.py`, `unica_ping.py` |
 | `tests/` | vitest: юниты (`unit/`), паритет по векторам (`parity/`, `vectors/` — 11 гейтов, оракул без python); python-набор скриптов (`test_*.py`) |
 | `vendor/` | `kd-rules-mcp` — вендор-копия апстрима (MIT), источник станции `1c-kd`; правки запрещены, синк по [UPSTREAM.md](vendor/kd-rules-mcp/UPSTREAM.md) |
 | `templates/` | contour.json, profiles.example.yaml, db-instances.example.yaml, agents-section.md (секция AGENTS.md проекта) |
@@ -73,17 +73,16 @@ python3 scripts/lint_skill_frontmatter.py         # скиллы под слот
 python3 .agents/skills/kb-search/gitmark.py lint --strict   # KB
 ```
 
-## Миграция раскладки
+## Раскладка и состояние
 
-`/1c-migrate` или `scripts/migrate_from_zcode.py <проект>` — перенос
-проектных входов из zcode-раскладки в `.dsh/1c`: `--check` различает
-«не переведён», «переведён и совпадает», «переведён с расхождением»;
-`--dry-run` печатает план. Канон раскладки — `.dsh/1c/` для всех входов
-гейтов; плагин читает `.dsh/1c`, затем промежуточную `.dsh/` и legacy
-`.zcode/1c` и `.zcode`, состояние — `${DSH_1C_STATE_DIR:-~/.dsh/state/1c}`
-(legacy `ZCODE_1C_STATE_DIR` ещё читается; снятие legacy — Т10).
-Omp-миграции в DSH нет — старое наследие переводится вручную по канону
-`1c-test-contour`.
+Канон раскладки — `.dsh/1c/` для всех входов гейтов; плагин читает
+`.dsh/1c`, затем промежуточную `.dsh/` (одна таблица `LAYOUT_DIRS`).
+Состояние — `${DSH_1C_STATE_DIR:-~/.dsh/state/1c}`; реестр проектов
+парка — `projects.json` в корне состояния (путь, раскладка, версия
+конура на момент перевода, дата, результат doctor). Legacy-раскладки
+ZCode и переменная состояния сняты в Т10 после перевода парка;
+мигратор и команда `/1c-migrate` удалены вместе с ними. Omp-наследие
+переводится вручную по канону `1c-test-contour`.
 
 ## Соседи
 

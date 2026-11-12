@@ -3,8 +3,8 @@
 
 Слой замков стартера стенда и e2e-прогона (решение 10 спеки: скрипты
 остаются python/bash). Формат и ключ совпадают с `src/lock.ts` гейтов;
-корень состояния — DSH_1C_STATE_DIR, затем legacy ZCODE_1C_STATE_DIR,
-затем ~/.dsh/state/1c. Происхождение — порт lib/ib-lock.ts дона 1c-omp.
+корень состояния — DSH_1C_STATE_DIR, затем ~/.dsh/state/1c. Происхождение —
+порт lib/ib-lock.ts дона 1c-omp.
 
 Серверная база одна на все деревья проекта: отдельную на каждый ворктри не
 поднять. Изоляции там быть не может, поэтому единственный достижимый
@@ -42,13 +42,12 @@ import time
 from pathlib import Path
 
 def state_root() -> Path:
-	"""Корень состояния контура: DSH_1C_STATE_DIR, затем legacy-переменная,
-	затем ~/.dsh/state/1c. Порядок повторяет src/state.ts и doctor.py:
-	путь переменной уже называет корень контура."""
-	for name in ("DSH_1C_STATE_DIR", "ZCODE_1C_STATE_DIR"):
-		value = os.environ.get(name) or ""
-		if value:
-			return Path(value).expanduser()
+	"""Корень состояния контура: DSH_1C_STATE_DIR, затем ~/.dsh/state/1c.
+	Порядок повторяет src/state.ts и contour_paths.py: путь переменной уже
+	называет корень контура."""
+	value = os.environ.get("DSH_1C_STATE_DIR") or ""
+	if value:
+		return Path(value).expanduser()
 	return Path.home() / ".dsh" / "state" / "1c"
 
 
@@ -358,7 +357,6 @@ if __name__ == "__main__":
 
 	with tempfile.TemporaryDirectory() as tmp:
 		os.environ["DSH_1C_STATE_DIR"] = tmp
-		os.environ.pop("ZCODE_1C_STATE_DIR", None)
 		status, _ = acquire_base_lock("/tree/a", "Srvr=host;Ref=erp;", "build", "s1")
 		print("первый захват:", status)
 		status, _ = acquire_base_lock("/tree/a", "Srvr=host;Ref=erp;", "load", "s1")

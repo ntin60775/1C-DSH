@@ -354,26 +354,27 @@ describe('T4: старт сессии и новые гейты', () => {
 
   it('старт сессии будит спящую станцию kd', async () => {
     const fixture = createFixture({
-      write: {
-        'tree/.zcode/config.json': JSON.stringify({ mcp: { servers: { '1c-kd': { url: 'http://127.0.0.1:9/mcp' } } } }),
-      },
+      contour: { '1c_kd': { url: 'http://127.0.0.1:9/mcp' } },
     })
     const station = join(fixture.root, 'station')
     mkdirSync(station, { recursive: true })
     writeFileSync(join(station, 'pyproject.toml'), '[project]\nname = "kd"\n', 'utf8')
     const marker = join(fixture.root, 'kd-marker')
-    const script = join(fixture.tree, '.zcode', '1c', 'scripts', 'start_kd_rules.sh')
-    mkdirSync(join(fixture.tree, '.zcode', '1c', 'scripts'), { recursive: true })
+    // Стартовый скрипт — подмена через KD_START_SCRIPT: канон пакета не
+    // запускается в тесте, наблюдается сам факт вызова гейтом.
+    const script = join(fixture.root, 'kd-start.sh')
     writeFileSync(script, `#!/bin/sh\necho "$@" > "${marker}"\n`, 'utf8')
     const agent = agentOf()
 
     await withEnv('KD_RULES_STATION', station, () =>
-      withStateDir(fixture.stateDir, async () => {
-        const fake = createFakeContext(fixture.tree)
-        apply(fake.ctx as never)
-        const handler = fake.handlers.get('agent/created') as (payload: unknown) => Promise<void>
-        await handler({ agent })
-      }),
+      withEnv('KD_START_SCRIPT', script, () =>
+        withStateDir(fixture.stateDir, async () => {
+          const fake = createFakeContext(fixture.tree)
+          apply(fake.ctx as never)
+          const handler = fake.handlers.get('agent/created') as (payload: unknown) => Promise<void>
+          await handler({ agent })
+        }),
+      ),
     )
     for (let attempt = 0; attempt < 40 && !existsSync(marker); attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 50))

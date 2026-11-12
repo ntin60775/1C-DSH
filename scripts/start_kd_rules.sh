@@ -2,7 +2,7 @@
 # start_kd_rules.sh — подъём/останов/статус MCP kd-rules-mcp (станция 1c-kd).
 #
 # Сервер апстрима — streamable HTTP на петлевом интерфейсе (порт 8060 по
-# умолчанию, URL меняется в .zcode/1c/contour.json → 1c_kd.url). Станция
+# умолчанию, URL меняется в .dsh/1c/contour.json → 1c_kd.url). Станция
 # ставится install_kd_rules.sh; её состояние (projects.yaml,
 # projects.local.yaml, workspace/, cache/) переживает старт/стоп.
 # Первый старт создаёт пустой каркас projects.yaml; проект подключает к
@@ -23,7 +23,7 @@ set -euo pipefail
 MODE="start"
 URL="http://127.0.0.1:8060/mcp"
 WAIT="30"
-STATION="${KD_RULES_STATION:-$HOME/.local/share/1c-zcode/kd-rules-mcp}"
+STATION="${KD_RULES_STATION:-$HOME/.local/share/1c-dsh/kd-rules-mcp}"
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -114,7 +114,7 @@ start)
 		sleep 1
 	fi
 	if [ ! -f "$STATION/projects.yaml" ]; then
-		printf '# Проекты подключает kd_register_project.py из скриптов контура 1c-zcode;\n# поля (bases, rules_dir, writable_extensions) — projects.example.yaml рядом.\nprojects: {}\n' >"$STATION/projects.yaml"
+		printf '# Проекты подключает kd_register_project.py из скриптов контура dsh-1c-contour;\n# поля (bases, rules_dir, writable_extensions) — projects.example.yaml рядом.\nprojects: {}\n' >"$STATION/projects.yaml"
 		echo "→ создан пустой каркас $STATION/projects.yaml — проекты подключает kd_register_project.py (скилл 1c-kd-rules)"
 	fi
 	cd "$STATION"

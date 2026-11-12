@@ -63,7 +63,7 @@ def instance_pidfile(root, inst):
 
 def run(root, *args):
     # stop-ветки state не пишут, но изоляция каталога честная — как у хуков
-    env = dict(os.environ, ZCODE_1C_STATE_DIR=str(tmp / "state"))
+    env = dict(os.environ, DSH_1C_STATE_DIR=str(tmp / "state"))
     return subprocess.run(
         ["bash", str(SCRIPT), str(root), *args],
         capture_output=True, text=True, timeout=120, env=env)
@@ -72,9 +72,9 @@ def run(root, *args):
 def contour(root, port):
     root = root.resolve()  # скрипт резолвит ROOT — и тест строит пути оттуда же
     root.mkdir(parents=True, exist_ok=True)
-    (root / ".zcode" / "1c").mkdir(parents=True, exist_ok=True)
+    (root / ".dsh" / "1c").mkdir(parents=True, exist_ok=True)
     (root / "tools" / "mcp").mkdir(parents=True, exist_ok=True)
-    (root / ".zcode" / "1c" / "contour.json").write_text(
+    (root / ".dsh" / "1c" / "contour.json").write_text(
         f'{{"1c_db": {{"epf_path": "tools/mcp/Mock.epf",'
         f' "url": "http://127.0.0.1:{port}/mcp"}}}}',
         encoding="utf-8")
@@ -182,7 +182,7 @@ try:
     # --instance с готовым конфигом инстансов: на дереве без ветки кейс
     # ушёл бы в mono-стоп (rc 0), а не в отказ — деревья различает граница
     rootI = contour(tmp / "ci", free_port())
-    (rootI / ".zcode" / "1c" / "db-instances.yaml").write_text(
+    (rootI / ".dsh" / "1c" / "db-instances.yaml").write_text(
         "instances:\n"
         "  solo1:\n    channel: solo1\n    connection: File=build/ib/s1\n"
         "    user: u\n    password: p\n"

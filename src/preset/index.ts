@@ -18,7 +18,7 @@
  * @module dsh-1c-contour/preset
  */
 
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
@@ -111,7 +111,7 @@ export function planDelivery(
   project: ContourProject,
   options: { readonly root: string; readonly home: string; readonly env?: NodeJS.ProcessEnv },
 ): Delivery {
-  const dataDir = dataDirOf(project, existsSync)
+  const dataDir = dataDirOf(project)
   const reading = readProject(dataDir, readText)
   const deliveryEnv: DeliveryEnv = options.env === undefined
     ? { packageRoot: options.root, home: options.home }

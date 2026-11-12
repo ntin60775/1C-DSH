@@ -3,7 +3,7 @@ node_type: guide
 title: Установка контура 1С на DSH
 service: _platform
 status: active
-updated: 2026-11-12
+updated: 2026-11-13
 links:
   relates_to: [dsh-gates.md, UNICA.md, README.md]
 ---
@@ -21,7 +21,7 @@ links:
 |---|---|
 | DSH | 0.2.2-rc.2+ — нужен фикс `mcp-client` (ntin60775/deepseek-harness#1): без него MCP-инструменты отдают пустой результат |
 | Node.js + pnpm | сборка плагина TS → `lib/` |
-| python3 | stdlib, без зависимостей: doctor, мигратор, стартеры, замки |
+| python3 | stdlib, без зависимостей: doctor, стартеры, замки |
 | Unica | 0.15.0-rc.5, бинарники глобально на машину — [UNICA.md](UNICA.md) |
 | Профиль DSH | `$DSH_HOME/profiles/<профиль>` (по умолчанию `~/.dsh`) |
 
@@ -86,24 +86,18 @@ pnpm build        # tsc → lib/
 Проектные входы живут в `.dsh/1c/`: `contour.json`, `contour.local.json`,
 `db-instances.yaml`, маркер контура `contour`, эскалации гейтов,
 `mcp-write-allow.txt`, `testpilot/profiles.yaml`, `standards-exceptions.yaml`,
-путь чекера стиля. Порядок чтения: `.dsh/1c` → `.dsh` → `.zcode/1c` →
-`.zcode` (одна таблица `LAYOUT_DIRS` в `src/paths.ts`).
+путь чекера стиля. Порядок чтения: `.dsh/1c` → `.dsh` (одна таблица
+`LAYOUT_DIRS` в `src/paths.ts`); legacy-раскладки ZCode сняты в Т10
+после перевода парка.
 
-Перевод с ZCode-раскладки — мигратор (ручной, по одному проекту; пакетного
-нет):
-
-```bash
-python3 scripts/migrate_from_zcode.py <проект> --check    # 0/1/2: переведён / не переведён / расхождение
-python3 scripts/migrate_from_zcode.py <проект> --dry-run  # план
-python3 scripts/migrate_from_zcode.py <проект>            # перенос
-```
-
-Мигратор пишет запись в реестр проектов
+Реестр проектов парка —
 `${DSH_1C_STATE_DIR:-~/.dsh/state/1c}/projects.json` (путь, раскладка,
-версия контура, дата первого перевода). Новый проект — `/1c-bootstrap`
-(профили, contour.json, секция AGENTS.md). Нечитаемый вход канона
-останавливает поиск (fail-closed): сломанный маркер не превращает прод
-в тест, сломанный allowlist не разрешает мутацию.
+версия контура на момент перевода, дата, результат doctor); запись
+создаёт перевод проекта, doctor сверяет её с фактом и дописывает свой
+вердикт. Новый проект — `/1c-bootstrap` (профили, contour.json, секция
+AGENTS.md). Нечитаемый вход канона останавливает поиск (fail-closed):
+сломанный маркер не превращает прод в тест, сломанный allowlist не
+разрешает мутацию.
 
 ## 6. Проверка
 
@@ -115,8 +109,8 @@ python3 scripts/doctor.py <проект> --profile NAME
 ```
 
 Разделы: `bundle` (пакет в профиле, строки патча, сборка `lib/`), `preset`
-(объявлен и выбран по умолчанию), `skills` (15 контурных, 4 команды, скиллы
-Юники, затенения), `mcp` (записи и живость), `layout` (канон и legacy),
+(объявлен и выбран по умолчанию), `skills` (15 контурных, 3 команды, скиллы
+Юники, затенения), `mcp` (записи и живость), `layout` (раскладка DSH),
 `project` (`v8project.yaml`, платформа, топология, `build/out`, движок
 стиля, реестр), `state` (корень состояния, замки, журнал гейтов).
 Выход 0 — FAIL нет (WARN допустимы); у каждого раздела `--json` несёт
@@ -132,7 +126,7 @@ python3 scripts/doctor.py <проект> --profile NAME
 ## Контроль установки
 
 Сессия с пресетом `1c` в 1С-проекте: 15 скиллов контура, скиллы Юники,
-4 команды, MCP-инструменты `mcp__unica__*`, `mcp__1c-testpilot__*`,
+3 команды, MCP-инструменты `mcp__unica__*`, `mcp__1c-testpilot__*`,
 `mcp__1c-db__*`, `mcp__1c-kd__*` (имена нормализованы DSH под контракт
 function-name, хвост `<12hex>` гейты отбрасывают). Контроли: сессия без
 пресета в том же проекте — инструментов контура нет; пресет `1c` вне
@@ -142,5 +136,4 @@ function-name, хвост `<12hex>` гейты отбрасывают). Конт
 
 Корень состояния — `${DSH_1C_STATE_DIR:-~/.dsh/state/1c}`: замки инфобаз,
 состояние гейтов, журнал `logs/rule-audit.jsonl`, реестр `projects.json`.
-Legacy `ZCODE_1C_STATE_DIR` ещё читается; снятие legacy-путей — Т10 юнита
-`dsh-contour`.
+Legacy-переменная состояния ZCode снята в Т10 после перевода парка.

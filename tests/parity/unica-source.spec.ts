@@ -47,7 +47,6 @@ interface Vector {
     readonly write?: Readonly<Record<string, string>>
     readonly mkdir?: readonly string[]
     readonly contour?: unknown
-    readonly layout?: 'zcode' | 'dsh'
   }
   readonly seedLock?: {
     readonly holderTree: string
@@ -95,7 +94,6 @@ for (const vector of vectors) {
         ...options.write === undefined ? {} : { write: options.write },
         ...options.mkdir === undefined ? {} : { mkdir: options.mkdir },
         ...options.contour === undefined ? {} : { contour: options.contour === '$REBUILD_RULES' ? REBUILD_RULES : options.contour },
-        ...options.layout === undefined ? {} : { layout: options.layout },
       })
       created.push(fixture.root)
       const sessionId = 's1'

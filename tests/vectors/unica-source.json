@@ -72,7 +72,7 @@
     "describe": "строка allowlist разрешает прямую правку",
     "fixture": {
       "write": {
-        "tree/.zcode/unica-gate-escalations.txt": "# разовая прямая правка\nsrc/cf/CommonModules/ОбщегоНазначения.bsl\n"
+        "tree/.dsh/1c/unica-gate-escalations.txt": "# разовая прямая правка\nsrc/cf/CommonModules/ОбщегоНазначения.bsl\n"
       }
     },
     "call": {
@@ -92,7 +92,7 @@
     "call": {
       "tool": "edit",
       "args": {
-        "file_path": ".zcode/unica-gate-escalations.txt",
+        "file_path": ".dsh/1c/unica-gate-escalations.txt",
         "old_string": "a",
         "new_string": "b"
       }
@@ -106,7 +106,7 @@
     "describe": "строка «путь — причина» не молчит: разбор в блоке",
     "fixture": {
       "write": {
-        "tree/.zcode/unica-gate-escalations.txt": "# разовая прямая правка\nsrc/cf/CommonModules/ОбщегоНазначения.bsl — правка легаси\n"
+        "tree/.dsh/1c/unica-gate-escalations.txt": "# разовая прямая правка\nsrc/cf/CommonModules/ОбщегоНазначения.bsl — правка легаси\n"
       }
     },
     "call": {
@@ -130,7 +130,7 @@
     "describe": "абсолютная форма строки allowlist не матчится",
     "fixture": {
       "write": {
-        "tree/.zcode/unica-gate-escalations.txt": "# разовая прямая правка\n$TMP/tree/src/cf/CommonModules/ОбщегоНазначения.bsl\n"
+        "tree/.dsh/1c/unica-gate-escalations.txt": "# разовая прямая правка\n$TMP/tree/src/cf/CommonModules/ОбщегоНазначения.bsl\n"
       }
     },
     "call": {
@@ -171,7 +171,7 @@
     "describe": "allowlist читается из дерева цели, при отсутствии — из cwd сессии",
     "fixture": {
       "write": {
-        "tree/.zcode/unica-gate-escalations.txt": "# разовая прямая правка\nsrc/cfe/Расширение/Module.bsl\n"
+        "tree/.dsh/1c/unica-gate-escalations.txt": "# разовая прямая правка\nsrc/cfe/Расширение/Module.bsl\n"
       }
     },
     "call": {
@@ -190,8 +190,8 @@
     "describe": "файл дерева цели приоритетен: без совпадения блок",
     "fixture": {
       "write": {
-        "tree/.zcode/unica-gate-escalations.txt": "# разовая прямая правка\nsrc/cfe/Расширение/Module.bsl\n",
-        "other-tree/.zcode/unica-gate-escalations.txt": "# чужое дерево: совпадения нет\n"
+        "tree/.dsh/1c/unica-gate-escalations.txt": "# разовая прямая правка\nsrc/cfe/Расширение/Module.bsl\n",
+        "other-tree/.dsh/1c/unica-gate-escalations.txt": "# чужое дерево: совпадения нет\n"
       }
     },
     "call": {

@@ -63,10 +63,8 @@ export interface FixtureOptions {
   readonly write?: Readonly<Record<string, string>>
   /** Каталоги относительно корня временного каталога. */
   readonly mkdir?: readonly string[]
-  /** Записать `contour.json` в `.zcode/1c` дерева. */
+  /** Записать `contour.json` в канон `.dsh/1c` дерева. */
   readonly contour?: unknown
-  /** Раскладка конфига: `.zcode/1c` (legacy) или `.dsh/1c`. */
-  readonly layout?: 'zcode' | 'dsh'
 }
 
 /**
@@ -88,9 +86,8 @@ export function createFixture(options: FixtureOptions = {}): Fixture {
   }
   writeFileSync(join(tree, 'v8project.yaml'), V8PROJECT, 'utf8')
   writeFileSync(join(root, 'other-tree', 'v8project.yaml'), V8PROJECT, 'utf8')
-  const layout = options.layout ?? 'zcode'
   if (options.contour !== undefined) {
-    const dir = join(tree, layout === 'dsh' ? '.dsh' : '.zcode', '1c')
+    const dir = join(tree, '.dsh', '1c')
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'contour.json'), `${JSON.stringify(options.contour, null, 2)}\n`, 'utf8')
   }

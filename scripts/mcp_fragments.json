@@ -5,7 +5,7 @@
 		"args": [],
 		"env": {
 			"TC1C_TRANSPORT": "stdio",
-			"TC1C_PROFILES_FILE": ".zcode/testpilot/profiles.yaml",
+			"TC1C_PROFILES_FILE": ".dsh/1c/testpilot/profiles.yaml",
 			"TC1C_CODE_EXECUTION": "false",
 			"TC1C_QUERY_EXECUTION": "false",
 			"TC1C_METADATA": "false",

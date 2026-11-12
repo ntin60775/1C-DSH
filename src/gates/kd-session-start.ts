@@ -13,14 +13,14 @@
  */
 
 import { spawn } from 'node:child_process'
-import { readFileSync, statSync } from 'node:fs'
+import { statSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import type { ContourProject } from '../contract.js'
-import { LAYOUT_DIRS, readJsonObject } from '../paths.js'
 
 /** Таймаут пробы живости станции. */
 const ALIVE_TIMEOUT_MS = 1000
@@ -31,42 +31,29 @@ const WAKE_COOLDOWN_MS = 30_000
 /** Последний запуск по ключу станции — защита от лавины параллельных сессий. */
 const lastWake = new Map<string, number>()
 
+/** Корень пакета контура: скрипты живут в нём, проект их не вендорит. */
+const PACKAGE_ROOT = fileURLToPath(new URL('../../', import.meta.url))
+
 /** Каталог станции по умолчанию; переопределяется `KD_RULES_STATION`. */
 export function stationDir(env: NodeJS.ProcessEnv = process.env): string {
   const configured = env['KD_RULES_STATION']
-  return configured !== undefined && configured !== '' ? configured : join(homedir(), '.local', 'share', '1c-zcode', 'kd-rules-mcp')
+  return configured !== undefined && configured !== '' ? configured : join(homedir(), '.local', 'share', '1c-dsh', 'kd-rules-mcp')
 }
 
 /**
- * Url из legacy-конфига хоста: `.zcode/config.json → mcp.servers["1c-kd"].url`.
- * В DSH запись MCP поднимает пресет, поэтому канон — `contour.json`; конфиг
- * остаётся для переездных проектов.
- */
-function urlFromLegacyConfig(root: string): string {
-  const config = readJsonObject(join(root, '.zcode', 'config.json'))
-  const mcp = config['mcp']
-  if (typeof mcp !== 'object' || mcp === null || Array.isArray(mcp)) return ''
-  const servers = (mcp as Record<string, unknown>)['servers']
-  if (typeof servers !== 'object' || servers === null || Array.isArray(servers)) return ''
-  const server = (servers as Record<string, unknown>)['1c-kd']
-  if (typeof server !== 'object' || server === null || Array.isArray(server)) return ''
-  const url = (server as Record<string, unknown>)['url']
-  return typeof url === 'string' ? url : ''
-}
-
-/**
- * URL станции `1c-kd`: `contour.json → 1c_kd.url`, затем конфиг хоста.
+ * URL станции `1c-kd`: канон `contour.json → 1c_kd.url`. Legacy-фолбэк
+ * конфига хоста снят после перевода парка (Т10): запись MCP поднимает
+ * пресет, адрес живёт только во входах контура.
  * @param project - проект контура либо `null`.
- * @param root - корень проекта, когда конфига контура нет.
  * @returns url либо пустая строка.
  */
-export function kdUrl(project: ContourProject | null, root: string): string {
+export function kdUrl(project: ContourProject | null): string {
   const contourKd = project?.contour['1c_kd']
   if (typeof contourKd === 'object' && contourKd !== null && !Array.isArray(contourKd)) {
     const url = (contourKd as Record<string, unknown>)['url']
     if (typeof url === 'string' && url !== '') return url
   }
-  return urlFromLegacyConfig(project?.root ?? root)
+  return ''
 }
 
 /**
@@ -107,15 +94,21 @@ export function stationAlive(url: string, timeoutMs = ALIVE_TIMEOUT_MS): Promise
   })
 }
 
-/** Скрипт старта станции: канон `.dsh/1c`, затем промежуточная и legacy-раскладки. */
-export function startScript(root: string): string | null {
-  for (const layout of LAYOUT_DIRS) {
-    const path = join(root, layout, 'scripts', 'start_kd_rules.sh')
-    try {
-      if (statSync(path).isFile()) return path
-    } catch {
-      // Нет файла — смотрим следующую раскладку.
-    }
+/**
+ * Скрипт старта станции: канон `$DSH_1C_ROOT/scripts` пакета контура;
+ * переопределяется `KD_START_SCRIPT` (тестовый шов и нестандартная поставка).
+ * @param env - окружение процесса.
+ * @returns путь скрипта либо `null`, когда файла нет.
+ */
+export function startScript(env: NodeJS.ProcessEnv = process.env): string | null {
+  const configured = env['KD_START_SCRIPT']
+  const path = configured !== undefined && configured !== ''
+    ? configured
+    : join(PACKAGE_ROOT, 'scripts', 'start_kd_rules.sh')
+  try {
+    if (statSync(path).isFile()) return path
+  } catch {
+    // Скрипта нет в поставке — поднимать нечем.
   }
   return null
 }
@@ -123,17 +116,17 @@ export function startScript(root: string): string | null {
 /**
  * Поднять станцию, если она спит и разведена в проекте.
  * @param project - проект контура либо `null`.
- * @param cwd - каталог сессии.
  * @param env - окружение процесса.
+ * @param script - подмена стартового скрипта: `undefined` — канон пакета,
+ *   `null` — скрипт недоступен, строка — готовый путь (тестовый шов).
  * @returns истина, когда стартовый скрипт запущен.
  */
 export async function ensureKdStation(
   project: ContourProject | null,
-  cwd: string,
   env: NodeJS.ProcessEnv = process.env,
+  script?: string | null,
 ): Promise<boolean> {
-  const root = project?.root ?? cwd
-  const url = kdUrl(project, root)
+  const url = kdUrl(project)
   if (url === '') return false
   if (await stationAlive(url)) return false
   const station = stationDir(env)
@@ -142,13 +135,13 @@ export async function ensureKdStation(
   } catch {
     return false
   }
-  const script = startScript(root)
-  if (script === null) return false
-  const key = `${station}|${script}|${url}`
+  const startPath = script === undefined ? startScript(env) : script
+  if (startPath === null) return false
+  const key = `${station}|${startPath}|${url}`
   const last = lastWake.get(key) ?? 0
   if (Date.now() - last < WAKE_COOLDOWN_MS) return false
   try {
-    const child = spawn('bash', [script, '--url', url], {
+    const child = spawn('bash', [startPath, '--url', url], {
       detached: true,
       stdio: 'ignore',
     })

@@ -140,7 +140,7 @@ export function apply(ctx: Context): void {
       ctx.logger.warn(`dsh-1c-contour: контекст сессии не собран: ${String(error)}`)
     }
     try {
-      await ensureKdStation(project, cwd)
+      await ensureKdStation(project)
     } catch (error: unknown) {
       ctx.logger.warn(`dsh-1c-contour: станция 1c-kd не поднята: ${String(error)}`)
     }

@@ -2,12 +2,12 @@
 # install_kd_rules.sh — установка станции kd-rules-mcp: MCP-сервер правил
 # обмена «Конвертации данных» 2/3 (апстрим egordoronchenko/kd-rules-mcp, MIT).
 #
-# Станция одна на машину: $HOME/.local/share/1c-zcode/kd-rules-mcp — код из
+# Станция одна на машину: $HOME/.local/share/1c-dsh/kd-rules-mcp — код из
 # вендор-копии контура (vendor/kd-rules-mcp), окружение uv (.venv рядом).
 # Состояние станции (projects.yaml, projects.local.yaml, workspace/, cache/)
-# переустановкой не трогается. MCP «1c-kd» в .zcode/config.json проекта
-# указывает на её URL (http://127.0.0.1:8060/mcp) — после установки
-# перезапусти сессию ZCode; сам сервер поднимает start_kd_rules.sh.
+# переустановкой не трогается. MCP-запись «1c-kd» пресета DSH указывает на
+# её URL (http://127.0.0.1:8060/mcp) — после установки перезапусти сессию
+# DSH; сам сервер поднимает start_kd_rules.sh.
 #
 # Источник кода, по порядку:
 #   1. vendor/kd-rules-mcp рядом со скриптом (раскладка репо контура);
@@ -23,7 +23,7 @@ set -euo pipefail
 KD_PIN="1.9.1"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 VENDOR="$HERE/../vendor/kd-rules-mcp"
-STATION="${KD_RULES_STATION:-$HOME/.local/share/1c-zcode/kd-rules-mcp}"
+STATION="${KD_RULES_STATION:-$HOME/.local/share/1c-dsh/kd-rules-mcp}"
 
 command -v uv >/dev/null || {
 	echo "нет uv — поставь: https://docs.astral.sh/uv/ (uv сам скачает Python 3.12)" >&2

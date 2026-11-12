@@ -171,11 +171,11 @@ describe('раскладка и скиллы', () => {
     ])
   })
 
-  it('planDelivery видит legacy-раскладку, пока проект не переехал', () => {
-    const tree = tempTree({ '.zcode/1c/contour.json': JSON.stringify({ '1c_db': { url: 'http://127.0.0.1:6100/mcp' } }) })
+  it('planDelivery читает канон .dsh/1c у проекта на маркерах', () => {
+    const tree = tempTree({ '.dsh/1c/contour.json': JSON.stringify({ '1c_db': { url: 'http://127.0.0.1:6100/mcp' } }) })
     try {
-      const legacy: ContourProject = { root: tree.root, layout: 'zcode', contour: {} }
-      const delivery = planDelivery(legacy, { root: '/pkg', home: '/home/tester' })
+      const markers: ContourProject = { root: tree.root, layout: 'markers', contour: {} }
+      const delivery = planDelivery(markers, { root: '/pkg', home: '/home/tester' })
       expect(delivery.mcp[0]?.config.serverName).toBe('unica')
       expect(delivery.mcp[2]?.config.url).toBe('http://127.0.0.1:6100/mcp')
       expect(delivery.problems).toEqual([])

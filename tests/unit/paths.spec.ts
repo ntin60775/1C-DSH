@@ -2,7 +2,7 @@
  * Раскладка и пути контура: приоритет `.dsh/1c`, маркеры проекта, исходники.
  *
  * invariant: путь исходника и корень дерева считаются так же, как у эталона;
- * порядок раскладок — решение 7 спеки (`.dsh` первым, legacy читается).
+ * раскладки DSH — решение 7 спеки, legacy снят в Т10 (`.dsh/1c` первым).
  * @module tests/unit/paths.spec
  */
 
@@ -15,24 +15,18 @@ import { contourDir, isAgentsDoc, normalizeSourcePath, resolveProject } from '..
 import { createFixture } from '../helpers/fixture.js'
 
 describe('resolveProject', () => {
-  it('находит конфиг в legacy .zcode/1c', () => {
+  it('находит конфиг в .dsh/1c', () => {
     const fixture = createFixture({ contour: { unica: { server: 'unica' } } })
-    expect(resolveProject(fixture.tree)).toMatchObject({ root: fixture.tree, layout: 'zcode' })
+    expect(resolveProject(fixture.tree)).toMatchObject({ root: fixture.tree, layout: 'dsh' })
     expect(resolveProject(fixture.tree)?.contour).toEqual({ unica: { server: 'unica' } })
     rmSync(fixture.root, { recursive: true, force: true })
   })
 
-  it('находит конфиг в .dsh/1c', () => {
-    const fixture = createFixture({ contour: { unica: { server: 'unica' } }, layout: 'dsh' })
-    expect(resolveProject(fixture.tree)).toMatchObject({ root: fixture.tree, layout: 'dsh' })
-    rmSync(fixture.root, { recursive: true, force: true })
-  })
-
-  it('новая раскладка перекрывает legacy в том же дереве', () => {
-    const fixture = createFixture({ contour: { legacy: true } })
-    const dir = join(fixture.tree, '.dsh', '1c')
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, 'contour.json'), JSON.stringify({ fresh: true }), 'utf8')
+  it('канон .dsh/1c перекрывает промежуточную .dsh в том же дереве', () => {
+    const fixture = createFixture({ contour: { fresh: true } })
+    const flat = join(fixture.tree, '.dsh')
+    mkdirSync(flat, { recursive: true })
+    writeFileSync(join(flat, 'contour.json'), JSON.stringify({ stale: true }), 'utf8')
     expect(resolveProject(fixture.tree)).toMatchObject({ layout: 'dsh', contour: { fresh: true } })
     rmSync(fixture.root, { recursive: true, force: true })
   })

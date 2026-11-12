@@ -1,13 +1,15 @@
 /**
- * Т6: канон раскладки `.dsh/1c`, legacy-ветки и состояние контура.
+ * Раскладка DSH: канон `.dsh/1c`, промежуточная `.dsh`, состояние контура.
  *
- * Здесь то, что доказывает пункты тикета: все входы гейтов читаются из
- * `.dsh/1c` первыми, legacy `.zcode/1c` и `.zcode` остаются ветками чтения,
- * проект на любой из двух раскладок получает один и тот же вердикт, а
- * корень состояния переопределяется `DSH_1C_STATE_DIR` с legacy
- * `ZCODE_1C_STATE_DIR`.
+ * Т6 доказал канон и переезд; Т10 снял legacy-раскладки ZCode после
+ * перевода парка: таблица раскладок содержит только DSH, корень состояния
+ * задаёт `DSH_1C_STATE_DIR`, скрипты контура живут в пакете
+ * (`$DSH_1C_ROOT`), проект их не вендорит.
  *
- * invariant: канон `.dsh/1c` перекрывает `.dsh`, legacy `.zcode/1c` и `.zcode`.
+ * spec: docs/plans/dsh-contour.md, «Готово» 9 — чтение legacy удалено
+ * после перевода последнего проекта.
+ * invariant: канон `.dsh/1c` перекрывает промежуточную `.dsh`; нечитаемый
+ * вход канона останавливает поиск (fail-closed).
  * @module tests/unit/layout-t6.spec
  */
 
@@ -53,18 +55,16 @@ function put(root: string, rel: string, text: string): void {
 }
 
 /** Проект-заглушка без чтения диска. */
-function projectOf(root: string, layout: 'dsh' | 'zcode' | 'markers' = 'markers'): ContourProject {
+function projectOf(root: string, layout: 'dsh' | 'markers' = 'markers'): ContourProject {
   return { root, layout, contour: {} }
 }
 
 describe('таблица раскладок', () => {
-  it('канон первым, затем промежуточная и legacy', () => {
-    expect(LAYOUT_DIRS).toEqual(['.dsh/1c', '.dsh', '.zcode/1c', '.zcode'])
+  it('канон первым, затем промежуточная; legacy снят (Т10)', () => {
+    expect(LAYOUT_DIRS).toEqual(['.dsh/1c', '.dsh'])
     expect(layoutCandidates('/p', 'contour')).toEqual([
       '/p/.dsh/1c/contour',
       '/p/.dsh/contour',
-      '/p/.zcode/1c/contour',
-      '/p/.zcode/contour',
     ])
   })
 
@@ -72,9 +72,9 @@ describe('таблица раскладок', () => {
     const found = findLayoutFile(
       '/p',
       'contour',
-      (path) => (path === '/p/.zcode/1c/contour' ? 'test\n' : null),
+      (path) => (path === '/p/.dsh/contour' ? 'test\n' : null),
     )
-    expect(found).toMatchObject({ text: 'test\n', label: '.zcode/1c/contour' })
+    expect(found).toMatchObject({ text: 'test\n', label: '.dsh/contour' })
   })
 
   it('файлов нет — null, а не выдуманный путь', () => {
@@ -82,12 +82,10 @@ describe('таблица раскладок', () => {
   })
 })
 
-describe('признак контура: канон перекрывает обе legacy-раскладки', () => {
-  it('.dsh/1c/contour перекрывает .dsh, .zcode/1c и .zcode', () => {
+describe('признак контура: канон перекрывает промежуточную раскладку', () => {
+  it('.dsh/1c/contour перекрывает .dsh/contour', () => {
     const fixture = createFixture({
       write: {
-        'tree/.zcode/contour': 'prod\n',
-        'tree/.zcode/1c/contour': 'prod\n',
         'tree/.dsh/contour': 'prod\n',
         'tree/.dsh/1c/contour': 'test\n',
       },
@@ -99,8 +97,8 @@ describe('признак контура: канон перекрывает об�
     }
   })
 
-  it('проект только с .zcode/1c/contour читается как test', () => {
-    const fixture = createFixture({ write: { 'tree/.zcode/1c/contour': 'test\n' } })
+  it('проект только с .dsh/contour читается как test', () => {
+    const fixture = createFixture({ write: { 'tree/.dsh/contour': 'test\n' } })
     try {
       expect(contourOf(resolveProject(fixture.tree))).toBe('test')
     } finally {
@@ -110,12 +108,12 @@ describe('признак контура: канон перекрывает об�
 })
 
 describe('входы гейтов: канон .dsh/1c', () => {
-  it('allowlist в .dsh/1c решает по себе и не читает legacy при каноне', () => {
+  it('allowlist в .dsh/1c решает по себе и не читает .dsh при каноне', () => {
     // Только опасные инструменты: у остальных решение `allow` наступает
     // раньше allowlist'а, и тест доказывал бы пустоту.
     const fixture = createFixture({
       write: {
-        'tree/.zcode/1c/mcp-write-allow.txt': 'execute_code\n',
+        'tree/.dsh/mcp-write-allow.txt': 'execute_code\n',
         'tree/.dsh/1c/mcp-write-allow.txt': 'restart_1c_session\n',
       },
     })
@@ -126,7 +124,7 @@ describe('входы гейтов: канон .dsh/1c', () => {
       // Канон разрешает свой инструмент…
       expect(mcpPre(call('mcp__1c-db__restart_1c_session'), project, stateOf(fixture)))
         .toMatchObject({ kind: 'allow' })
-      // …и не подхватывает разрешение из legacy: файл канона перекрывает legacy целиком.
+      // …и не подхватывает разрешение из промежуточной раскладки.
       expect(mcpPre(call('mcp__1c-db__execute_code'), project, stateOf(fixture)))
         .toMatchObject({ kind: 'deny', code: 'mcp-unsafe' })
     } finally {
@@ -134,9 +132,9 @@ describe('входы гейтов: канон .dsh/1c', () => {
     }
   })
 
-  it('без канона allowlist читается из legacy .zcode/1c', () => {
+  it('без канона allowlist читается из промежуточной .dsh', () => {
     const fixture = createFixture({
-      write: { 'tree/.zcode/1c/mcp-write-allow.txt': 'execute_code\n' },
+      write: { 'tree/.dsh/mcp-write-allow.txt': 'execute_code\n' },
     })
     try {
       const call: GateCall = { tool: 'mcp__1c-db__execute_code', args: {}, cwd: fixture.tree }
@@ -158,29 +156,29 @@ describe('входы гейтов: канон .dsh/1c', () => {
     }
   })
 
-  it('путь эскалаций в сообщениях гейта — канонический', () => {
+  it('пути гейта: канон раскладки, скрипты — в пакете контура', () => {
     const project = projectOf('/p')
     expect(contourPaths(project)).toMatchObject({
       layoutDir: '.dsh/1c',
       escalationFile: '.dsh/1c/unica-gate-escalations.txt',
-      initWorktreeScript: '.dsh/1c/scripts/init_worktree.sh',
+      initWorktreeScript: '$DSH_1C_ROOT/scripts/init_worktree.sh',
     })
-    expect(contourPaths(projectOf('/p', 'zcode'))).toMatchObject({
-      layoutDir: '.zcode/1c',
-      escalationFile: '.zcode/1c/unica-gate-escalations.txt',
+    expect(contourPaths(projectOf('/p', 'dsh'))).toMatchObject({
+      layoutDir: '.dsh/1c',
+      escalationFile: '.dsh/1c/unica-gate-escalations.txt',
     })
   })
 
-  it('эскалации Unica: канон .dsh/1c перекрывает legacy .zcode', () => {
+  it('эскалации Unica: канон .dsh/1c перекрывает промежуточную .dsh', () => {
     const fixture = createFixture({})
     try {
       const canonPath = 'src/cf/CommonModules/ОбщегоНазначения.bsl'
-      const legacyPath = 'src/cfe/Расширение/Общий.bsl'
-      put(fixture.tree, '.zcode/unica-gate-escalations.txt', `${legacyPath}\n`)
+      const flatPath = 'src/cfe/Расширение/Общий.bsl'
+      put(fixture.tree, '.dsh/unica-gate-escalations.txt', `${flatPath}\n`)
       expect(escalationEntries(fixture.tree, fixture.tree)).toMatchObject({
         found: true,
-        matched: [legacyPath],
-        label: '.zcode/unica-gate-escalations.txt',
+        matched: [flatPath],
+        label: '.dsh/unica-gate-escalations.txt',
       })
       put(fixture.tree, '.dsh/1c/unica-gate-escalations.txt', `${canonPath}\n`)
       expect(escalationEntries(fixture.tree, fixture.tree)).toMatchObject({
@@ -200,7 +198,7 @@ describe('входы гейтов: канон .dsh/1c', () => {
       expect(escalationSkips(projectOf(fixture.tree))).toEqual([
         ['directive-in-common-module', 'src/cf/Общий'],
       ])
-      put(fixture.tree, '.zcode/1c/bsl-module-gate-escalations.txt', 'all:src\n')
+      put(fixture.tree, '.dsh/bsl-module-gate-escalations.txt', 'all:src\n')
       expect(escalationSkips(projectOf(fixture.tree))).toEqual([
         ['directive-in-common-module', 'src/cf/Общий'],
       ])
@@ -222,15 +220,15 @@ describe('входы гейтов: канон .dsh/1c', () => {
     }
   })
 
-  it('чекер стиля: канон .dsh/1c/skills, затем legacy-адреса', async () => {
+  it('чекер стиля: канон .dsh/1c/skills, затем промежуточные адреса', async () => {
     const fixture = createFixture({})
     try {
       const stub = join(fixture.root, 'stub-python.sh')
       writeFileSync(stub, '#!/bin/sh\necho "$@"\nexit 1\n', { mode: 0o755 })
       const checker = createStyleChecker({ env: { PATH: '' }, python: stub })
-      put(fixture.tree, '.zcode/skills/1c-bsl-code-style/scripts/bsl_style_check.py', 'legacy')
+      put(fixture.tree, '.dsh/skills/1c-bsl-code-style/scripts/bsl_style_check.py', 'flat')
       expect(await checker.run([], fixture.tree)).toContain(
-        join(fixture.tree, '.zcode/skills/1c-bsl-code-style/scripts/bsl_style_check.py'),
+        join(fixture.tree, '.dsh/skills/1c-bsl-code-style/scripts/bsl_style_check.py'),
       )
       put(fixture.tree, '.dsh/1c/skills/1c-bsl-code-style/scripts/bsl_style_check.py', 'canon')
       expect(await checker.run([], fixture.tree)).toContain(
@@ -242,8 +240,8 @@ describe('входы гейтов: канон .dsh/1c', () => {
   })
 })
 
-describe('паритет раскладок: один вход — один вердикт', () => {
-  it('одинаковый набор входов в .dsh/1c и .zcode/1c даёт одинаковые решения', () => {
+describe('паритет раскладок DSH: один вход — один вердикт', () => {
+  it('одинаковый набор входов в .dsh/1c и .dsh даёт одинаковые решения', () => {
     const inputs: Record<string, string> = {
       'contour': 'test\n',
       'mcp-write-allow.txt': 'execute_code\n',
@@ -272,10 +270,10 @@ describe('паритет раскладок: один вход — один ве
         JSON.stringify(value)
           .replaceAll(tmpdir(), 'TMPDIR')
           .replaceAll(/dsh-1c-parity-[A-Za-z0-9]+/g, 'FIXTURE')
-          .replaceAll(/\/\.(?:dsh|zcode)\/1c\//g, '/LAYOUT/'),
+          .replaceAll(/\/\.dsh(?:\/1c)?\//g, '/LAYOUT/'),
       )
     const canon = normalize(run('.dsh/1c'))
-    expect(normalize(run('.zcode/1c'))).toEqual(canon)
+    expect(normalize(run('.dsh'))).toEqual(canon)
     expect(canon).toMatchObject({
       contour: 'test',
       gate: { kind: 'allow' },
@@ -286,13 +284,8 @@ describe('паритет раскладок: один вход — один ве
 })
 
 describe('корень состояния', () => {
-  it('DSH_1C_STATE_DIR переопределяет и побеждает legacy', () => {
-    expect(defaultStateDir({ DSH_1C_STATE_DIR: '/dsh', ZCODE_1C_STATE_DIR: '/zcode' })).toBe('/dsh')
+  it('DSH_1C_STATE_DIR переопределяет корень', () => {
     expect(defaultStateDir({ DSH_1C_STATE_DIR: '/dsh' })).toBe('/dsh')
-  })
-
-  it('ZCODE_1C_STATE_DIR читается как legacy', () => {
-    expect(defaultStateDir({ ZCODE_1C_STATE_DIR: '/zcode' })).toBe('/zcode')
   })
 
   it('без переменных — ~/.dsh/state/1c', () => {
@@ -300,7 +293,11 @@ describe('корень состояния', () => {
   })
 
   it('пустая переменная не считается заданной', () => {
-    expect(defaultStateDir({ DSH_1C_STATE_DIR: '', ZCODE_1C_STATE_DIR: '/zcode' })).toBe('/zcode')
+    expect(defaultStateDir({ DSH_1C_STATE_DIR: '' })).toBe(join(homedir(), '.dsh', 'state', '1c'))
+  })
+
+  it('тильда раскрывается в домашний каталог', () => {
+    expect(defaultStateDir({ DSH_1C_STATE_DIR: '~/state' })).toBe(join(homedir(), 'state'))
   })
 })
 
@@ -311,7 +308,6 @@ describe('инвариант: литералы раскладок живут т�
     'src/state.ts': 'путь состояния по умолчанию',
     'src/preset/config.ts': 'доставка пресета резолвит данные проекта сама',
     'src/style-checker.ts': 'кандидаты пути чекера стиля',
-    'src/gates/kd-session-start.ts': 'legacy-конфиг хоста для url станции КД',
   }
 
   it('гейты не заводят своих путей раскладки', () => {
@@ -320,23 +316,23 @@ describe('инвариант: литералы раскладок живут т�
     for (const rel of files) {
       if (rel in ALLOWED) continue
       const text = readFileSync(join(REPO_ROOT, rel), 'utf8')
-      const hit = /['"]\.(dsh|zcode)(?:\/|['"])/ .exec(text)
+      const hit = /['"]\.(dsh|zcode)(?:\/|['"])/.exec(text)
       expect(hit, `${rel}: путь раскладки строкой — брать из paths.ts`).toBeNull()
     }
   })
 
-  it('в src/ нет второй копии пары «.dsh, .zcode»', () => {
+  it('в src/ нет второй копии таблицы раскладок', () => {
     for (const rel of globSync('src/**/*.ts', { cwd: REPO_ROOT }).map((path) => path as string)) {
       if (rel === 'src/paths.ts') continue
       const text = readFileSync(join(REPO_ROOT, rel), 'utf8')
-      expect(text, `${rel}: своя копия списка раскладок`).not.toMatch(/\[\s*'\.dsh[^\]]*'\.zcode'\s*\]/)
+      expect(text, `${rel}: своя копия списка раскладок`).not.toMatch(/\[\s*'\.dsh\/1c'\s*,\s*'\.dsh'\s*\]/)
     }
   })
 })
 
-describe('нечитаемый вход: сломанный канон не подменяется legacy', () => {
-  it('каталог на месте contour.json — канон виноват, legacy не подхватывается', () => {
-    const fixture = createFixture({ write: { 'tree/.zcode/1c/contour': 'test\n' } })
+describe('нечитаемый вход: сломанный канон не подменяется другой раскладкой', () => {
+  it('каталог на месте contour.json — канон виноват, .dsh не подхватывается', () => {
+    const fixture = createFixture({ write: { 'tree/.dsh/contour': 'test\n' } })
     try {
       // Каталог вместо файла: existsSync — да, чтение — нет.
       mkdirSync(join(fixture.tree, '.dsh', '1c', 'contour'), { recursive: true })
@@ -346,8 +342,8 @@ describe('нечитаемый вход: сломанный канон не по
     }
   })
 
-  it('нечитаемый allowlist не разрешает и не уступает legacy', () => {
-    const fixture = createFixture({ write: { 'tree/.zcode/1c/mcp-write-allow.txt': 'execute_code\n' } })
+  it('нечитаемый allowlist не разрешает и не уступает .dsh', () => {
+    const fixture = createFixture({ write: { 'tree/.dsh/mcp-write-allow.txt': 'execute_code\n' } })
     try {
       mkdirSync(join(fixture.tree, '.dsh', '1c', 'mcp-write-allow.txt'), { recursive: true })
       const call: GateCall = { tool: 'mcp__1c-db__execute_code', args: {}, cwd: fixture.tree }
@@ -358,8 +354,8 @@ describe('нечитаемый вход: сломанный канон не по
     }
   })
 
-  it('нечитаемые эскалации носителя не уступают legacy', () => {
-    const fixture = createFixture({ write: { 'tree/.zcode/1c/bsl-module-gate-escalations.txt': 'all:src\n' } })
+  it('нечитаемые эскалации носителя не уступают .dsh', () => {
+    const fixture = createFixture({ write: { 'tree/.dsh/bsl-module-gate-escalations.txt': 'all:src\n' } })
     try {
       mkdirSync(join(fixture.tree, '.dsh', '1c', 'bsl-module-gate-escalations.txt'), { recursive: true })
       expect(escalationSkips(projectOf(fixture.tree))).toEqual([])
@@ -368,11 +364,11 @@ describe('нечитаемый вход: сломанный канон не по
     }
   })
 
-  it('эскалации нечитаемы — гейт это называет, а не уступает legacy', () => {
+  it('эскалации нечитаемы — гейт это называет, а не уступает .dsh', () => {
     const fixture = createFixture({})
     try {
       mkdirSync(join(fixture.tree, '.dsh', '1c', 'unica-gate-escalations.txt'), { recursive: true })
-      put(fixture.tree, '.zcode/unica-gate-escalations.txt', 'src/cf/CommonModules/ОбщегоНазначения.bsl\n')
+      put(fixture.tree, '.dsh/unica-gate-escalations.txt', 'src/cf/CommonModules/ОбщегоНазначения.bsl\n')
       const report = escalationEntries(fixture.tree, fixture.tree)
       expect(report.matched).toEqual([])
       expect(report.report.join(' ')).toContain('не прочитан')

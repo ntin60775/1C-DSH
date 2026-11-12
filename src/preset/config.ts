@@ -3,12 +3,11 @@
  *
  * Чистые функции без Cordis: юнит-тесты проверяют их на временных деревьях,
  * а `index.ts` только монтирует результат. Источник адресов — проектный
- * `contour.json` с локальным оверлеем и `db-instances.yaml`; семантика
- * повторяет `scripts/wire_config.py`, который разводил те же записи в
- * ZCode-эпоху.
+ * `contour.json` с локальным оверлеем и `db-instances.yaml`; фактический
+ * адрес 1c-db живёт в local-слое, пока его `desired_url` совпадает с желаемым.
  *
- * Раскладка читается как `.dsh/1c`, затем legacy `.zcode/1c`: проект
- * переезжает мигратором, и до переезда записи должны оставаться живыми.
+ * Раскладка одна — DSH (`.dsh/1c`); legacy-чтение ZCode снято после
+ * перевода парка (Т10).
  * @module dsh-1c-contour/preset/config
  */
 
@@ -75,20 +74,15 @@ export function unicaSkillsDir(home: string): string {
 }
 
 /**
- * Каталог проектных данных контура.
+ * Каталог проектных данных контура — канон `.dsh/1c`.
  *
- * `contour.json` уже нашёл раскладку (`ContourProject.layout`); для проекта
- * на маркерах без конфига предпочитаем новую `.dsh/1c`, а если она не
- * создана — legacy `.zcode/1c`.
+ * Проект на маркерах без конфига читается из того же каталога: отсутствующие
+ * входы `readProject` пропускает, адреса берутся по умолчанию.
  * @param project - найденный проект контура.
- * @param exists - проверка существования каталога (для тестов подменяема).
  * @returns каталог, из которого читаются проектные файлы.
  */
-export function dataDirOf(project: ContourProject, exists: (path: string) => boolean = () => false): string {
-  if (project.layout === 'dsh') return join(project.root, '.dsh', '1c')
-  if (project.layout === 'zcode') return join(project.root, '.zcode', '1c')
-  const modern = join(project.root, '.dsh', '1c')
-  return exists(modern) ? modern : join(project.root, '.zcode', '1c')
+export function dataDirOf(project: ContourProject): string {
+  return join(project.root, '.dsh', '1c')
 }
 
 /** Чтение JSON-объекта; битый или отсутствующий файл — пустой объект. */
@@ -168,9 +162,10 @@ function yamlScalar(raw: string): string {
 /**
  * Разбор `db-instances.yaml` — минимальный строгий поднабор YAML.
  *
- * Повторяет `parse_instances` из `scripts/wire_config.py`: блок `instances:`,
- * записи с отступом, скаляры. Имя или канал вне допустимого набора — ошибка:
- * сервер вне matcher гейта был бы тихим обходом прод-блокировки.
+ * Повторяет `parse_instances_at` из `scripts/contour_paths.py`: блок
+ * `instances:`, записи с отступом, скаляры. Имя или канал вне допустимого
+ * набора — ошибка: сервер вне matcher гейта был бы тихим обходом
+ * прод-блокировки.
  * @param text - содержимое файла.
  * @returns записи в порядке объявления.
  * @throws Error с путём и строкой, когда файл не разобран или имя негодно.
@@ -349,7 +344,7 @@ export function mcpRows(
 /**
  * Каталоги скиллов пресета.
  *
- * Контурные скиллы и четыре команды живут в пакете контура, скиллы Юники —
+ * Контурные скиллы и три команды живут в пакете контура, скиллы Юники —
  * в глобальной установке на машине. Порядок задаёт приоритет имён: контур
  * перекрывает одноимённый скилл Юники.
  * @param packageRoot - корень пакета контура.

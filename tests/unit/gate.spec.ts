@@ -64,14 +64,14 @@ describe('раскладка .dsh', () => {
     rmSync(fixture.root, { recursive: true, force: true })
   })
 
-  it('.dsh перекрывает legacy .zcode того же дерева', () => {
+  it('.dsh/1c перекрывает промежуточную .dsh того же дерева', () => {
     const fixture = createFixture({
       write: {
-        'tree/.zcode/unica-gate-escalations.txt': `# старый файл\n${BSL}\n`,
-        'tree/.dsh/unica-gate-escalations.txt': '# новая раскладка, путей нет\n',
+        'tree/.dsh/unica-gate-escalations.txt': `# старый файл\n${BSL}\n`,
+        'tree/.dsh/1c/unica-gate-escalations.txt': '# новая раскладка, путей нет\n',
       },
     })
-    // Legacy-файл разрешил бы правку; новая раскладка пуста — значит, решает она.
+    // Промежуточный файл разрешил бы правку; канон пуст — значит, решает он.
     const { decision } = run(fixture, call('write', { file_path: BSL, content: '' }, fixture.tree))
     expect(decision).toMatchObject({ kind: 'deny', code: 'source-edit' })
     rmSync(fixture.root, { recursive: true, force: true })
@@ -79,7 +79,6 @@ describe('раскладка .dsh', () => {
 
   it('правила пересборки читаются из .dsh/1c/contour.json', () => {
     const fixture = createFixture({
-      layout: 'dsh',
       contour: {
         unica: {
           rebuild_rules: [
@@ -103,7 +102,7 @@ describe('раскладка .dsh', () => {
       require: { params: { a: 1 } },
       message: 'структура не та',
     }
-    const fixture = createFixture({ layout: 'dsh', contour: { unica: { rebuild_rules: [rule] } } })
+    const fixture = createFixture({ contour: { unica: { rebuild_rules: [rule] } } })
     const equal = run(
       fixture,
       call('mcp__unica__run', { args: { op: 'push', params: { a: 1 }, cwd: fixture.tree } }, fixture.tree),
@@ -155,7 +154,7 @@ describe('журнал решений', () => {
 
   it('разрешённая эскалация пишется как confirmed', () => {
     const fixture = createFixture({
-      write: { 'tree/.zcode/unica-gate-escalations.txt': `# разовая прямая правка\n${BSL}\n` },
+      write: { 'tree/.dsh/1c/unica-gate-escalations.txt': `# разовая прямая правка\n${BSL}\n` },
     })
     run(fixture, call('write', { file_path: BSL, content: '' }, fixture.tree))
     expect(readAudit(fixture.stateDir)[0]).toMatchObject({ decision: 'confirmed' })
@@ -163,10 +162,10 @@ describe('журнал решений', () => {
   })
 
   it('правка allowlist-файла попадает в журнал', () => {
-    const fixture = createFixture({ write: { 'tree/.zcode/unica-gate-escalations.txt': '# пусто\n' } })
+    const fixture = createFixture({ write: { 'tree/.dsh/1c/unica-gate-escalations.txt': '# пусто\n' } })
     const { decision } = run(
       fixture,
-      call('edit', { file_path: '.zcode/unica-gate-escalations.txt', old_string: 'a', new_string: 'b' }, fixture.tree),
+      call('edit', { file_path: '.dsh/1c/unica-gate-escalations.txt', old_string: 'a', new_string: 'b' }, fixture.tree),
     )
     expect(decision).toMatchObject({ kind: 'allow', code: 'none' })
     const audit = readAudit(fixture.stateDir)

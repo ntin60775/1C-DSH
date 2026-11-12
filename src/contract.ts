@@ -53,8 +53,8 @@ export interface GateCall {
 export interface ContourProject {
   /** Абсолютный корень дерева 1С. */
   readonly root: string
-  /** Какая раскладка дала корень: `.dsh/1c`, legacy `.zcode/1c` или маркеры. */
-  readonly layout: 'dsh' | 'zcode' | 'markers'
+  /** Какая раскладка дала корень: `.dsh/1c` или маркеры. */
+  readonly layout: 'dsh' | 'markers'
   /** Содержимое `contour.json` (пустой объект, когда файла нет). */
   readonly contour: Readonly<Record<string, unknown>>
 }

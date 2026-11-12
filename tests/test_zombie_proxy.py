@@ -23,7 +23,7 @@
 
 Клиент фейковый (ONEC_PLATFORM), прокси — мок через fake HOME
 (venv/bin/python → mock_proxy.py), stand-замок — настоящий
-ib_lock.acquire_stand_lock в корне состояния (тест задаёт legacy-переменную), владелец — живой
+ib_lock.acquire_stand_lock в корне состояния (тест задаёт DSH-переменную), владелец — живой
 спящий процесс. Паттерн — tests/test_multistand.py (Т6/Т7). Зомби —
 проигравшая ветка flock-арбитража (мультистенд Т6): мок держит flock
 pid-файла и факт в contour.local.json, старт ждёт этот факт и попадает
@@ -177,7 +177,7 @@ state_dir = tmp / "state"
 BASE_ENV = dict(os.environ)
 BASE_ENV["HOME"] = str(fhome)
 BASE_ENV["ONEC_MCP_TOOLKIT_DIR"] = str(toolkit)
-BASE_ENV["ZCODE_1C_STATE_DIR"] = str(state_dir)
+BASE_ENV["DSH_1C_STATE_DIR"] = str(state_dir)
 BASE_ENV["WAIT_DEADLINE"] = "2"
 BASE_ENV["ONEC_PLATFORM"] = str(fake_client)
 BASE_ENV["PROXY_EXECUTE_TIMEOUT"] = str(PROBE_LIMIT)
@@ -189,9 +189,9 @@ def make_scenario(name, mode, with_lock, client_life=""):
     root = tmp / name
     port = free_port()
     root.mkdir(parents=True)
-    (root / ".zcode" / "1c").mkdir(parents=True)
+    (root / ".dsh" / "1c").mkdir(parents=True)
     (root / "tools" / "mcp").mkdir(parents=True)
-    (root / ".zcode" / "1c" / "contour.json").write_text(
+    (root / ".dsh" / "1c" / "contour.json").write_text(
         f'{{"1c_db": {{"epf_path": "tools/mcp/Mock.epf",'
         f' "url": "http://127.0.0.1:{port}/mcp"}}}}', encoding="utf-8")
     (root / "tools" / "mcp" / "Mock.epf").write_text("mock", encoding="utf-8")
@@ -200,7 +200,7 @@ def make_scenario(name, mode, with_lock, client_life=""):
         f"infobases:\n  origin:\n"
         f"    connection: 'File={root / 'build' / 'ib'}'\n", encoding="utf-8")
     url = f"http://127.0.0.1:{port}/mcp"
-    (root / ".zcode" / "1c" / "contour.local.json").write_text(
+    (root / ".dsh" / "1c" / "contour.local.json").write_text(
         json.dumps({"1c_db": {"url": url, "desired_url": url}}),
         encoding="utf-8")
     pidfile = Path(f"/tmp/1c-mcp-proxy-{root_hash(root)}.pid")
@@ -292,7 +292,7 @@ try:
                pidfile_locked(sc["pidfile"]),
                f"pidfile={sc['pidfile']}")
     _lib.check("Т4.1: фактический url в local — порт мока",
-               json.loads((sc["root"] / ".zcode" / "1c"
+               json.loads((sc["root"] / ".dsh" / "1c"
                            / "contour.local.json").read_text())["1c_db"]["url"]
                == f"http://127.0.0.1:{sc['port']}/mcp",
                f"port={sc['port']}")

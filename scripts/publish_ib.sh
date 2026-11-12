@@ -7,7 +7,7 @@
 #            готовности, печатает хвост E2E_PUBLISH_JSON {url, port, pid,
 #            ibsrv_cmd} — его читают API-тесты и агент;
 #   stop   — погасить публикацию; status — exit 0, если жива.
-#   --instance — инстанс мультистенда из .zcode/1c/db-instances.yaml
+#   --instance — инстанс мультистенда из .dsh/1c/db-instances.yaml
 #            (#37): порт — publish_port записи (8414 остаётся за main),
 #            база — File= строки подключения; рабочая каталог
 #            build/.ibsrv-<имя>. Fail-loud: файла/инстанса/порта нет,
@@ -34,33 +34,25 @@ while [ $# -gt 0 ]; do
 	esac
 done
 CMD="${ARGS[0]:-status}"
-# ROOT — проект контура, НЕ CWD: вендоренный скрипт живёт в
-# <проект>/.zcode/1c/scripts, корень ищется подъёмом от самого скрипта
-# (вызов абсолютным путём из чужого каталога обязан работать); иначе
-# git-toplevel/пWD — и финальная валидация: чужой корень = громкий отказ,
-# а не молчаливая работа с чужим build/ и чужими гвоздями contour.json
-# (регрессия 2026-10-05: git rev-parse из другого репо успешен, скрипт
-# смешал BASE чужого проекта с WORK и настройками своего CWD).
-SELF="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
-ROOT=""
-for CAND in "$SELF/../../.." "$SELF/../.."; do
-	CAND="$(cd "$CAND" 2>/dev/null && pwd)" || continue
-	if [ -f "$CAND/v8project.yaml" ] || [ -d "$CAND/.zcode/1c" ]; then
-		ROOT="$CAND"
-		break
-	fi
-done
-[ -n "$ROOT" ] || ROOT="$(git -C "$SELF" rev-parse --show-toplevel 2>/dev/null || pwd)"
-if [ ! -f "$ROOT/v8project.yaml" ] && [ ! -d "$ROOT/.zcode/1c" ]; then
-	echo "✗ корень $ROOT не похож на проект контура (нет v8project.yaml и .zcode/1c/) — запусти из корня проекта" >&2
+# ROOT — проект контура: скрипт живёт в пакете ($DSH_1C_ROOT/scripts),
+# корень берётся от каталога вызова (git-toplevel/pWD) и валидируется:
+# чужой корень = громкий отказ, а не молчаливая работа с чужим build/ и
+# чужими гвоздями contour.json (регрессия 2026-10-05: git rev-parse из
+# другого репо успешен, скрипт смешал BASE чужого проекта с WORK и
+# настройками своего CWD).
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+if [ ! -f "$ROOT/v8project.yaml" ] && [ ! -d "$ROOT/.dsh/1c" ]; then
+	echo "✗ корень $ROOT не похож на проект контура (нет v8project.yaml и .dsh/1c/) — запусти из корня проекта" >&2
 	exit 2
 fi
 BASE="${ARGS[1]:-$ROOT/build/ib}"
 WORK="$ROOT/build/.ibsrv"
+# Каталог скрипта в пакете контура: оттуда берётся contour_paths.py.
+SELF_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 
 # ── настройки из contour.json ──
 read_setting() { # $1 = python-выражение-путь
-	python3 - "$ROOT/.zcode/1c/contour.json" "$1" <<'PY'
+	python3 - "$ROOT/.dsh/1c/contour.json" "$1" <<'PY'
 import json, sys, pathlib
 try:
     cfg = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
@@ -79,19 +71,19 @@ IBSRV_LINE="$(read_setting ibsrv)"; IBSRV_LINE="${PUBLISH_IBSRV:-$IBSRV_LINE}"
 # файла/инстанса нет, publish_port не задан, связь не файловая — exit 2,
 # фолбэка на main нет (запрос ушёл бы в чужую базу).
 if [ -n "$INSTANCE" ]; then
-	eval "$(SELF="$SELF" ROOT="$ROOT" INSTANCE="$INSTANCE" python3 - <<'PY'
+	eval "$(SELF="$SELF_DIR" ROOT="$ROOT" INSTANCE="$INSTANCE" python3 - <<'PY'
 import os, shlex, sys, pathlib
 sys.path.insert(0, os.environ["SELF"])
-import wire_config as wc
+import contour_paths as cp
 root, name = pathlib.Path(os.environ["ROOT"]), os.environ["INSTANCE"]
-path = root / ".zcode" / "1c" / "db-instances.yaml"
-if not path.is_file():
-    print("PUBLISH_FAIL=" + shlex.quote(f"нет {path} — ленивый инит: создай "
-          "по образцу .zcode/1c/templates/db-instances.example.yaml "
+hit = cp.find_input(root, "db-instances.yaml")
+if hit is None:
+    print("PUBLISH_FAIL=" + shlex.quote("нет db-instances.yaml в раскладке проекта — ленивый инит: "
+          "создай .dsh/1c/db-instances.yaml по образцу $DSH_1C_ROOT/templates/db-instances.example.yaml "
           "(скилл 1c-db-data)"))
     sys.exit(0)
 try:
-    rec = {i["name"]: i for i in wc.parse_instances(root)}.get(name)
+    rec = {i["name"]: i for i in cp.parse_instances_at(hit[0])}.get(name)
 except ValueError as e:
     print("PUBLISH_FAIL=" + shlex.quote(f"db-instances.yaml: {e}"))
     sys.exit(0)
@@ -161,7 +153,7 @@ if [ -z "$IBSRV_LINE" ]; then
 	else
 		echo "✗ ibsrv (автономный сервер 1С) не найден: ни в /opt/1cv8, ни в контейнерах distrobox" >&2
 	fi
-	echo "  задай 1c.publish.ibsrv ('distrobox:<имя>' или '<команда запуска ibsrv>') в .zcode/1c/contour.json или env PUBLISH_IBSRV" >&2
+	echo "  задай 1c.publish.ibsrv ('distrobox:<имя>' или '<команда запуска ibsrv>') в .dsh/1c/contour.json или env PUBLISH_IBSRV" >&2
 	exit 2
 fi
 
@@ -240,7 +232,7 @@ start)
 	# все /hs/* отдавали 404, найдено живой проверкой). Коды диагностики:
 	# 401 = опубликован и ждёт Basic, 503 = не опубликован/неизвестный
 	# корень; 404/405 на пути без /hs/ ничего не доказывают.
-	python3 - "$WORK/ibases.json" "$PORT" "$BASE" "$ROOT/.zcode/1c/contour.json" <<'PY'
+	python3 - "$WORK/ibases.json" "$PORT" "$BASE" "$ROOT/.dsh/1c/contour.json" <<'PY'
 import json, pathlib, re, sys, uuid
 out, port, base, cfg_path = sys.argv[1:5]
 services = []

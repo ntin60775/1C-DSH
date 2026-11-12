@@ -1,9 +1,10 @@
 /**
  * Корпус и пресет: критерии Т5 проверяются на артефактах, не на словах.
  *
- * spec: Т5 — «15 скиллов контура, 4 команды», «`whenToUse` во всех 15
- * `SKILL.md`», «`grep -rl "\.zcode" skills commands templates` — пусто»,
- * «поставка скиллов в пресет».
+ * spec: Т5 — «15 скиллов контура», «`whenToUse` во всех 15 `SKILL.md`»,
+ * «поставка скиллов в пресет»; Т10 — команд три (/1c-migrate снят вместе
+ * с мигратором после перевода парка). Наследие ZCode в поставляемом слое
+ * охраняет отдельный инвариант-гард (tests/unit/no-legacy.spec.ts).
  * @module tests/unit/preset-corpus.spec
  */
 
@@ -65,8 +66,8 @@ describe('скиллы контура', () => {
 describe('команды контура', () => {
   const commands = readdirSync(join(ROOT, 'commands')).filter((name) => name.endsWith('.md')).sort()
 
-  it('ровно 4 команды /1c-*', () => {
-    expect(commands).toEqual(['1c-bootstrap.md', '1c-doctor.md', '1c-migrate.md', '1c-test.md'])
+  it('ровно 3 команды /1c-* (Т10: мигратор снят после перевода парка)', () => {
+    expect(commands).toEqual(['1c-bootstrap.md', '1c-doctor.md', '1c-test.md'])
   })
 
   it('команда — user-invocable скилл, моделью не вызывается', () => {
@@ -83,27 +84,13 @@ describe('команды контура', () => {
   })
 })
 
-describe('корпус без ZCode', () => {
-  it('ни одного .zcode в skills, commands, templates', () => {
+describe('корпус без ZCode-слотов', () => {
+  it('слота when_to_use в корпусе нет (DSH читает whenToUse)', () => {
     const hits: string[] = []
     for (const dir of ['skills', 'commands', 'templates']) {
       for (const file of files(join(ROOT, dir))) {
         if (!/\.(md|py|json|yaml|yml|template|ts)$/.test(file)) continue
-        if (readFileSync(file, 'utf8').includes('.zcode')) hits.push(file.slice(ROOT.length + 1))
-      }
-    }
-    expect(hits).toEqual([])
-  })
-
-  it('ZCode-путей состояния и слотов фронтматтера нет', () => {
-    const hits: string[] = []
-    for (const dir of ['skills', 'commands', 'templates']) {
-      for (const file of files(join(ROOT, dir))) {
-        if (!/\.(md|py|json|yaml|yml|template|ts)$/.test(file)) continue
-        const text = readFileSync(file, 'utf8')
-        for (const legacy of ['ZCODE_1C_STATE_DIR', 'when_to_use:', '~/.zcode']) {
-          if (text.includes(legacy)) hits.push(`${file.slice(ROOT.length + 1)}: ${legacy}`)
-        }
+        if (readFileSync(file, 'utf8').includes('when_to_use:')) hits.push(file.slice(ROOT.length + 1))
       }
     }
     expect(hits).toEqual([])
