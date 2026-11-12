@@ -157,15 +157,10 @@ describe('входы гейтов: канон .dsh/1c', () => {
   })
 
   it('пути гейта: канон раскладки, скрипты — в пакете контура', () => {
-    const project = projectOf('/p')
-    expect(contourPaths(project)).toMatchObject({
+    expect(contourPaths()).toMatchObject({
       layoutDir: '.dsh/1c',
       escalationFile: '.dsh/1c/unica-gate-escalations.txt',
       initWorktreeScript: '$DSH_1C_ROOT/scripts/init_worktree.sh',
-    })
-    expect(contourPaths(projectOf('/p', 'dsh'))).toMatchObject({
-      layoutDir: '.dsh/1c',
-      escalationFile: '.dsh/1c/unica-gate-escalations.txt',
     })
   })
 

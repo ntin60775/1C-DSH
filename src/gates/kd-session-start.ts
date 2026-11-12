@@ -116,15 +116,13 @@ export function startScript(env: NodeJS.ProcessEnv = process.env): string | null
 /**
  * Поднять станцию, если она спит и разведена в проекте.
  * @param project - проект контура либо `null`.
- * @param env - окружение процесса.
- * @param script - подмена стартового скрипта: `undefined` — канон пакета,
- *   `null` — скрипт недоступен, строка — готовый путь (тестовый шов).
+ * @param env - окружение процесса; `KD_START_SCRIPT` переопределяет
+ *   стартовый скрипт (тестовый шов и нестандартная поставка).
  * @returns истина, когда стартовый скрипт запущен.
  */
 export async function ensureKdStation(
   project: ContourProject | null,
   env: NodeJS.ProcessEnv = process.env,
-  script?: string | null,
 ): Promise<boolean> {
   const url = kdUrl(project)
   if (url === '') return false
@@ -135,7 +133,7 @@ export async function ensureKdStation(
   } catch {
     return false
   }
-  const startPath = script === undefined ? startScript(env) : script
+  const startPath = startScript(env)
   if (startPath === null) return false
   const key = `${station}|${startPath}|${url}`
   const last = lastWake.get(key) ?? 0

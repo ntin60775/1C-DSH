@@ -289,7 +289,7 @@ function blockMessage(
   project: ContourProject,
   contour: string,
 ): string {
-  const layout = contourPaths(project).layoutDir
+  const layout = contourPaths().layoutDir
   return [
     `Инструмент ${short} (сервер ${server}) меняет данные/состояние базы,`,
     `а контур проекта — ${contour} (mcp-unsafe-gate).`,
@@ -375,7 +375,7 @@ export function evaluatePre(
     state.audit(
       RULE,
       `${short} (${server}, ${project.root})`,
-      `эскалация из ${label ?? `${contourPaths(project).layoutDir}/mcp-write-allow.txt`}`,
+      `эскалация из ${label ?? `${contourPaths().layoutDir}/mcp-write-allow.txt`}`,
       'confirmed',
     )
     return { kind: 'allow', code: 'none' }

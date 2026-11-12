@@ -7,6 +7,8 @@
  *
  * spec: Т4 — «шесть гейтов на TS»; критерии — deny raw-режима, блок третьего
  * повтора, подсказка ворктри, уборка замка, контекст старта, обе ветки kd.
+ * spec: Т10 — станция КД: url только из contour.json, скрипт — канон пакета
+ * (`$DSH_1C_ROOT`), каталог станции `1c-dsh`, шов `KD_START_SCRIPT`.
  * @module tests/unit/gates-t4.spec
  */
 
@@ -347,7 +349,7 @@ describe('kd_session_start: пробуждение станции', () => {
     writeFileSync(script, `#!/bin/sh\necho "$@" > "${marker}"\n`, 'utf8')
     const env = { ...process.env, KD_RULES_STATION: station }
 
-    expect(await ensureKdStation(resolveProject(fixture.tree), env, script)).toBe(true)
+    expect(await ensureKdStation(resolveProject(fixture.tree), { ...env, KD_START_SCRIPT: script })).toBe(true)
     for (let attempt = 0; attempt < 40 && !existsSync(marker); attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 50))
     }
@@ -366,7 +368,7 @@ describe('kd_session_start: пробуждение станции', () => {
     expect(await stationAlive(aliveUrl)).toBe(true)
     const aliveScript = join(aliveFixture.root, 'kd-start.sh')
     writeFileSync(aliveScript, `#!/bin/sh\necho "$@" > "${marker}"\n`, 'utf8')
-    expect(await ensureKdStation(resolveProject(aliveFixture.tree), env, aliveScript)).toBe(false)
+    expect(await ensureKdStation(resolveProject(aliveFixture.tree), { ...env, KD_START_SCRIPT: aliveScript })).toBe(false)
     expect(existsSync(marker)).toBe(false)
     await new Promise<void>((resolve) => server.close(() => resolve()))
   })
@@ -376,12 +378,16 @@ describe('kd_session_start: пробуждение станции', () => {
     expect(await ensureKdStation(null, { ...process.env, KD_RULES_STATION: join(fixture.root, 'none') })).toBe(false)
   })
 
-  it('недоступный скрипт — молчим (null-шов)', async () => {
+  it('недоступный скрипт — молчим (шов KD_START_SCRIPT)', async () => {
     const fixture = fixtureOf({ contour: { '1c_kd': { url: 'http://127.0.0.1:9/mcp' } } })
     const station = join(fixture.root, 'station')
     mkdirSync(station, { recursive: true })
     writeFileSync(join(station, 'pyproject.toml'), '[project]\nname = "kd"\n', 'utf8')
-    expect(await ensureKdStation(resolveProject(fixture.tree), { ...process.env, KD_RULES_STATION: station }, null)).toBe(false)
+    expect(await ensureKdStation(resolveProject(fixture.tree), {
+      ...process.env,
+      KD_RULES_STATION: station,
+      KD_START_SCRIPT: join(fixture.root, 'absent-kd-start.sh'),
+    })).toBe(false)
   })
 })
 

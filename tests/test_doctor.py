@@ -532,6 +532,22 @@ def main() -> int:
 		      and bad["data"]["project"]["code"] == "project.registry-unreadable",
 		      json.dumps(bad["data"]["project"])[:400])
 
+		# spec: Т10 — контур не развёрнут (ut-10): запись none подтверждается.
+		fx_none = Fixture(Path(tmp) / "registry-none")
+		make_launcher(fx_none)
+		make_testpilot(fx_none)
+		write_install(fx_none, make_package(Path(tmp) / "registry-none" / "pkgsrc"))
+		write_project(fx_none)
+		(fx_none.project / ".dsh" / "1c" / "contour.json").unlink()
+		write_registry(fx_none, entry={"path": str(fx_none.project),
+		                               "layout": "none",
+		                               "contour_version": "9.9.9",
+		                               "migrated_at": "2026-11-13"})
+		none_reg = fx_none.report()
+		check("контур не развёрнут: запись none подтверждена (registry ok)",
+		      none_reg["data"]["project"]["registry"] == "ok",
+		      json.dumps(none_reg["data"]["project"])[:400])
+
 		return summary()
 
 

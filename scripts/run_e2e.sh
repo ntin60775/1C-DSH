@@ -147,7 +147,9 @@ def read_json(rel):
     found = cp.find_input(root, rel)
     if found is None:
         return {}
-    data, _err = cp.load_json(found[0])
+    data, err = cp.load_json(found[0])
+    if err:
+        print(f"WARN: {err} — адрес 1c-db взят по умолчанию", file=sys.stderr)
     return data or {}
 channel = rec["channel"] or rec["name"]
 base = cp.actual_db_url(read_json("contour.json"), read_json("contour.local.json"))

@@ -47,14 +47,8 @@ def main() -> int:
 		      f"| 1.3.0 |" in upstream or f"{pin} |" in upstream,
 		      "журнал синков не обновлён")
 
-	# ── разводка: фрагмент 1c-kd ──
-	fragments = json.loads((REPO / "scripts" / "mcp_fragments.json").read_text(encoding="utf-8"))
-	check("mcp_fragments: 1c-kd — http с шаблоном kd_url",
-	      fragments.get("1c-kd", {}).get("type") == "http"
-	      and fragments.get("1c-kd", {}).get("url") == "{{kd_url}}",
-	      str(fragments.get("1c-kd")))
-
-	# deploy.json ушёл вместе с ZCode-поставкой (юнит DSH, Т1)
+	# deploy.json ушёл вместе с ZCode-поставкой (юнит DSH, Т1);
+	# mcp_fragments.json снят в Т10 вместе с wire_config (MCP строит пресет).
 
 	# ── скиллы: frontmatter под слоты ZCode ──
 	lint = REPO / "scripts" / "lint_skill_frontmatter.py"

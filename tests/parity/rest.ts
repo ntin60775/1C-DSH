@@ -254,7 +254,8 @@ export async function stepTs(
       await ensureKdStation(runtime.project, {
         ...process.env,
         KD_RULES_STATION: runtime.station,
-      }, runtime.kdScript)
+        KD_START_SCRIPT: runtime.kdScript ?? join(runtime.fixture.root, 'absent-kd-start.sh'),
+      })
       return { decision: 'accept', code: 'accept', text: '' }
     }
   }

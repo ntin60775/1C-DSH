@@ -1093,6 +1093,11 @@ def check_registry(report: Report, root: Path) -> None:
 	if entry.get("path") != str(root):
 		problems.append("путь")
 	if actual is None:
+		if entry.get("layout") == "none":
+			# Контур не развёрнут: запись честно несёт none — подтверждаем.
+			report.ok("project", "реестр: контур не развёрнут, запись подтверждает "
+			            "(раскладка none)", registry="ok")
+			return
 		problems.append("раскладка не определена (входы контура не найдены)")
 	elif entry.get("layout") != actual:
 		problems.append("раскладка")

@@ -28,12 +28,11 @@ export interface ContourPaths {
 
 /**
  * Пути раскладки проекта: канон `.dsh/1c`; скрипты живут в пакете контура
- * (`$DSH_1C_ROOT`), проект их не вендорит.
- * @param project - найденный проект контура либо `null` вне проекта.
+ * (`$DSH_1C_ROOT`), проект их не вендорит. Раскладка одна — путь от
+ * проекта не зависит.
  * @returns пути для сообщений гейта и поиска файлов.
  */
-export function contourPaths(project: ContourProject | null): ContourPaths {
-  void project
+export function contourPaths(): ContourPaths {
   const layoutDir = layoutDirOf()
   return {
     layoutDir,

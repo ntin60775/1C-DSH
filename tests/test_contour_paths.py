@@ -91,7 +91,11 @@ def main() -> int:
 		inst.write_text("instances:\n  b2:\n    connection: File=x\n    user: u\n"
 		                '    password: ""\n', encoding="utf-8")
 		r = cp.parse_instances_at(inst)[0]
-		check("разбор: канал не задан — имя инстанса", r["channel"] == "b2", str(r))
+		# Запись несёт канал как объявлен: фолбэк «имя инстанса» применяют
+		# потребители (doctor, run_e2e, publish_ib, start_1c_db) и валидация —
+		# семантика снятого wire_config.py, перенос без изменения.
+		check("разбор: канал не задан — в записи пусто (фолбэк на потребителе)",
+		      r["channel"] == "", str(r))
 		check("разбор: password отсутствует в _seen (пустой валиден, отсутствие — нет)",
 		      "publish_port" not in r["_seen"] and "password" in r["_seen"], str(r["_seen"]))
 
@@ -130,7 +134,7 @@ def main() -> int:
 		                   "desired_url": "http://127.0.0.1:6003/mcp"}}
 		check("actual_db_url: drift применён, пока desired совпадает",
 		      cp.actual_db_url(contour, local) == "http://127.0.0.1:6004/mcp", "")
-		local["desired_url"] = "http://other/mcp"
+		local["1c_db"]["desired_url"] = "http://other/mcp"
 		check("actual_db_url: смена желаемого снимает drift",
 		      cp.actual_db_url(contour, local) == "http://127.0.0.1:6003/mcp", "")
 
@@ -142,7 +146,7 @@ def main() -> int:
 		check("реестр: запись создана", ok and error is None, str(error))
 		data = json.loads((state / cp.REGISTRY).read_text(encoding="utf-8"))
 		check("реестр: версия и запись на месте",
-		      data["version"] == cp.REGISTRY_VERSION and data["projects"]["/p"]["layout"] == "dsh",
+		      data["version"] == 1 and data["projects"]["/p"]["layout"] == "dsh",
 		      str(data))
 		ok, error = cp.update_registry(lambda data: False, state_dir=state)
 		check("реестр: mutate False — файл не переписан", ok, str(error))

@@ -28,8 +28,7 @@ stateless к сессиям: рестарт сессии соединение п
 ## Разводка и конфигурация
 
 - MCP-запись `1c-kd` строит пресет (`src/preset/config.ts`): URL из
-  `contour.json → 1c_kd.url` (умолчание `http://127.0.0.1:8060/mcp`);
-  `scripts/mcp_fragments.json` хранит фрагмент-образец записи.
+  `contour.json → 1c_kd.url` (умолчание `http://127.0.0.1:8060/mcp`).
 - Сервер настраивается только env `KD2_*` (`KD2_HOST/KD2_PORT/KD2_PROJECTS_FILE/
   KD2_WORKSPACE/KD2_CACHE_DIR/KD2_TOKEN/KD2_LOG_LEVEL`) — их задаёт
   `start_kd_rules.sh`; в конфиге проекта настраивается лишь URL.

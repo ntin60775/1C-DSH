@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""ROOT контурного проекта не берётся молча из чужого CWD (регрессия
-2026-10-05: publish_ib.sh из чужого git-репо принял его за корень —
-git rev-parse успешен, скрипт смешал BASE из аргумента с WORK/contour.json
-своего CWD). Модель DSH: скрипт живёт в пакете ($DSH_1C_ROOT/scripts),
-ROOT — каталог вызова + fail-fast валидация маркеров контурного проекта
-(publish_ib.sh и run_e2e.sh): чужой CWD — громкий отказ.
+"""ROOT контурного проекта не берётся молча из чужого CWD.
+
+target: регрессия 2026-10-05 — publish_ib.sh из чужого git-репо принял его
+за корень (git rev-parse успешен, скрипт смешал BASE из аргумента с
+WORK/contour.json своего CWD). Модель DSH: скрипт живёт в пакете
+($DSH_1C_ROOT/scripts), ROOT — каталог вызова + fail-fast валидация
+маркеров контурного проекта (publish_ib.sh и run_e2e.sh): чужой CWD —
+громкий отказ.
 
 Плюс старт-путь по граблям issue #12 (знание ранбука публикации): настоящий
 infobase.id из DoNotCopy.txt вместо случайного, предсоздание IPC-каталога
@@ -40,7 +42,7 @@ def sh(script: Path, cwd: Path, *args: str):
 	)
 
 
-def vendored(proj: Path) -> Path:
+def fake_package(proj: Path) -> Path:
 	# фейковый пакет контура: скрипты + общий модуль раскладок рядом
 	sdir = proj / ".pkg" / "scripts"
 	sdir.mkdir(parents=True, exist_ok=True)
@@ -60,7 +62,7 @@ def main():
 		(proj / "v8project.yaml").write_text(MARKER_YAML, encoding="utf-8")
 		(proj / ".dsh" / "1c" / "contour.json").write_text(
 			'{"1c": {"publish": {"port": %d}}}' % TEST_PORT, encoding="utf-8")
-		pub = vendored(proj)
+		pub = fake_package(proj)
 		run = proj / ".pkg" / "scripts" / "run_e2e.sh"
 
 		# чужой git-репо как CWD: git rev-parse УСПЕШЕН — точный сценарий инцидента
