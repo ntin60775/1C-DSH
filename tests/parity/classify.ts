@@ -17,7 +17,7 @@ export type ReasonClass =
   | 'unknown'
 
 /** Маркеры блокирующих сообщений — по одному на класс. */
-const MARKERS: readonly { readonly marker: string; readonly code: Exclude<ReasonClass, 'allow' | 'unknown'> }[] = [
+export const MARKERS: readonly { readonly marker: string; readonly code: Exclude<ReasonClass, 'allow' | 'unknown'> }[] = [
   { marker: 'Прямое редактирование исходников 1С', code: 'source-edit' },
   { marker: 'Запись в исходники 1С через bash', code: 'source-bash' },
   { marker: 'Ворктри не инициализирован', code: 'worktree-uninit' },

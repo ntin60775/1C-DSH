@@ -1,10 +1,13 @@
 /**
- * Засев замков контура в фикстуру: запись по формату контракта.
+ * Засев замков контура в фикстуру: формат независимого писателя.
  *
- * Паритет-корпус проигрывается на векторах (`tests/vectors/`); замок в
- * фикстуру кладётся записью `LockRecord` из `src/contract.ts` — тем же
- * форматом, который гейт читает с диска. Ключ и путь считаются по контракту
- * (`lockPath`/`standLockPath`), содержимое записи задаётся здесь явно.
+ * Stand-замок кладётся литералом ровно в том формате, который пишет
+ * python-стартер (`scripts/ib_lock.py`, `acquire_stand_lock`): поля
+ * `kind/connection/tree/pid/operation/started_at`, без `session_id` и
+ * `expires_ts`. TS-гейт обязан прочитать запись другого рантайма — это
+ * инвариант совместимости, а не пересказ собственного формата.
+ * Замок инфобазы кладётся по формату контракта (`LockRecord`).
+ * Ключ и путь считаются по контракту (`lockPath`/`standLockPath`).
  * @module tests/helpers/locks
  */
 
@@ -15,9 +18,17 @@ import type { LockRecord } from '../../src/contract.js'
 import { lockPath, resolveInfobaseConnection, standLockPath } from '../../src/lock.js'
 
 /** Записать замок на диск, создав каталоги. */
-function writeLock(path: string, lock: LockRecord): void {
+function writeLock(path: string, lock: Record<string, unknown>): void {
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, `${JSON.stringify(lock, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
+}
+
+/** Строка подключения без Usr=/Pwd= — как `_without_credentials` стартера. */
+function withoutCredentials(connection: string): string {
+  return connection
+    .split(';')
+    .filter((part) => !['usr=', 'pwd='].includes(part.trim().toLowerCase().slice(0, 4)))
+    .join(';')
 }
 
 /**
@@ -50,7 +61,7 @@ export function seedBaseLock(options: {
 }
 
 /**
- * Положить stand-замок с живым владельцем.
+ * Положить stand-замок с живым владельцем — формат python-стартера.
  * @param options - дерево, строка подключения, pid владельца и корень состояния.
  */
 export function seedStandLock(options: {
@@ -59,15 +70,12 @@ export function seedStandLock(options: {
   readonly pid: number
   readonly stateDir: string
 }): void {
-  const now = Date.now() / 1000
   writeLock(standLockPath(options.stateDir, options.connection, options.tree), {
-    connection: options.connection,
-    tree: options.tree,
-    session_id: '',
-    operation: 'stand',
-    started_at: new Date().toISOString(),
-    expires_ts: now + 20 * 60,
     kind: 'stand',
+    connection: withoutCredentials(options.connection),
+    tree: options.tree,
     pid: options.pid,
+    operation: 'start_client',
+    started_at: new Date().toISOString(),
   })
 }

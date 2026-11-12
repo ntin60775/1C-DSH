@@ -91,6 +91,8 @@ for (const corpus of CORPORA) {
                 ? ts.code as ReasonClass
                 : classifyText(2, ts.text)
               expect(tsClass, where).toBe(step.expect.code as ReasonClass)
+              // Класс по тексту причины — независимая сверка словаря маркеров.
+              expect(classifyText(2, ts.text), `${where}: класс по тексту`).toBe(step.expect.code as ReasonClass)
               for (const fragment of step.expect.reasonIncludes ?? []) {
                 expect(ts.text, where).toContain(fragment)
               }

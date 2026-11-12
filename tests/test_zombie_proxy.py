@@ -23,7 +23,7 @@
 
 Клиент фейковый (ONEC_PLATFORM), прокси — мок через fake HOME
 (venv/bin/python → mock_proxy.py), stand-замок — настоящий
-ib_lock.acquire_stand_lock в ZCODE_1C_STATE_DIR, владелец — живой
+ib_lock.acquire_stand_lock в корне состояния (тест задаёт legacy-переменную), владелец — живой
 спящий процесс. Паттерн — tests/test_multistand.py (Т6/Т7). Зомби —
 проигравшая ветка flock-арбитража (мультистенд Т6): мок держит flock
 pid-файла и факт в contour.local.json, старт ждёт этот факт и попадает

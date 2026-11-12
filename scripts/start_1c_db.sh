@@ -85,7 +85,7 @@
 # execute-проба (initialize + execute_code «Результат = Истина» со сверкой
 # ответа; лимит PROXY_EXECUTE_TIMEOUT, дефолт 30 с, env-override), не
 # только порт: «порт слушает — execute молчит» при живом потребителе
-# (stand-замок, hooks/ib_lock.py) — зомби, прокси пересоздаётся на том же
+# (stand-замок, scripts/ib_lock.py) — зомби, прокси пересоздаётся на том же
 # порту со статьёй «прокси пересоздан»; молчание без потребителя — штатно
 # (прокси держит execute_code за клиентом), клиент поднимает связь. Ожидание
 # клиента может пройти две фазы: если после подъёма клиента execute всё ещё
@@ -215,7 +215,7 @@ VENV="$HOME/.local/venvs/1c-mcp-proxy"
 TOOLKIT="${ONEC_MCP_TOOLKIT_DIR:-$HOME/home/dev/contrib/clones/1c-mcp-toolkit}"
 
 # ── слой замков: репо (scripts/ib_lock.py рядом со стартером), вендор
-#    проекта (scripts/../../hooks) — до снятия legacy-копий в Т10 ──
+#    проекта (../../hooks либо ../hooks) — до снятия legacy-копий в Т10 ──
 HOOKS_DIR=""
 for rel in "." "../../hooks" "../hooks"; do
 	# не-фатально: несуществующий кандидат не должен убить скрипт при set -e
@@ -391,8 +391,9 @@ try:
     if hooks:
         sys.path.insert(0, hooks)
     import ib_lock
-except (ImportError, OSError):
-    sys.exit(0)  # гард недоступен — работу не блокируем
+except (ImportError, OSError) as exc:
+    print(f"⚠ слой замков недоступен ({exc}) — stand-гард выключен", file=sys.stderr)
+    sys.exit(0)  # гард недоступен — работу не блокируем, но поломка видна
 conn = os.environ.get("STAND_CONN") or ib_lock.resolve_infobase_connection(root)
 if not conn or not conn.lower().startswith("file="):
     sys.exit(0)  # гард файловой базы: серверные стенды не замкиваются
@@ -882,7 +883,7 @@ PY
 
 # Потребитель стенда: «1» — жив, «0» — нет, «?» — не проверен (гард
 # недоступен или связь не резолвится). Носитель состояния —
-# stand_lock_status (hooks/ib_lock.py); второй источник «есть ли клиент»
+# stand_lock_status (scripts/ib_lock.py); второй источник «есть ли клиент»
 # не заводится (Т4). Недоступность гарда — не «потребителя нет»: прокси
 # зомби не объявляется, но и статья «штатно» не печатается.
 consumer_state() {

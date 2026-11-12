@@ -359,9 +359,10 @@ def main() -> int:
 		      (r.stdout + r.stderr)[-200:])
 
 		# ── 12. маркер контура переезжает (вход гейта mcp) ──
+		marker = p / ".dsh" / "1c" / "contour"
 		check("маркер: перенесён байт в байт",
-		      (p / ".dsh" / "1c" / "contour").read_bytes() == b"test\n",
-		      "содержимое изменилось")
+		      marker.is_file() and marker.read_bytes() == b"test\n",
+		      "маркер не перенесён")
 		check("маркер: исходник удалён",
 		      not (p / ".zcode" / "contour").exists(), "исходник остался")
 		p_marker = base / "marker-1c"
@@ -369,18 +370,27 @@ def main() -> int:
 		(p_marker / ".zcode" / "contour").rename(
 			p_marker / ".zcode" / "1c" / "contour")
 		r = run(p_marker)
+		marker_1c = p_marker / ".dsh" / "1c" / "contour"
 		check("маркер: форма .zcode/1c/contour тоже переезжает",
-		      r.returncode == 0
-		      and (p_marker / ".dsh" / "1c" / "contour").read_bytes()
-		      == b"test\n", (r.stdout + r.stderr)[-300:])
+		      r.returncode == 0 and marker_1c.is_file()
+		      and marker_1c.read_bytes() == b"test\n",
+		      (r.stdout + r.stderr)[-300:])
 
 		# ── 13. реестр проектов: запись создаётся и совпадает с фактом ──
+		# Чтение через safe-аксессор: на базе реестра нет — проверки
+		# краснятся, а не падают трейсбеком (краснота блока целиком).
+		def read_registry(path):
+			if not path.is_file():
+				return {}
+			return json.loads(path.read_text(encoding="utf-8"))
+
 		registry = state_dir(p) / "projects.json"
 		check("реестр: файл создан", registry.is_file(), str(registry))
-		data = json.loads(registry.read_text(encoding="utf-8"))
+		data = read_registry(registry)
 		entry = data.get("projects", {}).get(str(p), {})
 		version = json.loads(
 			(REPO / "package.json").read_text(encoding="utf-8"))["version"]
+		check("реестр: версия формата", data.get("version") == 1, str(data.get("version")))
 		check("реестр: путь и раскладка", entry.get("path") == str(p)
 		      and entry.get("layout") == "dsh", str(entry))
 		check("реестр: версия контура из package.json",
@@ -394,22 +404,23 @@ def main() -> int:
 		p_second = base / "second"
 		make_project(p_second)
 		r = run(p_second, state=state_dir(p))
-		data = json.loads(registry.read_text(encoding="utf-8"))
+		data = read_registry(registry)
+		projects = data.get("projects", {})
 		check("реестр: оба проекта на месте",
-		      r.returncode == 0 and str(p) in data["projects"]
-		      and str(p_second) in data["projects"],
-		      str(sorted(data.get("projects", {}))))
+		      r.returncode == 0 and str(p) in projects
+		      and str(p_second) in projects,
+		      str(sorted(projects)))
 		check("реестр: запись названа в выводе",
 		      "реестр проектов" in r.stdout, r.stdout[-300:])
 
 		# повторный перенос сохраняет дату первого перевода
-		first_date = json.loads(registry.read_text(encoding="utf-8")
-		                        )["projects"][str(p)]["migrated_at"]
+		first_date = read_registry(registry).get("projects", {}).get(
+			str(p), {}).get("migrated_at")
 		r = run(p)
-		again = json.loads(registry.read_text(encoding="utf-8")
-		                   )["projects"][str(p)]
+		again = read_registry(registry).get("projects", {}).get(str(p), {})
 		check("реестр: повторный перенос сохраняет дату",
-		      r.returncode == 0 and again["migrated_at"] == first_date,
+		      r.returncode == 0 and first_date is not None
+		      and again.get("migrated_at") == first_date,
 		      str(again))
 
 		# --check и --dry-run реестр не пишут
@@ -430,8 +441,9 @@ def main() -> int:
 		r = run(p_broken)
 		check("реестр: битый — перенос exit 0", r.returncode == 0,
 		      (r.stdout + r.stderr)[-300:])
-		check("реестр: битый — предупреждение названо",
-		      "реестр проектов не читается" in r.stdout, r.stdout[-300:])
+		check("реестр: битый — предупреждение и подсказка названы",
+		      "реестр не читается" in r.stdout
+		      and "удали битый файл" in r.stdout, r.stdout[-300:])
 		check("реестр: битый — данные перенесены",
 		      (p_broken / ".dsh" / "1c" / "contour.json").is_file(),
 		      "перенос не выполнен")

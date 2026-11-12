@@ -307,10 +307,11 @@ export function standLockStatus(stateDir: string, connection: string, tree: stri
  * @returns строка «дерево — операция, с …, сессия …».
  */
 export function describeHolder(lock: LockRecord): string {
-  const started = lock.started_at === '' ? '?' : lock.started_at
-  const operation = lock.operation === '' ? '?' : lock.operation
+  const started = lock.started_at === '' || lock.started_at === undefined ? '?' : lock.started_at
+  const operation = lock.operation === '' || lock.operation === undefined ? '?' : lock.operation
   if (lock.kind === 'stand') {
     return `${lock.tree} — операция ${operation}, с ${started}, процесс ${String(lock.pid ?? '?')}`
   }
-  return `${lock.tree} — операция ${operation}, с ${started}, сессия ${lock.session_id === '' ? '?' : lock.session_id}`
+  const session = lock.session_id === '' || lock.session_id === undefined ? '?' : lock.session_id
+  return `${lock.tree} — операция ${operation}, с ${started}, сессия ${session}`
 }

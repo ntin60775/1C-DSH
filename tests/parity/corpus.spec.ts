@@ -8,6 +8,8 @@
  */
 
 import { readdirSync, readFileSync } from 'node:fs'
+
+import { MARKERS } from './classify.js'
 import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
@@ -52,6 +54,23 @@ describe('покрытие корпуса векторами', () => {
       .sort()
     expect(corpora).toEqual(modules)
     expect(corpora).toEqual([...GATES].sort())
+  })
+
+  it('каждый блокирующий класс причины имеет маркер в классификаторе', () => {
+    // rebuild-rule — запасной класс блока без маркера (кейсы сверяют текст);
+    // none/escalation-granted — классы пропуска, не блока.
+    const blockClasses = [
+      'source-edit', 'source-bash', 'worktree-uninit', 'ib-lock',
+      'docs-unverified', 'mcp-unsafe', 'stand-lock', 'bsl-style',
+      'bsl-module', 'anon-raw', 'retry-discipline',
+    ]
+    const marked = new Set(MARKERS.map((entry) => entry.code))
+    for (const code of blockClasses) {
+      expect(marked.has(code as never), `класс ${code} без маркера`).toBe(true)
+    }
+    for (const entry of MARKERS) {
+      expect(entry.marker.length, `пустой маркер ${entry.code}`).toBeGreaterThan(0)
+    }
   })
 
   it('идентификаторы кейсов уникальны во всём корпусе', () => {

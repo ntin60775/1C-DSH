@@ -7,13 +7,16 @@
  * @module tests/unit/lock.spec
  */
 
+import { spawnSync } from 'node:child_process'
 import { readFileSync, rmSync, statSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
 import { evaluatePre } from '../../src/gates/unica-source.js'
-import { lockKey, lockPath, normalizedConnection, withoutCredentials } from '../../src/lock.js'
+import { describeHolder, lockKey, lockPath, normalizedConnection, standLockKey, standLockPath, standLockStatus, withoutCredentials } from '../../src/lock.js'
+import type { LockRecord } from '../../src/contract.js'
+import { seedStandLock } from '../helpers/locks.js'
 import { resolveProject } from '../../src/paths.js'
 import { createGateState } from '../../src/state.js'
 import { createFixture } from '../helpers/fixture.js'
@@ -74,6 +77,67 @@ describe('файл замка', () => {
     expect(raw).not.toContain('secret')
     expect(raw).toContain('Ref=\\"erp\\"')
     expect(statSync(file).mode & 0o777).toBe(0o600)
+    rmSync(fixture.root, { recursive: true, force: true })
+  })
+})
+
+/**
+ * invariant: stand-замок, записанный python-стартером (scripts/ib_lock.py),
+ * читается TS-гейтом: формат другого рантайма — не пересказ собственного.
+ * Посев — литерал формата стартера (tests/helpers/locks.ts).
+ */
+describe('stand-замок python-стартера', () => {
+  it('читается гейтом: pid-владелец жив, описание без undefined', () => {
+    const fixture = createFixture()
+    seedStandLock({
+      tree: fixture.tree,
+      connection: WITH_CREDENTIALS,
+      pid: process.pid,
+      stateDir: fixture.stateDir,
+    })
+    const file = standLockPath(fixture.stateDir, WITH_CREDENTIALS, fixture.tree)
+    const record = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
+    // Формат стартера: без session_id и expires_ts, учёток нет.
+    expect(record['kind']).toBe('stand')
+    expect(record['pid']).toBe(process.pid)
+    expect(record).not.toHaveProperty('session_id')
+    expect(record).not.toHaveProperty('expires_ts')
+    expect(JSON.stringify(record)).not.toContain('secret')
+
+    const holder = standLockStatus(fixture.stateDir, WITH_CREDENTIALS, fixture.tree)
+    expect(holder).not.toBeNull()
+    expect(holder?.pid).toBe(process.pid)
+    const text = describeHolder(holder as LockRecord)
+    expect(text).not.toContain('undefined')
+    expect(text).toContain(String(process.pid))
+    rmSync(fixture.root, { recursive: true, force: true })
+  })
+})
+
+/**
+ * invariant: ключи замков заморожены литералом, посчитанным python-писателем
+ * (scripts/ib_lock.py). TS-сторона сверяет тот же литерал; дрейф любой
+ * стороны краснит её тест. Находка панели Т8 (P2): мутация lockKey не
+ * ловилась, пока посев и чтение считали ключ одним кодом.
+ */
+describe('литералы ключей (межъязыковой охранник)', () => {
+  it('ключ ИБ совпадает с литералом python-писателя', () => {
+    expect(lockKey('Srvr=host;Ref=erp;', '/tree/a')).toBe('57db9fe786460ef38252e441c37967ddf24df939')
+  })
+
+  it('ключ stand совпадает с литералом python-писателя и не зависит от учёток', () => {
+    expect(standLockKey('Srvr=host;Ref=erp;Usr=u;Pwd=p;', '/tree/a')).toBe('48b716fbf05cbc86e9c66e66017f0bfe9f9c8c2c')
+    expect(standLockKey('Srvr=host;Ref=erp;', '/tree/a')).toBe('48b716fbf05cbc86e9c66e66017f0bfe9f9c8c2c')
+  })
+
+  it('мёртвый владелец не держит базу (standOwnerAlive)', () => {
+    const fixture = createFixture()
+    // Короткоживущий процесс: pid мёртв к моменту проверки.
+    const dead = spawnSync('sleep', ['0'])
+    expect(dead.status).toBe(0)
+    const pid = dead.pid as number
+    seedStandLock({ tree: fixture.tree, connection: WITH_CREDENTIALS, pid, stateDir: fixture.stateDir })
+    expect(standLockStatus(fixture.stateDir, WITH_CREDENTIALS, fixture.tree)).toBeNull()
     rmSync(fixture.root, { recursive: true, force: true })
   })
 })

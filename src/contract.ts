@@ -71,14 +71,20 @@ export interface LockRequest {
   readonly sessionId: string
 }
 
-/** Запись замка на диске; поля унаследованы от ZCode-эталона. */
+/**
+ * Запись замка на диске; поля унаследованы от ZCode-эталона.
+ *
+ * Замок ИБ несёт `session_id`/`operation`/`expires_ts` (TTL 20 минут).
+ * Stand-замок python-стартера (`scripts/ib_lock.py`) этих полей не пишет:
+ * владелец — pid, срок жизни — живость процесса, поэтому они опциональны.
+ */
 export interface LockRecord {
   readonly connection: string
   readonly tree: string
-  readonly session_id: string
-  readonly operation: string
+  readonly session_id?: string
+  readonly operation?: string
   readonly started_at: string
-  readonly expires_ts: number
+  readonly expires_ts?: number
   /** Вид замка: `stand` — стенд-замок файловой базы, иначе замок ИБ. */
   readonly kind?: 'stand'
   /** Процесс-владелец stand-замка. */

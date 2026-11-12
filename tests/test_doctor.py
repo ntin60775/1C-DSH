@@ -252,7 +252,9 @@ def main() -> int:
 		      json.dumps(data["layout"]))
 		check("здоровая установка — ни одного FAIL", not failing(data), failing(data))
 		check("реестр: запись совпадает с фактом — project ok",
-		      data["project"]["status"] == "ok", json.dumps(data["project"])[:400])
+		      data["project"]["status"] == "ok"
+		      and data["project"]["registry"] == "ok",
+		      json.dumps(data["project"])[:400])
 		recorded = json.loads(registry.read_text(encoding="utf-8"))
 		doctor_field = recorded["projects"][str(fx.project)].get("doctor", {})
 		check("реестр: doctor дописал свой вердикт",
