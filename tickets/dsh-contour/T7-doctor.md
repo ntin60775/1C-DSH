@@ -42,10 +42,12 @@
 
 - **bundle.** Профили ищутся в `$DSH_HOME/profiles`: пакет `dsh-1c-contour`
   в `dependencies` и в `dsh.profile.bundles`, патч `dsh.bundle.patch`
-  содержит строки `1c-contour` и `preset-1c`, сборка `lib/index.js` и
-  `lib/preset/index.js` на месте. Коды: `bundle.missing`,
-  `bundle.not-enabled`, `bundle.unresolved`, `bundle.row-missing`,
-  `bundle.unbuilt`; `--profile` выбирает профиль явно.
+  содержит строку `1c-contour` (строку пресета проверяет раздел `preset`),
+  сборка `lib/index.js` и `lib/preset/index.js` на месте. Коды:
+  `bundle.no-profiles`, `bundle.no-profile`, `bundle.missing`,
+  `bundle.not-enabled`, `bundle.unresolved`, `bundle.manifest`,
+  `bundle.no-patch`, `bundle.row-missing`, `bundle.unbuilt`; `--profile`
+  выбирает профиль явно (форма `--profile NAME` и `--profile=NAME`).
 - **preset.** Строка `preset-1c` объявляет пресет `1c` (иначе
   `preset.missing` / `preset.wrong-id`), выбор по умолчанию читается из
   `agent-preset-registry.selectedDefault` patch-документа профиля и
@@ -64,7 +66,8 @@
   `mcp.unica-artifacts`, `mcp.unica-version`, `mcp.testpilot-missing`,
   `mcp.testpilot-profiles`, `mcp.records`, `mcp.instances`,
   `mcp.db-down`, `mcp.kd-station`, `mcp.kd-down`. Стенд не поднят — WARN,
-  битый вход канона — FAIL (fail-closed Т6).
+  битый вход канона — FAIL (fail-closed Т6). Полный перечень кодов —
+  `grep -o 'code="[a-z.-]*"' scripts/doctor.py | sort -u`.
 - **layout.** Канон `.dsh/1c` и legacy `.zcode/1c` по всем десяти входам
   Т6; legacy-only — WARN `layout.legacy`, оба слоя — `migrate_from_zcode.py
   --check` (0 совпал, 1 не полон, 2 расхождение → FAIL `layout.diverged`).
@@ -73,29 +76,42 @@
   через `scaffold.py check` скилла `1c-project-layout`, `build/out`,
   движок стиля (env → PATH → путь из раскладки).
 - **state.** `DSH_1C_STATE_DIR` → legacy `ZCODE_1C_STATE_DIR` (WARN
-  `state.legacy-env`) → `~/.dsh/state/1c`; замки инфобаз и журнал гейтов.
+  `state.legacy-env`) → `~/.dsh/state/1c` (решение 7 спеки: гейты считают
+  умолчание от домашнего каталога, `DSH_HOME` на состояние не влияет);
+  замки инфобаз и стендов, журнал гейтов (нечитаемый журнал — WARN, а не
+  «пусто»).
 - **`--json`** печатает только JSON: `bundle`, `preset`, `skills`, `mcp`,
   `layout`, `project`, `state` (плюс `root`, `dshHome`, `status`, `exit`),
-  у раздела есть `status` и машинный `code`. `--no-ping` не поднимает
-  MCP-сервер Юники.
+  у раздела есть `status`, машинный `code` и `message` — сообщение того
+  уровня, который выставил код. Незнакомый флаг — exit 2 с причиной в
+  stderr. `--no-ping` не поднимает MCP-сервер Юники.
 - **`unica_ping.py`** переписан под DSH: запускает `unica mcp` глобального
   лаунчера с `UNICA_RUNTIME_CACHE_DIR` и каталогом проекта (как пресет),
-  прогоняет handshake и проверяет обязательные глаголы.
+  проверяет контракт handshake и обязательные глаголы.
 
 ### Доказательства
 
-- `tests/test_doctor.py` — 39 проверок: здоровая установка (exit 0,
+- `tests/test_doctor.py` — 46 проверок: здоровая установка (exit 0,
   `--json` с шестью полями), три фикстуры поломки с разными кодами
   (`preset.missing`, `mcp.testpilot-missing`, `skills.none`), пресет не по
   умолчанию, legacy-раскладка, расхождение канона с legacy (мигратор
   `--check` = 2), неизвестный профиль, невключённый bundle, схема
   v8project 0.15, неполная топология, legacy-переменная состояния,
-  коллизия инстансов. Фикстуры герметичны: `HOME`, `DSH_HOME` и `PATH`
-  указывают во временные каталоги, живой MCP не поднимается.
-- `tests/test_unica_ping.py` — 17 проверок: отбор лаунчера, env-перекрытия,
+  коллизия инстансов, порядок слоёв `selectedDefault` (home перекрывает
+  профиль), CLI (пробельная форма `--profile`, отказ на незнакомый флаг).
+  Фикстуры герметичны: `HOME`, `DSH_HOME` и `PATH` указывают во временные
+  каталоги, живой MCP не поднимается; сеть — только заведомо закрытый
+  порт `:1`.
+- `tests/test_unica_ping.py` — 19 проверок: отбор лаунчера, env-перекрытия,
   передача каталога проекта и кэша рантаймов, разбор `tools/list`, коды
   выхода.
-- Набор: 302 vitest, 18 python-файлов (627 проверок), линт 19/19,
+- Краснота на базовом коммите (`git archive main` + эти два теста):
+  `test_doctor.py` — 40 проваленных проверок, exit 1 (у старого doctor нет
+  `--json`, разделы и коды расходятся); `test_unica_ping.py` —
+  `AttributeError: no attribute 'launcher'` (в старом ping нет глобального
+  лаунчера). Критерий «тест зелёный без `deploy_recon`» — инвариантный
+  охранник, а не краснота: импорт снят ещё в Т1, тест держит его снятым.
+- Набор: 302 vitest (2 skipped), 18 python-файлов, линт 19/19,
   `typecheck` и `build` зелёные.
 - Живые пробы: `python3 scripts/doctor.py /home/prog7/home/dev/work/erp-demo`
   — exit 0, WARN по разделам `preset` (не выбран по умолчанию), `mcp`
@@ -108,8 +124,9 @@
 
 - Сняты проверки ZCode-эпохи и стенда: реестр `installed_plugins.json`,
   exec-бит `unica-bootstrap`, сверка `.zcode/config.json` через
-  `wire_config`, следы исполнения хуков (`rule-audit`/`doc-gate`/
-  `pending_trust`), тени контурных скиллов в `~/.zcode/skills`,
+  `wire_config`, следы исполнения хуков как доказательство развода
+  (`doc-gate`/`pending_trust`; журнал `rule-audit` остался в разделе
+  `state` как факт решений DSH), тени контурных скиллов в `~/.zcode/skills`,
   NER-эшелон анонимизации, `ibsrv`/`distrobox`, venv `1c-testpilot`,
   `Xvfb`. Предмет первых ушёл вместе с ZCode-слоем; остальные — готовность
   стенда e2e, а не установки контура, и вернутся отдельной проверкой,
@@ -122,7 +139,9 @@
   с legacy-скриптами (Т10).
 - Пресет «выбран» doctor понимает как «пресет по умолчанию для новых
   сессий»: выбор в открытой сессии лежит в записи сессии (zstd-jsonl), и
-  doctor его не читает.
+  doctor его не читает. Затенения скиллов смотрятся в двух пользовательских
+  и двух проектных корнях (`$DSH_HOME/skills`, `~/.agents/skills`,
+  `<проект>/.dsh/skills`, `<проект>/.agents/skills`).
 - Расхождение ожидание/факт: первая версия `patch_rows` принимала
   вложенные `- id:` внутри `config:` пресета за отдельные строки патча —
   поймано тестом на здоровой установке (в `bundle.rows` было 34 строки

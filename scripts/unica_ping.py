@@ -63,6 +63,8 @@ def parse_tools(text: str):
 			msg = json.loads(line)
 		except json.JSONDecodeError:
 			continue
+		if not isinstance(msg, dict):
+			continue  # не-объектная строка в stdout — не наш ответ
 		if msg.get("id") == 1 and "result" in msg:
 			version = str((msg["result"].get("serverInfo") or {}).get("version") or "")
 		if msg.get("id") == 2 and "result" in msg:
@@ -109,7 +111,12 @@ def main() -> int:
 	project = ""
 	for argument in sys.argv[1:]:
 		if argument.startswith("--timeout="):
-			timeout_s = int(argument.split("=", 1)[1])
+			try:
+				timeout_s = int(argument.split("=", 1)[1])
+			except ValueError:
+				print(f"unica_ping: --timeout ждёт секунды, не "
+				      f"{argument.split('=', 1)[1]!r}", file=sys.stderr)
+				return 2
 		elif argument.startswith("--project="):
 			project = argument.split("=", 1)[1]
 	as_json = "--json" in sys.argv

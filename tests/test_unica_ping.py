@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """Тесты unica_ping.py: поиск глобального лаунчера и контракт handshake.
 
-Ping запускает `unica mcp` тем же способом, что пресет DSH, поэтому живого
-MCP тест не поднимает: лаунчер подменяется скриптом, который отвечает на
-строки handshake. Проверяются отбор лаунчера, передача каталога проекта и
-кэша рантаймов, разбор `tools/list` и коды выхода.
+Цели (правило качества — .agents/skills/testing/references/quality-rule.md):
+  spec: тикет Т7, «mcp» — живость unica: лаунчер, `unica mcp`, handshake;
+        протокол и обязательные глаголы — docs/UNICA.md;
+  invariant: каталог проекта и кэш рантаймов уходят серверу так же, как их
+        передаёт пресет DSH (`src/preset/config.ts`).
 
-Запуск: python3 tests/test_unica_ping.py
+Ping запускает `unica mcp` тем же способом, что пресет, поэтому живого MCP
+тест не поднимает: лаунчер подменяется скриптом, который отвечает на строки
+handshake и записывает запрос. Запуск: python3 tests/test_unica_ping.py
 """
 import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -26,7 +30,9 @@ VERBS = ('{"name":"unica.run"},{"name":"unica.apply"},{"name":"unica.docs"},'
 GOOD = f'''#!/bin/sh
 printf '%s' "$PWD" > "$HOME/pwd.txt"
 printf '%s' "$UNICA_RUNTIME_CACHE_DIR" > "$HOME/cache.txt"
+: > "$HOME/requests.txt"
 while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$HOME/requests.txt"
   case "$line" in
     *initialize*) echo '{{"jsonrpc":"2.0","id":1,"result":{{"serverInfo":{{"version":"0.15.0-rc.5"}}}}}}' ;;
     *tools/list*) echo '{{"jsonrpc":"2.0","id":2,"result":{{"tools":[{VERBS}]}}}}' ;;
@@ -101,6 +107,9 @@ def main() -> int:
 			check("версия из serverInfo", "0.15.0-rc.5" in message, message)
 			check("обязательные глаголы контура на месте",
 			      unica_ping.REQUIRED_VERBS <= verbs, sorted(verbs))
+			check("в запросе назван протокол 2025-11-25",
+			      "2025-11-25" in (home / "requests.txt").read_text(encoding="utf-8"),
+			      (home / "requests.txt").read_text(encoding="utf-8")[:200])
 			check("каталог проекта передан серверу",
 			      (home / "pwd.txt").read_text(encoding="utf-8") == str(project),
 			      (home / "pwd.txt").read_text(encoding="utf-8"))
@@ -124,6 +133,13 @@ def main() -> int:
 			code, message, _verbs = unica_ping.ping(60, str(project))
 			check("лаунчер упал без вывода — код 1 с кодом выхода",
 			      code == 1 and "exit 1" in message, message)
+
+			bad = subprocess.run(
+				[sys.executable, str(Path(__file__).resolve().parent.parent
+				                     / "scripts" / "unica_ping.py"), "--timeout=abc"],
+				capture_output=True, text=True)
+			check("неверный --timeout — отказ, а не трейсбек",
+			      bad.returncode == 2 and "секунды" in bad.stderr, bad.stderr[:200])
 
 			(home / ".local" / "bin" / "unica").unlink()
 			code, message, _verbs = unica_ping.ping(60, str(project))

@@ -48,7 +48,6 @@ PLUGIN_ROW = "1c-contour"
 PRESET_ROW = "preset-1c"
 PRESET_ID = "1c"
 UNICA_MIN = "0.15.0-rc.1"
-DEFAULT_STATE_SUFFIX = ("state", "1c")
 
 # Контурные скиллы пакета: состав — доставка пресета (15 скиллов Т5).
 CONTOUR_SKILLS = {
@@ -102,7 +101,10 @@ class Report:
 			section["status"] = "warn"
 		if code and (level == "fail" and was != "fail" or level == "warn" and was == "ok"):
 			section["code"] = code
-		section["message"] = message
+			section["message"] = message
+		elif section["code"] == f"{name}.ok":
+			# Строка без проблемы: сводка обновляется, причина WARN/FAIL — нет.
+			section["message"] = message
 		section["messages"].append(message)
 		section.update(fields)
 		if not self.as_json:
@@ -215,7 +217,8 @@ def profile_rows(dsh_home: Path) -> list:
 	for path in sorted(base.iterdir()):
 		if not path.is_dir() or path.name == "node_modules":
 			continue
-		manifest = read_json_object(path / "package.json")
+		manifest, manifest_error = load_json(path / "package.json")
+		manifest = manifest or {}
 		dependencies = manifest.get("dependencies")
 		dependencies = dependencies if isinstance(dependencies, dict) else {}
 		profile = (manifest.get("dsh") or {}).get("profile") or {}
@@ -227,6 +230,7 @@ def profile_rows(dsh_home: Path) -> list:
 			"dependency": BUNDLE in dependencies,
 			"bundle": BUNDLE in bundles,
 			"bundles": [str(item) for item in bundles],
+			"error": manifest_error,
 		})
 	return rows
 
@@ -238,7 +242,7 @@ def patch_selected_default(dsh_home: Path, profile_dir: Path):
 	конфигурации), home-слой применяется последним. Нет строки — `None`.
 	"""
 	selected = None
-	for path in (Path(dsh_home) / "cordis.patch.yml", Path(profile_dir) / "cordis.patch.yml"):
+	for path in (Path(profile_dir) / "cordis.patch.yml", Path(dsh_home) / "cordis.patch.yml"):
 		text = read_text(path)
 		if text is None:
 			continue
@@ -267,6 +271,11 @@ def check_bundle(report: Report, dsh_home: Path, profile_arg: str):
 			report.fail("bundle", f"профиль {profile_arg} не найден: есть "
 			            + ", ".join(row["name"] for row in rows), code="bundle.no-profile")
 			return {}
+	for row in candidates:
+		if row.get("error"):
+			report.fail("bundle", f"профиль {row['name']}: манифест не читается "
+			            f"({row['error']}) — состав bundle неизвестен",
+			            code="bundle.manifest")
 	installed = [row for row in candidates if row["dependency"] or row["bundle"]]
 	if not installed:
 		where = f"профиле {profile_arg}" if profile_arg else "ни одном профиле"
@@ -287,7 +296,12 @@ def check_bundle(report: Report, dsh_home: Path, profile_arg: str):
 			            f"не установлен ({package})", code="bundle.unresolved")
 			continue
 		package = package.resolve()
-		manifest = read_json_object(package / "package.json")
+		manifest, manifest_error = load_json(package / "package.json")
+		if manifest_error:
+			report.fail("bundle", f"{BUNDLE} ({package}): манифест не читается "
+			            f"({manifest_error}) — пакет битый", code="bundle.manifest")
+			continue
+		manifest = manifest or {}
 		version = str(manifest.get("version") or "0")
 		patch_rel = (manifest.get("dsh") or {}).get("bundle") or {}
 		patch_rel = patch_rel.get("patch") if isinstance(patch_rel, dict) else None
@@ -374,7 +388,7 @@ def check_preset(report: Report, dsh_home: Path, bundle: dict):
 
 # ── 3. skills ───────────────────────────────────────────────────────────────
 
-def check_skills(report: Report, dsh_home: Path, bundle: dict):
+def check_skills(report: Report, dsh_home: Path, bundle: dict, root: Path):
 	"""15 контурных скиллов, 4 команды, скиллы Юники, затенения."""
 	if not bundle:
 		report.fail("skills", "скиллы не проверены: пакет bundle не найден",
@@ -429,15 +443,16 @@ def check_skills(report: Report, dsh_home: Path, bundle: dict):
 		            code="skills.unica-missing")
 
 	shadows = []
-	for user_root in (Path(dsh_home) / "skills", Path.home() / ".agents" / "skills"):
+	for user_root in (Path(dsh_home) / "skills", Path.home() / ".agents" / "skills",
+	                  Path(root) / ".dsh" / "skills", Path(root) / ".agents" / "skills"):
 		for name in sorted(CONTOUR_SKILLS):
 			if (user_root / name / "SKILL.md").is_file():
 				shadows.append(str(user_root / name))
 	report.sections["skills"]["shadows"] = shadows
 	if shadows:
-		report.fail("skills", "пользовательские копии контурных скиллов затеняют "
-		            f"пакетные: {', '.join(shadows)} — удали (поставщик — bundle)",
-		            code="skills.shadowed")
+		report.fail("skills", "копии контурных скиллов затеняют пакетные "
+		            f"(пользовательские или проектные): {', '.join(shadows)} — удали "
+		            "(поставщик — bundle)", code="skills.shadowed")
 
 
 # ── 4. mcp ──────────────────────────────────────────────────────────────────
@@ -486,9 +501,12 @@ def http_alive(url: str, timeout: float = 3.0):
 		with urllib.request.urlopen(url, timeout=timeout) as response:
 			return True, f"HTTP {response.status}"
 	except urllib.error.HTTPError as error:
-		# 406 — норма для MCP Streamable HTTP на голом GET (нет Accept).
-		return True, f"HTTP {error.code}" + (" (406 на GET без Accept — норма)"
-		                                     if error.code == 406 else "")
+		# 400/405/406 — норма для MCP Streamable HTTP на голом GET (нет
+		# Accept): сервер жив. 5xx — сервер сломан, а не «отвечает».
+		if error.code < 500:
+			return True, f"HTTP {error.code}" + (" (406 на GET без Accept — норма)"
+			                                     if error.code == 406 else "")
+		return False, f"HTTP {error.code}"
 	except Exception as error:  # noqa: BLE001 — любая причина = «не отвечает»
 		return False, type(error).__name__
 
@@ -520,7 +538,7 @@ def check_unica_artifacts(report: Report) -> None:
 		report.warn("mcp", f"runtime-manifest.json Юники не найден ({share}) — сверка "
 		            "артефактов пропущена", code="mcp.unica-artifacts-unknown")
 		return
-	manifest_path = manifests[-1]
+	manifest_path = max(manifests, key=lambda path: parse_version(path.parent.name))
 	version = manifest_path.parent.name
 	if not version_ge(version, UNICA_MIN):
 		report.fail("mcp", f"Юника {version} < минимальной {UNICA_MIN} — пресет требует "
@@ -650,8 +668,8 @@ def check_testpilot(report: Report, root: Path) -> dict:
 	hit = find_input(root, "testpilot/profiles.yaml")
 	if hit is None:
 		report.fail("mcp", "MCP 1c-testpilot не стартует: нет testpilot/profiles.yaml "
-		            "ни в .dsh/1c, ни в .zcode/1c — профили проекта не заданы",
-		            code="mcp.testpilot-profiles")
+		            f"ни в одном каталоге раскладки ({', '.join(LAYOUT_DIRS)}) — "
+		            "профили проекта не заданы", code="mcp.testpilot-profiles")
 		server["state"] = "missing"
 	elif resolved:
 		report.ok("mcp", f"1c-testpilot: {resolved}, профили {hit[1]}")
@@ -797,8 +815,11 @@ def migrator_check(root: Path):
 	script = Path(__file__).resolve().parent / "migrate_from_zcode.py"
 	if not script.is_file():
 		return None, ""
-	done = subprocess.run([sys.executable, str(script), str(root), "--check"],
-	                      capture_output=True, text=True)
+	try:
+		done = subprocess.run([sys.executable, str(script), str(root), "--check"],
+		                      capture_output=True, text=True, timeout=120)
+	except subprocess.TimeoutExpired:
+		return None, "мигратор не ответил за 120 с"
 	return done.returncode, (done.stdout + done.stderr).strip()
 
 
@@ -841,6 +862,10 @@ def check_layout(report: Report, root: Path) -> None:
 		elif code == 2:
 			report.fail("layout", "мигратор: канон переведён с расхождением — "
 			            f"правки разъехались ({tail})", code="layout.diverged")
+		elif code is None:
+			report.warn("layout", f"сверка с legacy не выполнена: "
+			            f"{tail or 'migrate_from_zcode.py не найден'}",
+			            code="layout.check-failed")
 		else:
 			report.warn("layout", f"migrate_from_zcode.py --check не отработал "
 			            f"(код {code}): {tail[:200]}", code="layout.check-failed")
@@ -984,8 +1009,13 @@ def check_topology(report: Report, root: Path) -> None:
 		report.warn("project", "скилл 1c-project-layout не найден — обязательный "
 		            "минимум топологии не проверяется", code="project.topology-unchecked")
 		return
-	done = subprocess.run([sys.executable, str(scaffold), "check", "--dir", str(root)],
-	                      capture_output=True, text=True)
+	try:
+		done = subprocess.run([sys.executable, str(scaffold), "check", "--dir", str(root)],
+		                      capture_output=True, text=True, timeout=120)
+	except subprocess.TimeoutExpired:
+		report.fail("project", "scaffold check завис (таймаут 120 с) — проверь "
+		            "скилл 1c-project-layout", code="project.topology")
+		return
 	if done.returncode == 0:
 		report.ok("project", "минимум топологии выполнен (1c-project-layout)")
 		return
@@ -1065,40 +1095,54 @@ def check_project(report: Report, root: Path, project: dict) -> None:
 
 # ── 7. state ────────────────────────────────────────────────────────────────
 
-def state_root(dsh_home: Path):
-	"""Корень состояния контура: env, затем legacy-env, затем умолчание."""
+def state_root():
+	"""Корень состояния контура: env, затем legacy-env, затем умолчание.
+
+	Умолчание — `~/.dsh/state/1c` (решение 7 спеки): гейты считают его от
+	домашнего каталога (`src/state.ts`), `DSH_HOME` подменяет только
+	профили и на состояние не влияет.
+	"""
 	for name in ("DSH_1C_STATE_DIR", "ZCODE_1C_STATE_DIR"):
 		value = os.environ.get(name) or ""
 		if value:
 			return Path(value).expanduser(), name
-	return Path(dsh_home).joinpath(*DEFAULT_STATE_SUFFIX), "умолчание"
+	return Path.home() / ".dsh" / "state" / "1c", "умолчание"
 
 
-def check_state(report: Report, dsh_home: Path) -> None:
-	"""Состояние гейтов: корень, замки инфобаз, журнал решений."""
-	root, source = state_root(dsh_home)
+def check_state(report: Report) -> None:
+	"""Состояние гейтов: корень, замки инфобаз и стендов, журнал решений."""
+	root, source = state_root()
 	data = {"dir": str(root), "source": source}
 	if source == "ZCODE_1C_STATE_DIR":
 		report.warn("state", f"состояние читается из legacy-переменной "
 		            f"ZCODE_1C_STATE_DIR ({root}) — переезд на DSH_1C_STATE_DIR",
 		            code="state.legacy-env")
 	locks = sorted((root / "ib-locks").glob("*.json")) if (root / "ib-locks").is_dir() else []
+	stand_locks = sorted((root / "stand-locks").glob("*.json")) \
+		if (root / "stand-locks").is_dir() else []
 	data["locks"] = len(locks)
-	if locks:
-		report.warn("state", f"замков инфобаз: {len(locks)} — просроченные снимает "
-		            "session_clean на старте", code="state.locks")
+	data["standLocks"] = len(stand_locks)
+	if locks or stand_locks:
+		report.warn("state", f"замков инфобаз: {len(locks)}, замков стендов: "
+		            f"{len(stand_locks)} — просроченные снимает session_clean на "
+		            "старте", code="state.locks")
 	else:
-		report.ok("state", f"замков инфобаз нет (состояние: {root}, {source})")
+		report.ok("state", f"замков инфобаз и стендов нет (состояние: {root}, {source})")
 	audit = root / "logs" / "rule-audit.jsonl"
 	count = 0
 	if audit.is_file():
 		try:
 			count = sum(1 for line in audit.read_text(encoding="utf-8").splitlines()
 			            if line.strip())
-		except OSError:
-			count = 0
-		report.ok("state", f"журнал гейтов: {count} записей ({audit})")
-		data["audit"] = count
+		except OSError as error:
+			report.warn("state", f"журнал гейтов не читается ({audit}): "
+			            f"{error.strerror or error} — проверь права",
+			            code="state.audit-unreadable")
+			data["audit"] = None
+			count = None
+		if count is not None:
+			report.ok("state", f"журнал гейтов: {count} записей ({audit})")
+			data["audit"] = count
 	else:
 		report.ok("state", f"журнал гейтов пуст — решения ещё не писались ({audit})")
 		data["audit"] = 0
@@ -1107,36 +1151,58 @@ def check_state(report: Report, dsh_home: Path) -> None:
 
 # ── вход ────────────────────────────────────────────────────────────────────
 
+USAGE = ("Запуск: python3 doctor.py [project-root] [--json] [--no-ping] "
+         "[--profile NAME]")
+
+
 def parse_args(argv):
-	flags = {"json": False, "no_ping": False, "profile": "", "root": ""}
-	for argument in argv:
-		if argument == "--json":
+	"""Разбор аргументов; `(flags, ошибка)` — неизвестный флаг не глотается."""
+	flags = {"json": False, "no_ping": False, "profile": "", "root": "",
+	         "help": False}
+	index = 0
+	while index < len(argv):
+		argument = argv[index]
+		if argument in ("-h", "--help"):
+			flags["help"] = True
+		elif argument == "--json":
 			flags["json"] = True
 		elif argument == "--no-ping":
 			flags["no_ping"] = True
+		elif argument == "--profile":
+			index += 1
+			if index >= len(argv):
+				return None, "у --profile нет значения"
+			flags["profile"] = argv[index]
 		elif argument.startswith("--profile="):
 			flags["profile"] = argument.split("=", 1)[1]
-		elif argument.startswith("--profile"):
-			continue
-		elif argument.startswith("--"):
-			continue
+		elif argument.startswith("-"):
+			return None, f"неизвестный флаг: {argument}"
 		elif not flags["root"]:
 			flags["root"] = argument
-	return flags
+		else:
+			return None, f"лишний аргумент: {argument}"
+		index += 1
+	return flags, None
 
 
 def main() -> int:
-	flags = parse_args(sys.argv[1:])
+	flags, error = parse_args(sys.argv[1:])
+	if error is not None:
+		print(f"doctor: {error}\n{USAGE}", file=sys.stderr)
+		return 2
+	if flags["help"]:
+		print(USAGE)
+		return 0
 	root = Path(flags["root"] or os.getcwd()).resolve()
 	dsh_home = Path(os.environ.get("DSH_HOME") or Path.home() / ".dsh").expanduser()
 	report = Report(flags["json"])
 	bundle = check_bundle(report, dsh_home, flags["profile"])
 	check_preset(report, dsh_home, bundle)
-	check_skills(report, dsh_home, bundle)
+	check_skills(report, dsh_home, bundle, root)
 	project = check_mcp(report, root, flags["no_ping"])
 	check_layout(report, root)
 	check_project(report, root, project)
-	check_state(report, dsh_home)
+	check_state(report)
 	return report.finish(root, dsh_home)
 
 

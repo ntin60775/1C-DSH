@@ -1,6 +1,6 @@
 ---
 name: 1c-doctor
-description: "Проверка контура 1С в проекте: unica, testpilot, конфиги, стайл-чекер, БСП-пак, shadow-дубли, состояние гейтов"
+description: "Проверка установки контура 1С в DSH: bundle и пресет, 15 скиллов и команды, MCP (unica, testpilot, 1c-db, 1c-kd), раскладка .dsh/1c, проект, состояние гейтов; --json для машинной проверки"
 whenToUse: "Нужно проверить, что контур 1С в проекте собран и живой, — запустить doctor и разобрать FAIL/WARN."
 disable-model-invocation: true
 ---

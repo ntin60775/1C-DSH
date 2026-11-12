@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
 """Тесты doctor.py: проверка установки контура на DSH и проекта.
 
-Три фикстуры «сломанная установка» — нет строки пресета, не поднимается MCP
-(нет команды `1c-testpilot`), нет скиллов — каждая даёт свой код раздела и
-свою причину; здоровая установка — exit 0. Прогон герметичен: DSH_HOME, HOME
-и PATH указывают во временные каталоги, живой MCP не запускается (`--no-ping`).
+Цели (правило качества — .agents/skills/testing/references/quality-rule.md):
+  spec: tickets/dsh-contour/T7-doctor.md, «Критерии приёмки» — exit 0 на
+        проекте с bundle и пресетом, три фикстуры поломки с разными
+        причинами, `--json` с полями bundle/preset/skills/mcp/layout/project,
+        тест зелёный без deploy_recon;
+  invariant: `--json` печатает ровно JSON; doctor не зависит от живой машины
+        (HOME, DSH_HOME и PATH указывают во временные каталоги, живой MCP не
+        поднимается — `--no-ping`); неизвестный флаг не глотается;
+  target: bundle.rows не считает вложенные `- id:` внутри `config:`
+        пресета — реальный дефект разбора патча (тикет, «Границы и
+        расхождения»: 34 строки вместо двух).
 
-Запуск: python3 tests/test_doctor.py
+Сеть: фикстуры пробуют только заведомо закрытый 127.0.0.1:1, поэтому проба
+`1c-db` даёт WARN, а не FAIL. Запуск: python3 tests/test_doctor.py
 """
 import json
 import os
@@ -56,13 +64,18 @@ class Fixture:
 			env.pop(name, None)
 		env["HOME"] = str(self.home)
 		env["DSH_HOME"] = str(self.dsh)
-		env["PATH"] = os.pathsep.join((str(self.bin), "/usr/bin", "/bin"))
+		# Только временный каталог: ни testpilot, ни unica, ни стиль-движка
+		# с машины тест не видит.
+		env["PATH"] = str(self.bin)
 		env.update(extra or {})
 		return env
 
 	def run(self, *flags, extra_env=None):
+		return self.run_argv(str(self.project), "--no-ping", *flags, extra_env=extra_env)
+
+	def run_argv(self, *argv, extra_env=None):
 		return subprocess.run(
-			[sys.executable, str(DOCTOR), str(self.project), "--no-ping", *flags],
+			[sys.executable, str(DOCTOR), *argv],
 			capture_output=True, text=True, env=self.env(extra_env), timeout=120)
 
 	def report(self, *flags, extra_env=None) -> dict:
@@ -207,8 +220,14 @@ def main() -> int:
 		check("--json: раскладка .dsh/1c", data["layout"]["dir"] == ".dsh/1c",
 		      json.dumps(data["layout"]))
 		check("здоровая установка — ни одного FAIL", not failing(data), failing(data))
-		check("здоровая установка — итог без FAIL в выводе", "FAIL" not in r.stdout,
-		      r.stdout[-800:])
+		human = fx.run()
+		check("здоровая установка — человеческий вывод без FAIL",
+		      "FAIL" not in human.stdout and "итог: зелёный" in human.stdout,
+		      human.stdout[-800:])
+		guard = DOCTOR.read_text(encoding="utf-8")
+		check("doctor не импортирует deploy_recon (критерий приёмки)",
+		      "import deploy_recon" not in guard and "from deploy_recon" not in guard,
+		      "импорт нашёлся")
 
 		# ── 2. Фикстура «нет пресета»: свой код и своя причина ──
 		fx_preset = Fixture(Path(tmp) / "no-preset")
@@ -245,9 +264,13 @@ def main() -> int:
 		check("MCP не поднялся — FAIL только в разделе mcp",
 		      [name for name, _ in failing(broken_mcp["data"])] == ["mcp"],
 		      failing(broken_mcp["data"]))
-		check("MCP не поднялся — причина называет команду",
-		      "1c-testpilot" in broken_mcp["result"].stdout,
-		      broken_mcp["result"].stdout[-500:])
+		mcp_human = fx_mcp.run()
+		check("MCP не поднялся — причина в человеческом выводе",
+		      "FAIL mcp:" in mcp_human.stdout and "1c-testpilot" in mcp_human.stdout,
+		      mcp_human.stdout[-500:])
+		check("MCP не поднялся — message раздела соответствует коду",
+		      "1c-testpilot" in (broken_mcp["data"]["mcp"]["message"] or ""),
+		      str(broken_mcp["data"]["mcp"]["message"]))
 
 		# ── 4. Фикстура «скиллов ноль»: свой код и своя причина ──
 		fx_skills = Fixture(Path(tmp) / "no-skills")
@@ -265,6 +288,11 @@ def main() -> int:
 		check("скиллов ноль — FAIL только в разделе skills",
 		      [name for name, _ in failing(broken_skills["data"])] == ["skills"],
 		      failing(broken_skills["data"]))
+		skills_human = fx_skills.run()
+		check("скиллов ноль — причина в человеческом выводе",
+		      "FAIL skills:" in skills_human.stdout
+		      and "контурных скиллов нет" in skills_human.stdout,
+		      skills_human.stdout[-500:])
 
 		codes = {broken_preset["data"]["preset"]["code"],
 		         broken_mcp["data"]["mcp"]["code"],
@@ -285,6 +313,45 @@ def main() -> int:
 		      other["data"]["preset"]["status"] == "warn"
 		      and other["data"]["preset"]["code"] == "preset.not-default",
 		      json.dumps(other["data"]["preset"]))
+
+		# ── 5b. Порядок слоёв selectedDefault: home применяется последним ──
+		# spec: тикет Т7, «preset» — умолчание читается из patch-документа
+		# профиля и home-слоя; DSH применяет home последним.
+		fx_layers = Fixture(Path(tmp) / "layers")
+		make_launcher(fx_layers)
+		make_testpilot(fx_layers)
+		write_install(fx_layers, make_package(Path(tmp) / "layers" / "pkgsrc"),
+		              selected="standard")
+		write_project(fx_layers)
+		(fx_layers.dsh / "cordis.patch.yml").write_text(
+			"- id: agent-preset-registry\n  config:\n    selectedDefault: '1c'\n",
+			encoding="utf-8")
+		home_wins = fx_layers.report()
+		check("home-слой перекрывает профиль: selectedDefault 1c",
+		      home_wins["data"]["preset"]["status"] == "ok"
+		      and home_wins["data"]["preset"]["default"] == "1c",
+		      json.dumps(home_wins["data"]["preset"])[:400])
+		(fx_layers.dsh / "cordis.patch.yml").write_text(
+			"- id: agent-preset-registry\n  config:\n    selectedDefault: 'standard'\n",
+			encoding="utf-8")
+		(fx_layers.dsh / "profiles" / "web" / "cordis.patch.yml").write_text(
+			"- id: agent-preset-registry\n  config:\n    selectedDefault: '1c'\n",
+			encoding="utf-8")
+		profile_loses = fx_layers.report()
+		check("профильный слой не перебивает home: WARN, default standard",
+		      profile_loses["data"]["preset"]["status"] == "warn"
+		      and profile_loses["data"]["preset"]["default"] == "standard",
+		      json.dumps(profile_loses["data"]["preset"])[:400])
+
+		# ── 5c. CLI: пробельная форма --profile, чужой флаг — exit 2 ──
+		# invariant: незнакомый флаг не глотается.
+		space_form = fx_layers.run("--profile", "web")
+		check("--profile с пробелом применяется, exit 0",
+		      space_form.returncode == 0 and "профиль web" in space_form.stdout,
+		      space_form.stdout[-400:])
+		typo = fx_layers.run_argv("--nope", str(fx_layers.project))
+		check("неизвестный флаг — exit 2 и причина в stderr",
+		      typo.returncode == 2 and "--nope" in typo.stderr, typo.stderr[:300])
 
 		# ── 6. Раскладка: legacy — WARN, канон — OK ──
 		fx_legacy = Fixture(Path(tmp) / "legacy")

@@ -3,7 +3,7 @@ node_type: runbook
 title: Продолжение работы над проектом
 service: _platform
 status: active
-updated: 2026-11-10
+updated: 2026-11-12
 ---
 
 # Продолжение работы над проектом
@@ -144,18 +144,18 @@ MCP-записи `unica`, `1c-testpilot`, `1c-db` (+ инстансы), `1c-kd`,
 MCP. Таблица раскладок — `scripts/contour_paths.py` (повторяет
 `src/paths.ts`); разбор `db-instances.yaml` остался один —
 `wire_config.parse_instances_at`. Доказательства: `tests/test_doctor.py`
-(39 проверок: здоровая установка exit 0, три фикстуры поломки с разными
-кодами, `--json`, legacy и расхождение раскладок, схема v8project,
-инстансы) и переписанный `tests/test_unica_ping.py` (17 проверок,
-глобальный лаунчер `unica mcp`). Набор: 302 vitest, 18 python-файлов,
-линт 19/19, `typecheck`/`build` зелёные. Живые пробы: doctor на
+(46 проверок: здоровая установка exit 0, три фикстуры поломки с разными
+кодами, `--json`, legacy и расхождение раскладок, слой `selectedDefault`,
+CLI, схема v8project, инстансы) и переписанный `tests/test_unica_ping.py`
+(19 проверок, глобальный лаунчер `unica mcp`). Набор: 302 vitest
+(2 skipped), 18 python-файлов, линт 19/19, `typecheck`/`build` зелёные. Живые пробы: doctor на
 `erp-demo` — exit 0 с WARN (`preset` не выбран по умолчанию, стенд
 1c-db не поднят, `.partial` в кэше Юники, legacy-раскладка — переезд
 Т8, свалка `build/out`), `--json` парсится; `unica_ping --json` —
 `unica 0.15.0-rc.5 жив: 11 глаголов`. Границы: ZCode-проверки старого
 doctor сняты (реестр плагинов ZCode, exec-бит bootstrap, wire
-`.zcode/config.json`, следы хуков, тени `~/.zcode/skills`, NER, ibsrv,
-venv testpilot, Xvfb) — их предмет исчез с ZCode-слоем или это
+`.zcode/config.json`, следы хуков как доказательство развода, тени
+`~/.zcode/skills`, NER, ibsrv, venv testpilot, Xvfb) — их предмет исчез с ZCode-слоем или это
 готовность стенда e2e, а не установки; `wire_config.py` не снят, его
 копию носят проекты (`run_e2e`, `publish_ib`) — снос вместе с
 legacy-скриптами в Т10.
