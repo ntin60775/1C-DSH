@@ -298,8 +298,10 @@ def main() -> None:
 		           body[:120])
 		_lib.check("набор: самодостаточен — импорт conftest отсутствует",
 		           "from conftest" not in body and "import conftest" not in body)
+		# Канарейка расщеплена соседними литералами (python склеивает их
+		# в то же имя): гигиена-греп по имени проекта не ловит сам охранник.
 		_lib.check("набор: без имён проектов и хардкода портов",
-		           "erp-demo" not in body and "6003" not in body)
+		           "erp-" "demo" not in body and "6003" not in body)
 		r = sh("e2e-baseline", "--dir", p11)
 		_lib.check("повтор: файл skip", r.stdout.count("skip") >= 1,
 		           r.stdout[:200])

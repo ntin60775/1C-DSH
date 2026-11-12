@@ -2,17 +2,19 @@
 """Процессные скиллы OntoShip в слотах DSH.
 
 Цели (правило качества — .agents/skills/testing/references/quality-rule.md):
+  spec: docs/plans/dsh-contour.md — «Готово» п. 8: «Каждый процессный
+        скилл проверен на слоты DSH»; «Контекст»: when_to_use DSH не
+        читает, нужен whenToUse;
   invariant: tickets/dsh-contour/T9-devtools-docs.md — аудит процессных
-        скиллов: каждый скилл `.agents/skills` проходит линт слотов DSH
-        (scripts/lint_skill_frontmatter.py: name, description, whenToUse);
-  invariant: состав процесса — девять скиллов метода (ship, critic,
-        grilling, kb-curate, kb-search, to-tickets, init, testing,
-        onto-doc), потеря скилла ломает фазы;
+        скиллов: состав процесса (девять скиллов метода) и линт слотов
+        DSH (scripts/lint_skill_frontmatter.py);
   invariant: ship — пользовательский (disable-model-invocation: true,
-        модель его не вызывает), critic — модельный (агент запускает сам).
+        модель его не вызывает), critic — модельный (ключа нет или false;
+        агент запускает сам). Семантика ключей — исходник хоста
+        packages/skill/skill-filesystem (frontmatterBoolean).
 
 Краснота на базовом коммите Т9 (938158a): у девяти процессных скиллов
-нет whenToUse — линт падает.
+нет whenToUse — линт падает (1 проваленная проверка, 9 строк FAIL в детализ).
 Запуск: python3 tests/test_process_skills.py
 """
 import subprocess
@@ -25,6 +27,8 @@ from _lib import check, summary  # noqa: E402
 REPO = Path(__file__).resolve().parent.parent
 SKILLS = REPO / ".agents" / "skills"
 LINT = REPO / "scripts" / "lint_skill_frontmatter.py"
+sys.path.insert(0, str(REPO / "scripts"))
+from lint_skill_frontmatter import parse_frontmatter  # noqa: E402
 
 # Состав — список аудита Т9 (tickets/dsh-contour/T9-devtools-docs.md).
 PROCESS_SKILLS = [
@@ -34,17 +38,11 @@ PROCESS_SKILLS = [
 
 
 def frontmatter(path: Path) -> dict:
-	"""Плоский разбор frontmatter: ключ → значение (для инвариантов вызова)."""
-	lines = path.read_text(encoding="utf-8").splitlines()
-	fields = {}
-	if not lines or lines[0].strip() != "---":
-		return fields
-	for line in lines[1:]:
-		if line.strip() == "---":
-			break
-		key, sep, value = line.partition(":")
-		if sep:
-			fields[key.strip()] = value.strip()
+	"""Frontmatter тем же парсером, что линт слотов; битый/отсутствующий
+	файл — пустой словарь (проверка состава уже назвала пропуск)."""
+	if not path.is_file():
+		return {}
+	fields, _fmt = parse_frontmatter(path.read_text(encoding="utf-8"))
 	return fields
 
 
@@ -58,15 +56,15 @@ def main() -> int:
 	r = subprocess.run([sys.executable, str(LINT), str(SKILLS)],
 	                   capture_output=True, text=True)
 	check("процессные скиллы: линт слотов DSH чист",
-	      r.returncode == 0, (r.stdout + r.stderr)[:400])
+	      r.returncode == 0, (r.stdout + r.stderr)[:800])
 
 	# ── инварианты вызова: ship — пользовательский, critic — модельный ──
 	ship = frontmatter(SKILLS / "ship" / "SKILL.md")
 	check("ship: disable-model-invocation: true (зовёт только пользователь)",
 	      ship.get("disable-model-invocation") == "true", str(ship))
 	critic = frontmatter(SKILLS / "critic" / "SKILL.md")
-	check("critic: модельный (без disable-model-invocation)",
-	      critic.get("disable-model-invocation") != "true", str(critic))
+	check("critic: модельный (ключа disable-model-invocation нет или false)",
+	      critic.get("disable-model-invocation") in (None, "false"), str(critic))
 
 	return summary()
 

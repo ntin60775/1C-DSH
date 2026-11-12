@@ -44,9 +44,9 @@
   секция AGENTS.md целевого проекта между маркерами BEGIN/END 1C CONTOUR
   (`templates/agents-section.md`), остальное — навыки с честным description.
 - **Скиллы — под слоты DSH:** ключи frontmatter `name`, `description`,
-  `whenToUse`, `metadata`, `disable-model-invocation`, `user-invocable`;
-  description ≤ 1024 симв., триггер — в первых ~250. ZCode-ключ
-  `when_to_use` DSH не читает. Проверка:
+  `whenToUse`, `license`, `metadata`, `disable-model-invocation`,
+  `user-invocable`; description ≤ 1024 симв., триггер — в первых ~250.
+  ZCode-ключ `when_to_use` DSH не читает. Проверка:
   `python3 scripts/lint_skill_frontmatter.py` (контурные скиллы и команды)
   и `python3 scripts/lint_skill_frontmatter.py .agents/skills` (процессные).
 - **Приоритет качества: пак `1c-bsl-code-style` над стандартами (v8std/БСП)
@@ -76,22 +76,33 @@
 ```bash
 # 1. Ни одного имени чужого проекта, базы, учётки или объекта в поставляемом
 #    слое. Сами имена — в .forbidden-names.txt (gitignored, одна строка =
-#    grep-паттерн); файла нет — заведи его, проверка не выполнена. Не входят
-#    в проверку: процессные записи (tickets/, docs/plans/, docs/ops/) и
-#    архивные снимки (status: archived — migration-map, OPEN-GAPS): они
-#    фиксируют факты с путями. vendor/ исключён: там текст апстрима
-#    (минимальный diff, не наш авторский слой). Литерал имени в охраннике
-#    tests/test_project_layout.py («без имён проектов») — канарейка
-#    охранника, не утечка. Гигиена vendor/ — «нет правок вендора»,
-#    по vendor/*/UPSTREAM.md.
+#    grep-паттерн); файла нет — заведи его, проверка не выполнена.
+#    Поставляемый слой — пути ниже (состав `files` в package.json плюс
+#    тесты и доки). Не входят в проверку: процессные записи (tickets/,
+#    docs/plans/, docs/ops/ — флаги exclude-dir действуют на любую глубину)
+#    и архивные снимки (status: archived — migration-map, OPEN-GAPS): они
+#    фиксируют факты с путями. Процессный слой .agents/ не поставляется
+#    (в files его нет) и не проверяется: атрибуция движка gitmark — текст
+#    апстрима OntoShip. vendor/ исключён из обхода: там текст апстрима
+#    (минимальный diff, не наш авторский слой). Гигиена vendor/ — «нет
+#    правок вендора», по vendor/*/UPSTREAM.md.
 PAT=$(cat .forbidden-names.txt 2>/dev/null)
-[ -z "$PAT" ] && echo 'НЕТ .forbidden-names.txt — заведи его, проверка не выполнена' \
-  || (grep -rnE "$PAT" --include='*.md' --include='*.py' --include='*.json' \
-        --include='*.ts' --include='*.sh' --include='*.yaml' --include='*.yml' \
-        skills commands workflows scripts templates src tests docs README.md AGENTS.md \
-        --exclude-dir=plans --exclude-dir=ops \
-        --exclude='migration-map.md' --exclude='OPEN-GAPS.md' \
-      && echo 'НАЙДЕНО — править' || echo 'чисто')
+if [ -z "$PAT" ]; then
+  echo 'НЕТ .forbidden-names.txt — заведи его, проверка не выполнена'
+else
+  grep -rnE "$PAT" --include='*.md' --include='*.py' --include='*.json' \
+      --include='*.ts' --include='*.sh' --include='*.yaml' --include='*.yml' \
+      --include='*.template' \
+      skills commands workflows scripts templates src tests docs locale \
+      package.json cordis.patch.yml README.md AGENTS.md \
+      --exclude-dir=plans --exclude-dir=ops \
+      --exclude='migration-map.md' --exclude='OPEN-GAPS.md'
+  case $? in
+    0) echo 'НАЙДЕНО — править' ;;
+    1) echo 'чисто' ;;
+    *) echo 'ОШИБКА grep — проверка не выполнена' ;;
+  esac
+fi
 
 # 2. Гейты и разводка: нативный плагин, оракул — векторы (Т8, без python)
 pnpm test          # tests/parity + tests/unit, сборка lib/ не нужна

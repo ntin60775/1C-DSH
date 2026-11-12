@@ -24,7 +24,7 @@ links:
 | `agent/created` | serial, до первого хода | стартовые гейты: уборка состояния, контекст сессии, станция КД; субагенты стартовые действия пропускают |
 | `tools/pre-execute` | waterfall | решения до вызова: `allow`, `deny{reason}`, `ask{reason}`; первый deny/ask останавливает цепочку |
 | `tools/post-execute` | waterfall | решения после вызова: `accept`, `block{feedback, additionalContexts}`; блоки собираются в один feedback, заметки — в additionalContexts |
-| `tools/result` | observe | финальный исход включая ошибку: вход счётчика повторов |
+| `tools/result` | emit | наблюдение финального исхода включая ошибку: вход счётчика повторов |
 
 Имена инструментов в DSH: `write`, `edit`, `apply_patch`, `bash`, `mcp__*`.
 MCP-имена нормализованы под контракт function-name
@@ -34,11 +34,11 @@ MCP-имена нормализованы под контракт function-name
 
 | Гейт | События | Решение и класс причины |
 |---|---|---|
-| `unica_source_gate` | pre + post | правка исходников 1С только через Unica: прямая запись — deny `source-edit`, bash-запись — deny `source-bash`; ворктри без инициализации — deny `worktree-uninit`; правило пересборки из `contour.json` — deny `rebuild-rule`; инфобаза занята другим деревом — deny `ib-lock`; разовая эскалация allowlist'а — allow `escalation-granted` |
+| `unica_source_gate` | pre + post | правка исходников 1С только через Unica: прямая запись — deny `source-edit`, bash-запись — deny `source-bash`; ворктри без инициализации — deny `worktree-uninit`; правило пересборки из `contour.json` — deny `rebuild-rule`; инфобаза занята другим деревом — deny `ib-lock`; путь-разрешение строкой allowlist'а эскалаций (действует, пока строка не убрана) — allow `escalation-granted` |
 | `doc_gate` | pre + post | мутация метаданных/кода без сверки с документацией платформы — deny `docs-unverified`; сверка (`unica.docs`) ведёт флаг сессии, мутация метаданных флаг сбрасывает |
 | `mcp_gate` | pre | изменяющий вызов тест-контура в прод-контуре — deny `mcp-unsafe` (fail-closed: нечитаемый маркер контура = прод); тест-контур — allow; stand-замок базы — deny `stand-lock`; REST-вызовы через bash распознаются |
-| `bsl_style_gate` | post | чекер пака `1c-bsl-code-style` по изменённым строкам `.bsl` — advisory-отчёт `bsl-style`; приоритет пака над стандартами и стат-анализом |
-| `bsl_module_gate` | post | контракт носителя 1С-кода — block `bsl-module`; разовая эскалация снимает блок |
+| `bsl_style_gate` | post | чекер пака `1c-bsl-code-style`: нарушения в изменённых строках — block `bsl-style` («исправь и повтори»); фоновые нарушения вне правки — заметка (не блокируют); пред-чек плана `unica.apply` до записи — advisory; приоритет пака над стандартами и стат-анализом |
+| `bsl_module_gate` | post | контракт носителя 1С-кода — block `bsl-module`; строка эскалации в allowlist'е снимает блок, пока не убрана |
 | `anon_gate` | pre | отключение анонимизации канала 1c-db (raw-режим, API деанонимизации) — deny `anon-raw`, исключений нет |
 | `retry_gate` | pre + result | третий идентичный повтор после двух ошибок — deny `retry-discipline`; ошибки считаются из `tools/result` (включая bash exit ≠ 0) |
 | `worktree_hint` | post | после `git worktree add` — заметка-подсказка: работа в новом ворктри (accept + notice, не блок) |
@@ -54,7 +54,8 @@ MCP-имена нормализованы под контракт function-name
 - `contour.json` / `contour.local.json` — правило пересборки, url стенда;
 - маркер `contour` — прод/тест-контур (fail-closed);
 - `unica-gate-escalations.txt`, `bsl-module-gate-escalations.txt` —
-  разовые эскалации прямых правок;
+  allowlist'ы эскалаций прямых правок: строка разрешает путь, пока не
+  убрана (уборка ресурса — рядом с его созданием);
 - `mcp-write-allow.txt` — allowlist мутирующих вызовов;
 - `standards-exceptions.yaml` — исключения стандартов;
 - `testpilot/profiles.yaml`, `db-instances.yaml` — профили и инстансы;
