@@ -1,38 +1,32 @@
 #!/usr/bin/env python3
-"""unica_ping.py — живая проверка MCP-сервера юники без хоста и без 1С.
+"""unica_ping.py — живая проверка MCP-сервера Юники без хоста и без 1С.
 
-Делает ровно то, что делает ZCode при старте сервера: находит кэш плагина
-(unica*), подставляет CLAUDE_PLUGIN_ROOT/UNICA_RUNTIME_CACHE_DIR, запускает
-unica-bootstrap и прогоняет MCP-handshake (initialize → initialized →
+Делает то же, что DSH при старте сессии: берёт глобальный лаунчер Юники
+(`UNICA_LAUNCHER` или `~/.local/bin/unica`), запускает `unica mcp` с
+каталогом проекта и прогоняет MCP-handshake (initialize → initialized →
 tools/list). На stdin EOF сервер корректно завершается — это ожидаемо.
 
 Проверяет:
   - сервер отвечает (иначе «MCP process failed to start», как его видит хост);
   - serverInfo.version и набор глаголов tools/list;
-  - соответствие ожидаемым глаголам контура (UNICA_TOOLS_DEFAULT → ключи
-    docs/mutations/op_tools; сверка по глаголам с отрезанным 'unica.').
+  - обязательные глаголы контура (run/apply/docs/view/check/search/resolve/diff).
 
 Exit: 0 — жив и совместим; 1 — не стартует/не совместим; 2 — таймаут
 (первый старт качает рантаймы — минуты; повтори позже).
 
-Запуск: python3 unica_ping.py [--timeout S] [--json]
+Запуск: python3 unica_ping.py [--timeout S] [--json] [--project PATH]
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
-for _rel in ("../../hooks", "../hooks", "../reference/gates"):
-	_p = (Path(__file__).resolve().parent / _rel).resolve()
-	if (_p / "contour_common.py").is_file():
-		sys.path.insert(0, str(_p))
-
-# Unica 0.15 обслуживает только 2025-06-18, 2025-11-25 и 2026-07-28.
+# Юника 0.15 обслуживает только 2025-06-18, 2025-11-25 и 2026-07-28.
 # 2025-11-25 — обычная сессия с полным tools/list (без страниц каталога).
 HANDSHAKE = (
-	'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"1c-zcode-doctor","version":"0"}}}\n'
+	'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"1c-dsh-doctor","version":"0"}}}\n'
 	'{"jsonrpc":"2.0","method":"notifications/initialized"}\n'
 	'{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'
 )
@@ -41,52 +35,24 @@ HANDSHAKE = (
 REQUIRED_VERBS = {"run", "apply", "docs", "view", "check", "search", "resolve", "diff"}
 
 
-def installed_unica():
-	"""Единственная запись unica из installed_plugins.json либо None.
-
-	При двух каналах записи две; доктор считает это ошибкой, а ping не
-	угадывает, какую установку проверять, — возвращает None и работает по
-	кэшу (лучше явное «несколько каналов» в сообщении доктора).
-	"""
-	registry = Path.home() / ".zcode" / "cli" / "plugins" / "installed_plugins.json"
-	try:
-		data = json.loads(registry.read_text(encoding="utf-8"))
-	except (OSError, json.JSONDecodeError):
-		return None
-	plugins = data.get("plugins") if isinstance(data, dict) else data
-	entries = [p for p in plugins or []
-	           if isinstance(p, dict) and str(p.get("name") or "") == "unica"]
-	return entries[0] if len(entries) == 1 else None
+def launcher() -> str:
+	"""Лаунчер Юники: env, глобальная установка, PATH — первый исполняемый."""
+	configured = os.environ.get("UNICA_LAUNCHER") or ""
+	if configured:
+		path = Path(configured)
+		return str(path) if path.is_file() and os.access(str(path), os.X_OK) else ""
+	path = Path.home() / ".local" / "bin" / "unica"
+	if path.is_file() and os.access(str(path), os.X_OK):
+		return str(path)
+	return shutil.which("unica") or ""
 
 
-def latest_plugin_cache(entry=None) -> Path | None:
-	"""Кэш установленной unica с bootstrap'ом; None — не найден.
-
-	Приоритет — installPath из реестра: после смены канала на машине живут
-	кэши обоих каналов, и выбор по mtime может запустить старый бинарь.
-	Фолбэк — свежий каталог cache/unica*/*/* с bootstrap.
-	"""
-	if entry:
-		install = Path(str(entry.get("installPath") or ""))
-		if (install / "bootstrap" / "bin" / "linux-x64" / "unica-bootstrap").is_file():
-			return install
-	base = Path.home() / ".zcode" / "cli" / "plugins" / "cache"
-	candidates = [
-		p for p in base.glob("unica*/*/*")
-		if (p / "bootstrap" / "bin" / "linux-x64" / "unica-bootstrap").is_file()
-	]
-	if not candidates:
-		return None
-	return max(candidates, key=lambda p: p.stat().st_mtime)
-
-
-def runtime_cache_dir(entry=None) -> str:
-	"""Каталог рантаймов установки; несуществующий путь bootstrap создаст сам."""
-	data_dir = Path.home() / ".zcode" / "cli" / "plugins" / "data"
-	if entry:
-		return str(data_dir / str(entry.get("id") or "unica@unica") / "runtimes")
-	dirs = sorted(data_dir.glob("unica@*/runtimes"))
-	return str(dirs[0]) if dirs else str(Path(tempfile.gettempdir()) / "unica-ping-runtimes")
+def runtime_cache_dir() -> str:
+	"""Каталог рантаймов Юники: env или глобальная установка на машину."""
+	configured = os.environ.get("UNICA_RUNTIME_CACHE_DIR") or ""
+	if configured:
+		return str(Path(configured).expanduser())
+	return str(Path.home() / ".local" / "share" / "unica" / "runtimes")
 
 
 def parse_tools(text: str):
@@ -108,34 +74,25 @@ def parse_tools(text: str):
 	return version, verbs
 
 
-def ping(timeout_s: int):
+def ping(timeout_s: int, project: str = ""):
 	"""(код, сообщение, verbs) — код: 0 ок, 1 упал, 2 таймаут."""
-	entry = installed_unica()
-	cache = latest_plugin_cache(entry)
-	if cache is None:
-		return 1, "кэш плагина unica не найден (unica не установлена?)", set()
-	bootstrap = cache / "bootstrap" / "bin" / "linux-x64" / "unica-bootstrap"
-	if not bootstrap.is_file():
-		return 1, f"bootstrap не найден: {bootstrap}", set()
-	if not os.access(str(bootstrap), os.X_OK):
-		return 1, (f"нет exec-бита: {bootstrap} — распаковщик ZCode теряет права; "
-		           f"лечение: chmod +x '{cache}/bootstrap/bin/'*/*/unica-bootstrap*"), set()
-	env = dict(
-		os.environ,
-		CLAUDE_PLUGIN_ROOT=str(cache),
-		UNICA_HOST_CONTEXT_REQUIRED="1",
-		UNICA_RUNTIME_CACHE_DIR=runtime_cache_dir(entry),
-	)
+	command = launcher()
+	if not command:
+		return 1, ("лаунчер Юники не найден (UNICA_LAUNCHER, ~/.local/bin/unica, "
+		           "PATH) — MCP unica не поднимется"), set()
+	env = dict(os.environ, UNICA_RUNTIME_CACHE_DIR=runtime_cache_dir())
+	cwd = str(Path(project).expanduser()) if project else None
 	try:
 		done = subprocess.run(
-			[str(bootstrap), "run", "--plugin-root", str(cache)],
-			input=HANDSHAKE, capture_output=True, text=True,
-			timeout=timeout_s, env=env)
+			[command, "mcp"], input=HANDSHAKE, capture_output=True, text=True,
+			timeout=timeout_s, env=env, cwd=cwd)
 	except subprocess.TimeoutExpired:
 		return 2, ("таймаут: вероятно, первый старт качает рантаймы (минуты); "
 		           "повтори позже или проверь сеть до github.com"), set()
+	except OSError as error:
+		return 1, f"лаунчер не запустился: {command}: {error}", set()
 	if done.returncode != 0 and not done.stdout.strip():
-		return 1, (f"bootstrap exit {done.returncode}: "
+		return 1, (f"unica mcp exit {done.returncode}: "
 		           f"{(done.stderr or '').strip()[:200] or 'без вывода'}"), set()
 	version, verbs = parse_tools(done.stdout)
 	if not verbs:
@@ -149,12 +106,14 @@ def ping(timeout_s: int):
 
 def main() -> int:
 	timeout_s = 120
-	args = [a for a in sys.argv[1:] if not a.startswith("--")]
-	for a in sys.argv[1:]:
-		if a.startswith("--timeout="):
-			timeout_s = int(a.split("=", 1)[1])
+	project = ""
+	for argument in sys.argv[1:]:
+		if argument.startswith("--timeout="):
+			timeout_s = int(argument.split("=", 1)[1])
+		elif argument.startswith("--project="):
+			project = argument.split("=", 1)[1]
 	as_json = "--json" in sys.argv
-	code, message, verbs = ping(timeout_s)
+	code, message, verbs = ping(timeout_s, project)
 	if as_json:
 		print(json.dumps({"code": code, "message": message,
 		                  "verbs": sorted(verbs)}, ensure_ascii=False))

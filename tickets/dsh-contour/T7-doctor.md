@@ -33,3 +33,98 @@
 - `--json` валиден и содержит поля `bundle`, `preset`, `skills`, `mcp`,
   `layout`, `project`.
 - `python3 tests/test_doctor.py` зелёный без `deploy_recon`.
+
+## Сделано (ship 12.11)
+
+`scripts/doctor.py` переписан на семь разделов; таблица раскладок
+вынесена в `scripts/contour_paths.py` (повторяет `src/paths.ts`), разбор
+`db-instances.yaml` остался один — `wire_config.parse_instances_at`.
+
+- **bundle.** Профили ищутся в `$DSH_HOME/profiles`: пакет `dsh-1c-contour`
+  в `dependencies` и в `dsh.profile.bundles`, патч `dsh.bundle.patch`
+  содержит строки `1c-contour` и `preset-1c`, сборка `lib/index.js` и
+  `lib/preset/index.js` на месте. Коды: `bundle.missing`,
+  `bundle.not-enabled`, `bundle.unresolved`, `bundle.row-missing`,
+  `bundle.unbuilt`; `--profile` выбирает профиль явно.
+- **preset.** Строка `preset-1c` объявляет пресет `1c` (иначе
+  `preset.missing` / `preset.wrong-id`), выбор по умолчанию читается из
+  `agent-preset-registry.selectedDefault` patch-документа профиля и
+  home-слоя; не выбран — `preset.not-default` WARN, а не FAIL: выбор в
+  открытой сессии живёт в её записи, doctor видит только умолчание.
+- **skills.** 15 контурных скиллов и 4 команды из каталога пакета, скиллы
+  Юники из `~/.local/share/unica/skills`, затенения в `$DSH_HOME/skills` и
+  `~/.agents/skills`. Коды: `skills.none`, `skills.incomplete`,
+  `skills.extra`, `skills.commands`, `skills.unica-missing`,
+  `skills.shadowed`.
+- **mcp.** Записи пресета из проектных входов: `unica` (лаунчер
+  `UNICA_LAUNCHER`/`~/.local/bin/unica`, артефакты манифеста, живой
+  handshake), `1c-testpilot` (команда и `testpilot/profiles.yaml`),
+  `1c-db` (+ инстансы `1c-db-<имя>`, коллизии каналов/дисплеев/портов),
+  `1c-kd` (станция и HTTP). Коды: `mcp.unica-missing`,
+  `mcp.unica-artifacts`, `mcp.unica-version`, `mcp.testpilot-missing`,
+  `mcp.testpilot-profiles`, `mcp.records`, `mcp.instances`,
+  `mcp.db-down`, `mcp.kd-station`, `mcp.kd-down`. Стенд не поднят — WARN,
+  битый вход канона — FAIL (fail-closed Т6).
+- **layout.** Канон `.dsh/1c` и legacy `.zcode/1c` по всем десяти входам
+  Т6; legacy-only — WARN `layout.legacy`, оба слоя — `migrate_from_zcode.py
+  --check` (0 совпал, 1 не полон, 2 расхождение → FAIL `layout.diverged`).
+- **project.** `v8project.yaml` и отказы схемы 0.15, платформа (local-слой
+  → `v8project.yaml` → `contour.json`), обязательный минимум топологии
+  через `scaffold.py check` скилла `1c-project-layout`, `build/out`,
+  движок стиля (env → PATH → путь из раскладки).
+- **state.** `DSH_1C_STATE_DIR` → legacy `ZCODE_1C_STATE_DIR` (WARN
+  `state.legacy-env`) → `~/.dsh/state/1c`; замки инфобаз и журнал гейтов.
+- **`--json`** печатает только JSON: `bundle`, `preset`, `skills`, `mcp`,
+  `layout`, `project`, `state` (плюс `root`, `dshHome`, `status`, `exit`),
+  у раздела есть `status` и машинный `code`. `--no-ping` не поднимает
+  MCP-сервер Юники.
+- **`unica_ping.py`** переписан под DSH: запускает `unica mcp` глобального
+  лаунчера с `UNICA_RUNTIME_CACHE_DIR` и каталогом проекта (как пресет),
+  прогоняет handshake и проверяет обязательные глаголы.
+
+### Доказательства
+
+- `tests/test_doctor.py` — 39 проверок: здоровая установка (exit 0,
+  `--json` с шестью полями), три фикстуры поломки с разными кодами
+  (`preset.missing`, `mcp.testpilot-missing`, `skills.none`), пресет не по
+  умолчанию, legacy-раскладка, расхождение канона с legacy (мигратор
+  `--check` = 2), неизвестный профиль, невключённый bundle, схема
+  v8project 0.15, неполная топология, legacy-переменная состояния,
+  коллизия инстансов. Фикстуры герметичны: `HOME`, `DSH_HOME` и `PATH`
+  указывают во временные каталоги, живой MCP не поднимается.
+- `tests/test_unica_ping.py` — 17 проверок: отбор лаунчера, env-перекрытия,
+  передача каталога проекта и кэша рантаймов, разбор `tools/list`, коды
+  выхода.
+- Набор: 302 vitest, 18 python-файлов (627 проверок), линт 19/19,
+  `typecheck` и `build` зелёные.
+- Живые пробы: `python3 scripts/doctor.py /home/prog7/home/dev/work/erp-demo`
+  — exit 0, WARN по разделам `preset` (не выбран по умолчанию), `mcp`
+  (стенд 1c-db не поднят, `.partial` в кэше Юники), `layout` (проект ещё
+  на `.zcode/1c` — Т8), `project` (свалка `build/out`); `--json` парсится;
+  `python3 scripts/unica_ping.py --json` — `unica 0.15.0-rc.5 жив:
+  11 глаголов`.
+
+### Границы и расхождения
+
+- Сняты проверки ZCode-эпохи и стенда: реестр `installed_plugins.json`,
+  exec-бит `unica-bootstrap`, сверка `.zcode/config.json` через
+  `wire_config`, следы исполнения хуков (`rule-audit`/`doc-gate`/
+  `pending_trust`), тени контурных скиллов в `~/.zcode/skills`,
+  NER-эшелон анонимизации, `ibsrv`/`distrobox`, venv `1c-testpilot`,
+  `Xvfb`. Предмет первых ушёл вместе с ZCode-слоем; остальные — готовность
+  стенда e2e, а не установки контура, и вернутся отдельной проверкой,
+  если понадобятся пилоту.
+- `scripts/wire_config.py` не удалён, вопреки границе Т6: его копию носят
+  проекты (`.zcode/1c/scripts/wire_config.py`) и импортируют
+  `run_e2e.sh` и `publish_ib.sh`. Вместо сноса разбор
+  `db-instances.yaml` вынесен в `parse_instances_at(path)` — doctor читает
+  им канон `.dsh/1c`, копии в проектах продолжают работать; снос — вместе
+  с legacy-скриптами (Т10).
+- Пресет «выбран» doctor понимает как «пресет по умолчанию для новых
+  сессий»: выбор в открытой сессии лежит в записи сессии (zstd-jsonl), и
+  doctor его не читает.
+- Расхождение ожидание/факт: первая версия `patch_rows` принимала
+  вложенные `- id:` внутри `config:` пресета за отдельные строки патча —
+  поймано тестом на здоровой установке (в `bundle.rows` было 34 строки
+  вместо двух), разбор строк переписан на «вложенная строка в `config:`
+  — ребёнок текущей».

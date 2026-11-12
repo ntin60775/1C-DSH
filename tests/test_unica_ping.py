@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Тесты unica_ping.py: выбор установки и контракт handshake без запуска MCP.
+"""Тесты unica_ping.py: поиск глобального лаунчера и контракт handshake.
 
-Проверяем то, что ломалось при смене канала: ping обязан брать installPath
-из installed_plugins.json, а не свежий по mtime кэш, и рантаймы — из
-data/<id> той же установки. Запуск: python3 tests/test_unica_ping.py
+Ping запускает `unica mcp` тем же способом, что пресет DSH, поэтому живого
+MCP тест не поднимает: лаунчер подменяется скриптом, который отвечает на
+строки handshake. Проверяются отбор лаунчера, передача каталога проекта и
+кэша рантаймов, разбор `tools/list` и коды выхода.
+
+Запуск: python3 tests/test_unica_ping.py
 """
-import json
 import os
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -18,84 +19,123 @@ from _lib import check, summary  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import unica_ping  # noqa: E402
 
+VERBS = ('{"name":"unica.run"},{"name":"unica.apply"},{"name":"unica.docs"},'
+         '{"name":"unica.view"},{"name":"unica.check"},{"name":"unica.search"},'
+         '{"name":"unica.resolve"},{"name":"unica.diff"}')
 
-def make_install(home: Path, channel: str, version: str) -> Path:
-	install = home / ".zcode" / "cli" / "plugins" / "cache" / channel / "unica" / version
-	bootstrap = install / "bootstrap" / "bin" / "linux-x64" / "unica-bootstrap"
-	bootstrap.parent.mkdir(parents=True)
-	bootstrap.write_text("#!/bin/sh\n", encoding="utf-8")
-	bootstrap.chmod(0o755)
-	return install
+GOOD = f'''#!/bin/sh
+printf '%s' "$PWD" > "$HOME/pwd.txt"
+printf '%s' "$UNICA_RUNTIME_CACHE_DIR" > "$HOME/cache.txt"
+while IFS= read -r line; do
+  case "$line" in
+    *initialize*) echo '{{"jsonrpc":"2.0","id":1,"result":{{"serverInfo":{{"version":"0.15.0-rc.5"}}}}}}' ;;
+    *tools/list*) echo '{{"jsonrpc":"2.0","id":2,"result":{{"tools":[{VERBS}]}}}}' ;;
+  esac
+done
+'''
+
+# Тот же ответ, но без глагола diff — контур неработоспособен.
+VERBS_NO_DIFF = VERBS.replace(',{"name":"unica.diff"}', '')
+NO_DIFF = f'''#!/bin/sh
+while IFS= read -r line; do
+  case "$line" in
+    *initialize*) echo '{{"jsonrpc":"2.0","id":1,"result":{{"serverInfo":{{"version":"0.15.0-rc.5"}}}}}}' ;;
+    *tools/list*) echo '{{"jsonrpc":"2.0","id":2,"result":{{"tools":[{VERBS_NO_DIFF}]}}}}' ;;
+  esac
+done
+'''
 
 
-def write_registry(home: Path, entries: list) -> None:
-	plugins = home / ".zcode" / "cli" / "plugins"
-	plugins.mkdir(parents=True, exist_ok=True)
-	(plugins / "installed_plugins.json").write_text(
-		json.dumps({"version": 1, "plugins": entries}), encoding="utf-8")
+def write_launcher(home: Path, body: str) -> Path:
+	path = home / ".local" / "bin" / "unica"
+	path.parent.mkdir(parents=True, exist_ok=True)
+	path.write_text(body, encoding="utf-8")
+	path.chmod(0o755)
+	return path
 
 
 def main() -> int:
-	old_home = os.environ.get("HOME")
+	old_env = {name: os.environ.get(name) for name in
+	           ("HOME", "PATH", "UNICA_LAUNCHER", "UNICA_RUNTIME_CACHE_DIR")}
 	with tempfile.TemporaryDirectory() as tmp:
-		home = Path(tmp)
+		base = Path(tmp)
+		home = base / "home"
+		project = base / "project"
+		project.mkdir()
+		empty_bin = base / "bin"
+		empty_bin.mkdir()
 		os.environ["HOME"] = str(home)
+		os.environ["PATH"] = str(empty_bin)
+		os.environ.pop("UNICA_LAUNCHER", None)
+		os.environ.pop("UNICA_RUNTIME_CACHE_DIR", None)
 		try:
-			old = make_install(home, "unica", "0.13.0")
-			new = make_install(home, "unica-next", "0.15.0-rc.1")
-			old.touch()
-			new.touch()
-			os.utime(old, (time.time() - 10, time.time() - 10))
-			os.utime(new, (time.time(), time.time()))
+			check("лаунчера нет — пустая строка", unica_ping.launcher() == "",
+			      unica_ping.launcher())
+			launcher = write_launcher(home, GOOD)
+			check("лаунчер найден в глобальной установке",
+			      unica_ping.launcher() == str(launcher), unica_ping.launcher())
+			os.environ["UNICA_LAUNCHER"] = str(launcher)
+			check("UNICA_LAUNCHER старше установки по умолчанию",
+			      unica_ping.launcher() == str(launcher), unica_ping.launcher())
+			os.environ["UNICA_LAUNCHER"] = str(base / "nope")
+			check("неисполнимый UNICA_LAUNCHER — не подмена другим путём",
+			      unica_ping.launcher() == "", unica_ping.launcher())
+			os.environ.pop("UNICA_LAUNCHER", None)
 
-			write_registry(home, [
-				{"id": "unica@unica", "name": "unica", "version": "0.13.0",
-				 "installPath": str(old)},
-				{"id": "unica@unica-next", "name": "unica", "version": "0.15.0-rc.1",
-				 "installPath": str(new)},
-			])
-			check("два канала: installed_unica не угадывает",
-			      unica_ping.installed_unica() is None, "выбрала одну из двух")
-			check("фолбэк кэша — свежий по mtime", unica_ping.latest_plugin_cache() == new,
-			      str(unica_ping.latest_plugin_cache()))
-
-			write_registry(home, [
-				{"id": "unica@unica-next", "name": "unica",
-				 "version": "0.15.0-rc.1", "installPath": str(new)},
-			])
-			entry = unica_ping.installed_unica()
-			check("один канал: установка из реестра", entry and entry["id"] == "unica@unica-next",
-			      str(entry))
-			check("кэш берётся по installPath",
-			      unica_ping.latest_plugin_cache(entry) == new,
-			      str(unica_ping.latest_plugin_cache(entry)))
-			runtimes = unica_ping.runtime_cache_dir(entry)
-			check("рантаймы — data/<id> установки",
-			      runtimes.endswith("/data/unica@unica-next/runtimes"), runtimes)
+			check("кэш рантаймов — глобальная установка",
+			      unica_ping.runtime_cache_dir()
+			      == str(home / ".local" / "share" / "unica" / "runtimes"),
+			      unica_ping.runtime_cache_dir())
+			os.environ["UNICA_RUNTIME_CACHE_DIR"] = str(base / "cache-dir")
+			check("UNICA_RUNTIME_CACHE_DIR перекрывает умолчание",
+			      unica_ping.runtime_cache_dir() == str(base / "cache-dir"),
+			      unica_ping.runtime_cache_dir())
 
 			check("handshake 0.15: протокол 2025-11-25",
 			      "2025-11-25" in unica_ping.HANDSHAKE, unica_ping.HANDSHAKE)
 			check("handshake 0.15: старый протокол не используется",
 			      "2024-11-05" not in unica_ping.HANDSHAKE, unica_ping.HANDSHAKE)
-			check("обязательные глаголы включают resolve/diff",
-			      {"resolve", "diff"} <= unica_ping.REQUIRED_VERBS,
-			      str(sorted(unica_ping.REQUIRED_VERBS)))
 
-			version, verbs = unica_ping.parse_tools("\n".join([
-				json.dumps({"id": 1, "result": {"serverInfo": {"version": "0.15.0-rc.1"}}}),
-				json.dumps({"id": 2, "result": {"tools": [
-					{"name": "unica.view"}, {"name": "unica.run"},
-					{"name": "unica.task.result"}]}}),
-			]))
-			check("parse_tools: версия", version == "0.15.0-rc.1", version)
-			check("parse_tools: глаголы с точками", {"view", "run", "task.result"} <= verbs,
-			      str(sorted(verbs)))
+			code, message, verbs = unica_ping.ping(60, str(project))
+			check("живой handshake — код 0", code == 0, message)
+			check("версия из serverInfo", "0.15.0-rc.5" in message, message)
+			check("обязательные глаголы контура на месте",
+			      unica_ping.REQUIRED_VERBS <= verbs, sorted(verbs))
+			check("каталог проекта передан серверу",
+			      (home / "pwd.txt").read_text(encoding="utf-8") == str(project),
+			      (home / "pwd.txt").read_text(encoding="utf-8"))
+			check("кэш рантаймов передан в env сервера",
+			      (home / "cache.txt").read_text(encoding="utf-8") == str(base / "cache-dir"),
+			      (home / "cache.txt").read_text(encoding="utf-8"))
+
+			os.environ.pop("UNICA_RUNTIME_CACHE_DIR", None)
+			code, message, verbs = unica_ping.ping(60, str(project))
+			check("без env кэш рантаймов — умолчание",
+			      (home / "cache.txt").read_text(encoding="utf-8")
+			      == str(home / ".local" / "share" / "unica" / "runtimes"),
+			      (home / "cache.txt").read_text(encoding="utf-8"))
+
+			write_launcher(home, NO_DIFF)
+			code, message, _verbs = unica_ping.ping(60, str(project))
+			check("без глагола diff — код 1 и причина",
+			      code == 1 and "обязательных глаголов" in message, message)
+
+			write_launcher(home, "#!/bin/sh\nexit 1\n")
+			code, message, _verbs = unica_ping.ping(60, str(project))
+			check("лаунчер упал без вывода — код 1 с кодом выхода",
+			      code == 1 and "exit 1" in message, message)
+
+			(home / ".local" / "bin" / "unica").unlink()
+			code, message, _verbs = unica_ping.ping(60, str(project))
+			check("лаунчера нет — код 1 и причина",
+			      code == 1 and "лаунчер Юники не найден" in message, message)
 		finally:
-			if old_home is None:
-				os.environ.pop("HOME", None)
-			else:
-				os.environ["HOME"] = old_home
-	return summary()
+			for name, value in old_env.items():
+				if value is None:
+					os.environ.pop(name, None)
+				else:
+					os.environ[name] = value
+		return summary()
 
 
 if __name__ == "__main__":

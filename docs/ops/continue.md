@@ -129,8 +129,39 @@ MCP-записи `unica`, `1c-testpilot`, `1c-db` (+ инстансы), `1c-kd`,
 `.zcode/config.json` остаётся legacy-фолбэком url станции КД (снятие —
 Т10); полный проход по ZCode-докам — Т9.
 
-Следующее — Т7 (doctor под DSH: раскладка, пресет, MCP, состояние) по
-команде оператора.
+Т7 (doctor под DSH) ОТГРУЖЕН 12.11, приёмка — за оператором.
+`scripts/doctor.py` переписан на семь разделов: `bundle` (пакет
+`dsh-1c-contour` в `$DSH_HOME/profiles`, строки патча, сборка `lib/`),
+`preset` (строка `preset-1c`, умолчание `selectedDefault`), `skills`
+(15 контурных скиллов и 4 команды, скиллы Юники, затенения), `mcp`
+(записи `unica`/`1c-testpilot`/`1c-db`+инстансы/`1c-kd` и живость),
+`layout` (канон `.dsh/1c`, legacy `.zcode/1c`, `migrate_from_zcode.py
+--check` при обоих слоях), `project` (`v8project.yaml` 0.15, платформа,
+топология, `build/out`, движок стиля) и `state` (`DSH_1C_STATE_DIR`,
+замки, журнал гейтов). `--json` печатает только JSON с `status` и
+машинным `code` раздела (`preset.missing`, `mcp.testpilot-missing`,
+`skills.none`…), `--profile` выбирает профиль, `--no-ping` не поднимает
+MCP. Таблица раскладок — `scripts/contour_paths.py` (повторяет
+`src/paths.ts`); разбор `db-instances.yaml` остался один —
+`wire_config.parse_instances_at`. Доказательства: `tests/test_doctor.py`
+(39 проверок: здоровая установка exit 0, три фикстуры поломки с разными
+кодами, `--json`, legacy и расхождение раскладок, схема v8project,
+инстансы) и переписанный `tests/test_unica_ping.py` (17 проверок,
+глобальный лаунчер `unica mcp`). Набор: 302 vitest, 18 python-файлов,
+линт 19/19, `typecheck`/`build` зелёные. Живые пробы: doctor на
+`erp-demo` — exit 0 с WARN (`preset` не выбран по умолчанию, стенд
+1c-db не поднят, `.partial` в кэше Юники, legacy-раскладка — переезд
+Т8, свалка `build/out`), `--json` парсится; `unica_ping --json` —
+`unica 0.15.0-rc.5 жив: 11 глаголов`. Границы: ZCode-проверки старого
+doctor сняты (реестр плагинов ZCode, exec-бит bootstrap, wire
+`.zcode/config.json`, следы хуков, тени `~/.zcode/skills`, NER, ibsrv,
+venv testpilot, Xvfb) — их предмет исчез с ZCode-слоем или это
+готовность стенда e2e, а не установки; `wire_config.py` не снят, его
+копию носят проекты (`run_e2e`, `publish_ib`) — снос вместе с
+legacy-скриптами в Т10.
+
+Следующее — Т8 (пилот `erp-demo`: мигратор, 11 живых проб, снятие
+python-эталона в векторы) по команде оператора.
 
 ## Унаследованное состояние (до переезда)
 
