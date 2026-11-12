@@ -21,11 +21,11 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { createStyleChecker, ENGINE_ENV } from '../../src/style-checker.js'
-import { classifyOracle, classifyText, type OracleClass } from './classify.js'
-import { seedStandLock } from './oracle.js'
+import { seedStandLock } from '../helpers/locks.js'
+import { classifyText, type ReasonClass } from './classify.js'
 import { cleanup, loadScenarios, prepare, substitute, stepTs, type Scenario } from './scenario.js'
 
-const STUB = new URL('../helpers/fake-style-engine.py', import.meta.url).pathname
+const STUB = new URL('../helpers/fake-style-engine.mjs', import.meta.url).pathname
 
 /** Корпуса сценариев гейтов T3. */
 const CORPORA: readonly { name: string; url: URL }[] = [
@@ -79,7 +79,7 @@ for (const corpus of CORPORA) {
               tree,
               connection: substitute(scenario.seedStandLock.connection, runtime.fixture.root),
               pid: process.pid,
-              legacyStateDir: runtime.fixture.legacyStateDir,
+              stateDir: runtime.fixture.stateDir,
             })
           }
           for (const [index, step] of scenario.steps.entries()) {
@@ -87,11 +87,12 @@ for (const corpus of CORPORA) {
             const where = `${scenario.id} шаг ${index + 1} (${step.phase}) на .dsh/1c`
             expect(ts.decision, `${where}: ${ts.text.slice(0, 300)}`).toBe(step.expect.decision)
             if (step.expect.decision === 'deny' || step.expect.decision === 'block') {
-              const tsClass: OracleClass = step.expect.decision === 'deny'
-                ? ts.code as OracleClass
+              const tsClass: ReasonClass = step.expect.decision === 'deny'
+                ? ts.code as ReasonClass
                 : classifyText(2, ts.text)
-              expect(tsClass, where).toBe(step.expect.code as OracleClass)
-              expect(classifyOracle({ exitCode: 2, stderr: ts.text }), where).toBe(step.expect.code as OracleClass)
+              expect(tsClass, where).toBe(step.expect.code as ReasonClass)
+              // Класс по тексту причины — независимая сверка словаря маркеров.
+              expect(classifyText(2, ts.text), `${where}: класс по тексту`).toBe(step.expect.code as ReasonClass)
               for (const fragment of step.expect.reasonIncludes ?? []) {
                 expect(ts.text, where).toContain(fragment)
               }

@@ -2,12 +2,18 @@
 """Тесты migrate_from_zcode.py: перенос раскладки .zcode/1c → .dsh/1c.
 
 Фикстуры — временные каталоги; сеть и внешние зависимости не нужны.
-Ожидаемый набор входов задан здесь по тикету Т6, а не импортом из
+Ожидаемый набор входов задан здесь по тикетам Т6/Т8, а не импортом из
 скрипта: тест не должен согласовываться с реализацией.
+
+spec: tickets/dsh-contour/T8-pilot.md — маркер контура переезжает вместе
+с остальными входами; успешный перенос создаёт запись в реестре проектов
+(спека, «Готово» 9). Корень состояния изолирован переменной
+DSH_1C_STATE_DIR: тест не пишет в реестр машины.
 
 Запуск: python3 tests/test_migrate_from_zcode.py
 """
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -23,6 +29,7 @@ MANIFEST = ".zcode-migration.json"
 
 # Набор входов контура: назначение в .dsh/1c и старое место.
 LEGACY_INPUTS = {
+	"contour": ".zcode/contour",
 	"contour.json": ".zcode/1c/contour.json",
 	"contour.local.json": ".zcode/1c/contour.local.json",
 	"db-instances.yaml": ".zcode/1c/db-instances.yaml",
@@ -46,6 +53,7 @@ def make_project(root: Path) -> None:
 	z = root / ".zcode"
 	(z / "1c" / "templates").mkdir(parents=True)
 	(z / "testpilot").mkdir(parents=True)
+	(z / "contour").write_text("test\n", encoding="utf-8")
 	(z / "1c" / "contour.json").write_text(json.dumps({
 		"1c_db": {"url": "http://127.0.0.1:6003/mcp"},
 		"1c_kd": {"url": "http://127.0.0.1:8060/mcp"},
@@ -81,10 +89,18 @@ def make_project(root: Path) -> None:
 		"<!-- END 1C CONTOUR -->\n", encoding="utf-8")
 
 
-def run(root: Path, *flags):
+def state_dir(root: Path) -> Path:
+	"""Корень состояния теста — рядом с проектом, не в домашнем каталоге."""
+	return root.parent / (root.name + "-state")
+
+
+def run(root: Path, *flags, state: Path = None):
+	env = {**os.environ,
+	       "DSH_1C_STATE_DIR": str(state if state is not None
+	                               else state_dir(root))}
 	return subprocess.run(
 		[sys.executable, str(MIGRATE), str(root), *flags],
-		capture_output=True, text=True, cwd=str(root))
+		capture_output=True, text=True, cwd=str(root), env=env)
 
 
 def snapshot(root: Path):
@@ -341,6 +357,96 @@ def main() -> int:
 		r = run(p, "--bogus")
 		check("CLI: неизвестный флаг — exit 2", r.returncode == 2,
 		      (r.stdout + r.stderr)[-200:])
+
+		# ── 12. маркер контура переезжает (вход гейта mcp) ──
+		marker = p / ".dsh" / "1c" / "contour"
+		check("маркер: перенесён байт в байт",
+		      marker.is_file() and marker.read_bytes() == b"test\n",
+		      "маркер не перенесён")
+		check("маркер: исходник удалён",
+		      not (p / ".zcode" / "contour").exists(), "исходник остался")
+		p_marker = base / "marker-1c"
+		make_project(p_marker)
+		(p_marker / ".zcode" / "contour").rename(
+			p_marker / ".zcode" / "1c" / "contour")
+		r = run(p_marker)
+		marker_1c = p_marker / ".dsh" / "1c" / "contour"
+		check("маркер: форма .zcode/1c/contour тоже переезжает",
+		      r.returncode == 0 and marker_1c.is_file()
+		      and marker_1c.read_bytes() == b"test\n",
+		      (r.stdout + r.stderr)[-300:])
+
+		# ── 13. реестр проектов: запись создаётся и совпадает с фактом ──
+		# Чтение через safe-аксессор: на базе реестра нет — проверки
+		# краснятся, а не падают трейсбеком (краснота блока целиком).
+		def read_registry(path):
+			if not path.is_file():
+				return {}
+			return json.loads(path.read_text(encoding="utf-8"))
+
+		registry = state_dir(p) / "projects.json"
+		check("реестр: файл создан", registry.is_file(), str(registry))
+		data = read_registry(registry)
+		entry = data.get("projects", {}).get(str(p), {})
+		version = json.loads(
+			(REPO / "package.json").read_text(encoding="utf-8"))["version"]
+		check("реестр: версия формата", data.get("version") == 1, str(data.get("version")))
+		check("реестр: путь и раскладка", entry.get("path") == str(p)
+		      and entry.get("layout") == "dsh", str(entry))
+		check("реестр: версия контура из package.json",
+		      entry.get("contour_version") == version, str(entry))
+		check("реестр: дата перевода ISO",
+		      isinstance(entry.get("migrated_at"), str)
+		      and len(entry["migrated_at"]) == 10
+		      and entry["migrated_at"][4] == "-", str(entry))
+
+		# второй проект не затирает первый (общий корень состояния)
+		p_second = base / "second"
+		make_project(p_second)
+		r = run(p_second, state=state_dir(p))
+		data = read_registry(registry)
+		projects = data.get("projects", {})
+		check("реестр: оба проекта на месте",
+		      r.returncode == 0 and str(p) in projects
+		      and str(p_second) in projects,
+		      str(sorted(projects)))
+		check("реестр: запись названа в выводе",
+		      "реестр проектов" in r.stdout, r.stdout[-300:])
+
+		# повторный перенос сохраняет дату первого перевода
+		first_date = read_registry(registry).get("projects", {}).get(
+			str(p), {}).get("migrated_at")
+		r = run(p)
+		again = read_registry(registry).get("projects", {}).get(str(p), {})
+		check("реестр: повторный перенос сохраняет дату",
+		      r.returncode == 0 and first_date is not None
+		      and again.get("migrated_at") == first_date,
+		      str(again))
+
+		# --check и --dry-run реестр не пишут
+		p_readonly = base / "readonly"
+		make_project(p_readonly)
+		run(p_readonly, "--check")
+		run(p_readonly, "--dry-run")
+		check("реестр: --check и --dry-run не пишут",
+		      not (state_dir(p_readonly) / "projects.json").exists(),
+		      "реестр создан режимом чтения")
+
+		# битый реестр не останавливает перенос
+		p_broken = base / "broken-registry"
+		make_project(p_broken)
+		state_dir(p_broken).mkdir(parents=True)
+		(state_dir(p_broken) / "projects.json").write_text("{not json",
+		                                                   encoding="utf-8")
+		r = run(p_broken)
+		check("реестр: битый — перенос exit 0", r.returncode == 0,
+		      (r.stdout + r.stderr)[-300:])
+		check("реестр: битый — предупреждение и подсказка названы",
+		      "реестр не читается" in r.stdout
+		      and "удали битый файл" in r.stdout, r.stdout[-300:])
+		check("реестр: битый — данные перенесены",
+		      (p_broken / ".dsh" / "1c" / "contour.json").is_file(),
+		      "перенос не выполнен")
 
 		return summary()
 

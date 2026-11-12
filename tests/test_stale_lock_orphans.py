@@ -127,7 +127,10 @@ env5 = dict(os.environ)
 env5["HOME"] = str(fhome)
 env5["ONEC_MCP_TOOLKIT_DIR"] = str(toolkit)
 env5["ZCODE_1C_STATE_DIR"] = str(tmp / "state")  # stand-замки стартов — в tmp
-env5["WAIT_DEADLINE"] = "2"
+# Бюджет ожидания клиента: 2 с под параллельной нагрузкой истекали,
+# старт уходил в heal-ветку прокси и составная проверка статей падала
+# (флейк панели Т8). 10 с — запас груженой машины; мок локальный.
+env5["WAIT_DEADLINE"] = "10"
 env5["ONEC_PLATFORM"] = str(fake_sh)
 # изоляция state и для процесса теста: acquire_stand_lock (критерий 3)
 # должен писать в тот же каталог, что читает старт (env5["ZCODE_1C_STATE_DIR"])
@@ -293,7 +296,7 @@ try:
     connC = f'File={ibC};Usr="u3";Pwd="p3"'
     pC = fake_proc(fake_sh, connC, str(root3 / "elsewhere.epf"))  # маркер не контура
     time.sleep(0.3)
-    sys.path.insert(0, str(REPO / "reference" / "gates"))
+    sys.path.insert(0, str(REPO / "scripts"))
     import ib_lock
     ib_lock.acquire_stand_lock(str(root3), connC, pC.pid)
     r3 = run_start(root3)

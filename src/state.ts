@@ -17,7 +17,7 @@ import { acquireBaseLock, releaseBaseLock, standLockStatus } from './lock.js'
 /**
  * Решение в журнале: `blocked` — отказ, `confirmed` — осознанное разрешение
  * (эскалация), `advisory` — замечание без отказа (план правки, холодные
- * нарушения вне правки). Набор совпадает с python-эталоном.
+ * нарушения вне правки). Набор унаследован от ZCode-эталона.
  */
 export type AuditDecision = 'blocked' | 'confirmed' | 'advisory'
 

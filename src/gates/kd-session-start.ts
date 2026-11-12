@@ -1,7 +1,7 @@
 /**
  * `kd_session_start` на DSH: будим станцию kd-rules-mcp на старте сессии.
  *
- * Порт `reference/gates/kd_session_start.py`. MCP `1c-kd` разведён как
+ * Порт ZCode-гейта `kd_session_start`. MCP `1c-kd` разведён как
  * http-запись: хост подключается к уже работающему сервису и процесс сам не
  * поднимает. Гейт закрывает разрыв: в проекте с разведённым `1c-kd` пробует
  * URL, станция спит — поднимает `start_kd_rules.sh` фоном. Станция общая на
@@ -40,7 +40,7 @@ export function stationDir(env: NodeJS.ProcessEnv = process.env): string {
 /**
  * Url из legacy-конфига хоста: `.zcode/config.json → mcp.servers["1c-kd"].url`.
  * В DSH запись MCP поднимает пресет, поэтому канон — `contour.json`; конфиг
- * остаётся для переездных проектов и python-эталона.
+ * остаётся для переездных проектов.
  */
 function urlFromLegacyConfig(root: string): string {
   const config = readJsonObject(join(root, '.zcode', 'config.json'))

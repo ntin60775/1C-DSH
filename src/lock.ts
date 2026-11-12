@@ -1,9 +1,9 @@
 /**
  * Замок на информационную базу: один файл состояния на ключ подключения.
  *
- * Формат и ключ совпадают с `reference/gates/ib_lock.py`: файл замка читают
- * обе стороны, пока python-эталон жив (до паритета и пилота). Отличие одно —
- * корень состояния у DSH свой: `DSH_1C_STATE_DIR` задаёт его напрямую.
+ * Формат и ключ унаследованы от ZCode-гейтов (`ib_lock`): замок — файл
+ * состояния на ключ подключения. Корень состояния у DSH свой:
+ * `DSH_1C_STATE_DIR` задаёт его напрямую.
  * @module dsh-1c-contour/lock
  */
 
@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import type { LockRecord } from './contract.js'
 import { resolvedPath } from './paths.js'
 
-/** Время жизни замка без продления — как у эталона: 20 минут. */
+/** Время жизни замка без продления — как у ZCode-эталона: 20 минут. */
 export const DEFAULT_TTL_SECONDS = 20 * 60
 
 /**
@@ -102,7 +102,7 @@ export function lockPath(stateDir: string, connection: string, tree: string): st
  * Вымести просроченные замки инфобаз (старт сессии).
  *
  * Живёт рядом с форматом замка, чтобы правило «просрочен» было одно:
- * эталон делает так же (`ib_lock.purge_stale_locks`).
+ * ZCode-эталон делал так же (`ib_lock.purge_stale_locks`).
  * @param stateDir - корень состояния контура.
  * @param nowSeconds - текущее время в секундах эпохи.
  * @returns сколько файлов удалено.
@@ -307,10 +307,11 @@ export function standLockStatus(stateDir: string, connection: string, tree: stri
  * @returns строка «дерево — операция, с …, сессия …».
  */
 export function describeHolder(lock: LockRecord): string {
-  const started = lock.started_at === '' ? '?' : lock.started_at
-  const operation = lock.operation === '' ? '?' : lock.operation
+  const started = lock.started_at === '' || lock.started_at === undefined ? '?' : lock.started_at
+  const operation = lock.operation === '' || lock.operation === undefined ? '?' : lock.operation
   if (lock.kind === 'stand') {
     return `${lock.tree} — операция ${operation}, с ${started}, процесс ${String(lock.pid ?? '?')}`
   }
-  return `${lock.tree} — операция ${operation}, с ${started}, сессия ${lock.session_id === '' ? '?' : lock.session_id}`
+  const session = lock.session_id === '' || lock.session_id === undefined ? '?' : lock.session_id
+  return `${lock.tree} — операция ${operation}, с ${started}, сессия ${session}`
 }

@@ -727,7 +727,7 @@
   },
   {
     "id": "ib-lock-busy",
-    "describe": "операция на занятой базе блокируется замком python-эталона",
+    "describe": "операция на занятой базе блокируется замком другого дерева",
     "seedLock": {
       "holderTree": "$TMP/other-holder",
       "fromTree": "tree",

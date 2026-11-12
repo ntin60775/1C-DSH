@@ -1,33 +1,23 @@
 /**
- * Классификатор решения python-эталона по наблюдаемому выводу.
+ * Классификатор блокирующего сообщения по классу причины.
  *
- * Эталон не печатает класс причины — только текст. Класс выводится из текста
- * независимо от TS-реализации: это и есть сверка «класс причины совпадает»,
- * а не пересказ собственного кода.
+ * Векторы корпуса (`tests/vectors/`) хранят класс причины каждого отказа;
+ * текст сообщения гейта классифицируется независимо по маркерам — тем же
+ * словарём, что был сверен с python-эталоном до его снятия (Т8). Так
+ * корпус проверяет и класс, и текст, а не пересказ собственного кода.
  * @module tests/parity/classify
  */
 
-import type { OracleResult } from './oracle.js'
+import type { ReasonCode } from '../../src/contract.js'
 
-/** Класс решения эталона. */
-export type OracleClass =
+/** Класс решения в корпусе: пропуск, класс причины либо нераспознанный блок. */
+export type ReasonClass =
   | 'allow'
-  | 'source-edit'
-  | 'source-bash'
-  | 'worktree-uninit'
-  | 'rebuild-rule'
-  | 'ib-lock'
-  | 'docs-unverified'
-  | 'mcp-unsafe'
-  | 'stand-lock'
-  | 'bsl-style'
-  | 'bsl-module'
-  | 'anon-raw'
-  | 'retry-discipline'
+  | Exclude<ReasonCode, 'none' | 'escalation-granted'>
   | 'unknown'
 
-/** Маркеры блокирующих сообщений эталона — по одному на класс. */
-const MARKERS: readonly { readonly marker: string; readonly code: Exclude<OracleClass, 'allow' | 'unknown'> }[] = [
+/** Маркеры блокирующих сообщений — по одному на класс. */
+export const MARKERS: readonly { readonly marker: string; readonly code: Exclude<ReasonClass, 'allow' | 'unknown'> }[] = [
   { marker: 'Прямое редактирование исходников 1С', code: 'source-edit' },
   { marker: 'Запись в исходники 1С через bash', code: 'source-bash' },
   { marker: 'Ворктри не инициализирован', code: 'worktree-uninit' },
@@ -42,31 +32,19 @@ const MARKERS: readonly { readonly marker: string; readonly code: Exclude<Oracle
 ]
 
 /**
- * Определить класс решения эталона.
- *
- * Код возврата 0 — пропуск; 2 — блок, класс по маркеру сообщения. Остальные
- * блоки эталон отдаёт только сообщением правила пересборки, у которого нет
- * своего маркера.
- * @param result - код возврата и stderr гейта-процесса.
- * @returns класс решения.
- */
-export function classifyOracle(result: OracleResult): OracleClass {
-  return classifyText(result.exitCode, result.stderr)
-}
-
-/**
  * Класс причины по тексту блокирующего сообщения.
- * @param exitCode - код возврата.
- * @param stderr - текст причины.
+ *
+ * Блок без маркера гейт unica_source отдаёт только сообщением правила
+ * пересборки; кейсы корпуса сверяют там ещё и точный текст причины.
+ * @param exitCode - код решения: 0 — пропуск, 2 — блок.
+ * @param text - текст причины.
  * @returns класс решения.
  */
-export function classifyText(exitCode: number, stderr: string): OracleClass {
+export function classifyText(exitCode: number, text: string): ReasonClass {
   if (exitCode === 0) return 'allow'
   for (const { marker, code } of MARKERS) {
-    if (stderr.includes(marker)) return code
+    if (text.includes(marker)) return code
   }
-  // Блок без маркера гейт unica_source отдаёт только сообщением правила
-  // пересборки; кейсы корпуса сверяют там ещё и точный текст причины.
   if (exitCode === 2) return 'rebuild-rule'
   return 'unknown'
 }

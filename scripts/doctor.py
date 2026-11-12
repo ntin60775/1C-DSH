@@ -11,8 +11,11 @@
             из проектных входов и их живость;
   layout  — раскладка проекта: канон `.dsh/1c` либо legacy `.zcode/1c`;
   project — `v8project.yaml`, платформа, обязательный минимум топологии,
-            `build/out`, движок стиля;
+            `build/out`, движок стиля, запись в реестре проектов;
   state   — корень состояния контура, замки инфобаз, журнал гейтов.
+
+Реестр проектов (`projects.json` в корне состояния) создаёт мигратор;
+doctor сверяет запись с фактом и дописывает в неё свой результат.
 
 Выход: 0 — FAIL нет (WARN допустимы), 1 — есть FAIL. `--json` печатает
 только JSON: у каждого раздела есть `status` (`ok`/`warn`/`fail`) и `code`
@@ -29,17 +32,21 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from contour_paths import (  # noqa: E402
 	INPUTS,
 	LAYOUT_DIRS,
+	REGISTRY,
 	actual_db_url,
 	find_input,
 	kd_url,
 	load_json,
 	read_text,
+	state_root,
+	update_registry,
 )
 from wire_config import channel_url, parse_instances_at  # noqa: E402
 
@@ -84,6 +91,7 @@ class Report:
 
 	def __init__(self, as_json: bool):
 		self.as_json = as_json
+		self.status = "ok"
 		self.sections = {
 			name: {"status": "ok", "code": f"{name}.ok", "message": "", "messages": []}
 			for name in SECTION_ORDER
@@ -119,14 +127,19 @@ class Report:
 	def fail(self, name: str, message: str, code=None, **fields):
 		self._add("fail", name, message, code, **fields)
 
-	def finish(self, root: Path, dsh_home: Path) -> int:
+	def verdict(self):
+		"""`(status, exit)` по разделам: FAIL старше WARN, WARN старше ok."""
 		statuses = [self.sections[name]["status"] for name in SECTION_ORDER]
 		if "fail" in statuses:
-			status, code = "fail", 1
-		elif "warn" in statuses:
-			status, code = "warn", 0
-		else:
-			status, code = "ok", 0
+			return "fail", 1
+		if "warn" in statuses:
+			return "warn", 0
+		return "ok", 0
+
+	def finish(self, root: Path, dsh_home: Path) -> int:
+		status, code = self.verdict()
+		self.status = status
+		statuses = [self.sections[name]["status"] for name in SECTION_ORDER]
 		failed = sum(1 for item in statuses if item == "fail")
 		warned = sum(1 for item in statuses if item == "warn")
 		if self.as_json:
@@ -1076,8 +1089,87 @@ def check_style(report: Report, root: Path) -> None:
 	            code="project.style-missing")
 
 
+def registry_path() -> Path:
+	"""Реестр проектов: `projects.json` в корне состояния."""
+	return state_root()[0] / REGISTRY
+
+
+# Раскладка записи реестра по каталогу раскладки из канон-таблицы.
+REGISTRY_LAYOUT = {LAYOUT_DIRS[0]: "dsh", LAYOUT_DIRS[2]: "zcode"}
+
+
+def check_registry(report: Report, root: Path) -> None:
+	"""Запись проекта в реестре: есть и совпадает с фактом.
+
+	Реестр создаёт мигратор; отсутствие записи — WARN (парк переводится
+	по одному), расхождение записи с фактом — WARN: факт главнее, запись
+	обновит мигратор. Версия в записи — на момент перевода, не пин.
+	Машинное поле `registry` раздела project: ok / missing / diverged /
+	unreadable.
+	"""
+	path = registry_path()
+	if not path.is_file():
+		report.warn("project", f"реестр проектов отсутствует ({path}) — "
+		            "запись создаёт мигратор", code="project.registry-missing",
+		            registry="missing")
+		return
+	data, error = load_json(path)
+	if error is not None or data is None or not isinstance(data.get("projects"), dict):
+		report.warn("project", f"реестр проектов не читается ({path}): "
+		            f"{error or 'нет поля projects'}",
+		            code="project.registry-unreadable", registry="unreadable")
+		return
+	entry = data["projects"].get(str(root))
+	if not isinstance(entry, dict):
+		report.warn("project", f"проекта нет в реестре ({path}) — запись "
+		            "создаёт мигратор", code="project.registry-missing",
+		            registry="missing")
+		return
+	layout_dir = report.sections["layout"].get("dir")
+	actual = REGISTRY_LAYOUT.get(layout_dir)
+	problems = []
+	if entry.get("path") != str(root):
+		problems.append("путь")
+	if actual is None:
+		problems.append("раскладка не определена (входы контура не найдены)")
+	elif entry.get("layout") != actual:
+		problems.append("раскладка")
+	if problems:
+		report.warn("project", f"реестр разошёлся с фактом: "
+		            f"{', '.join(problems)} — факт главнее, запись обновит "
+		            "мигратор", code="project.registry-diverged",
+		            registry="diverged")
+		return
+	report.ok("project", f"реестр: запись совпадает с фактом (раскладка "
+	            f"{entry.get('layout')}, версия контура на момент перевода "
+	            f"{entry.get('contour_version') or '?'}, "
+	            f"{entry.get('migrated_at') or '?'})", registry="ok")
+
+
+def record_doctor(root: Path, status: str) -> None:
+	"""Дописать результат doctor в запись реестра; запись не создаёт.
+
+	Вызывается после печати отчёта. Ошибка записи — предупреждение в
+	stderr; нечитаемый реестр уже назван в разделе project, повторно
+	не шумим. Реестр — журнал, а не гейт.
+	"""
+	def mutate(data):
+		entry = data["projects"].get(str(root))
+		if not isinstance(entry, dict):
+			return False
+		entry["doctor"] = {
+			"status": status,
+			"checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+		}
+		return True
+
+	ok, error = update_registry(mutate)
+	if not ok and error and error.startswith("реестр не записан"):
+		print(f"doctor: {error}", file=sys.stderr)
+
+
 def check_project(report: Report, root: Path, project: dict) -> None:
-	"""Проект: v8project.yaml, платформа, топология, build/out, стиль."""
+	"""Проект: v8project.yaml, платформа, топология, build/out, стиль, реестр."""
 	v8_path = root / "v8project.yaml"
 	if not v8_path.is_file():
 		report.fail("project", "v8project.yaml не найден — это не проект 1С или "
@@ -1091,22 +1183,11 @@ def check_project(report: Report, root: Path, project: dict) -> None:
 	check_topology(report, root)
 	check_build_out(report, root)
 	check_style(report, root)
+	check_registry(report, root)
 
 
 # ── 7. state ────────────────────────────────────────────────────────────────
-
-def state_root():
-	"""Корень состояния контура: env, затем legacy-env, затем умолчание.
-
-	Умолчание — `~/.dsh/state/1c` (решение 7 спеки): гейты считают его от
-	домашнего каталога (`src/state.ts`), `DSH_HOME` подменяет только
-	профили и на состояние не влияет.
-	"""
-	for name in ("DSH_1C_STATE_DIR", "ZCODE_1C_STATE_DIR"):
-		value = os.environ.get(name) or ""
-		if value:
-			return Path(value).expanduser(), name
-	return Path.home() / ".dsh" / "state" / "1c", "умолчание"
+# Корень состояния — contour_paths.state_root (общий с мигратором).
 
 
 def check_state(report: Report) -> None:
@@ -1203,7 +1284,9 @@ def main() -> int:
 	check_layout(report, root)
 	check_project(report, root, project)
 	check_state(report)
-	return report.finish(root, dsh_home)
+	code = report.finish(root, dsh_home)
+	record_doctor(root, report.status)
+	return code
 
 
 if __name__ == "__main__":

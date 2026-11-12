@@ -2,7 +2,8 @@
 
 > **Переезд на DSH.** Ниже — унаследованный ZCode-канон; он описывает
 > механику, которой в этом репозитории больше нет (`.zcode/`, `deploy.json`,
-> `hooks/`). Актуальные правила — спека
+> `hooks/`, `reference/` — python-эталон снят в Т8, паритет гейтов живёт
+> в векторах `tests/vectors/`). Актуальные правила — спека
 > [docs/plans/dsh-contour.md](docs/plans/dsh-contour.md) и тикеты
 > [tickets/dsh-contour/](tickets/dsh-contour/); раздел переписывается в T9.
 
@@ -74,10 +75,14 @@ PAT=$(cat .forbidden-names.txt 2>/dev/null)
         --exclude-dir=.git --exclude-dir=vendor --exclude='.forbidden-names.txt' \
       && echo 'НАЙДЕНО — править' || echo 'чисто')
 
-# 2. Все гейты и разводка: тесты гоняют хуки как процессы (stdin → exit)
+# 2. Гейты и разводка: нативный плагин, оракул — векторы (Т8, без python)
+pnpm test          # tests/parity + tests/unit, сборка lib/ не нужна
+pnpm typecheck
+
+# 2b. Скрипты контура (doctor, мигратор, стартеры, замки) — python-набор
 for t in tests/test_*.py; do python3 "$t" || echo "ПРОВАЛ: $t"; done
 
-# 3. Скиллы под слоты ZCode
+# 3. Скиллы под слоты DSH
 python3 scripts/lint_skill_frontmatter.py
 ```
 

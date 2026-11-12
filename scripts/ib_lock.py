@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""ib_lock.py — замок на информационную базу (порт lib/ib-lock.ts дона 1c-omp).
+"""ib_lock.py — замок на информационную базу для python/bash-скриптов контура.
+
+Слой замков стартера стенда и e2e-прогона (решение 10 спеки: скрипты
+остаются python/bash). Формат и ключ совпадают с `src/lock.ts` гейтов;
+корень состояния — DSH_1C_STATE_DIR, затем legacy ZCODE_1C_STATE_DIR,
+затем ~/.dsh/state/1c. Происхождение — порт lib/ib-lock.ts дона 1c-omp.
 
 Серверная база одна на все деревья проекта: отдельную на каждый ворктри не
 поднять. Изоляции там быть не может, поэтому единственный достижимый
@@ -12,8 +17,8 @@
 Отличие от дона: в ZCode хуки — одноразовые процессы, pid держателя умирает
 сразу после захвата, поэтому живость замка определяется только TTL (20 мин),
 а не проверкой pid. Держатель идентифицируется парой (дерево, session_id);
-тот же держатель продлевает свой замок. SessionStart-хук выметает
-просроченные замки, событие остановки сессии в ZCode нет.
+тот же держатель продлевает свой замок. Просроченные замки выметает старт сессии
+(`session_clean` → `purge_stale_locks`), событие остановки сессии в ZCode нет.
 
 Второй вид замка — stand:<нормализованная строка подключения> (мультистенд):
 «один клиент на базу» для файловых стендов. Без TTL: владелец — pid
@@ -36,7 +41,20 @@ import subprocess
 import time
 from pathlib import Path
 
-from contour_common import session_state_dir
+def state_root() -> Path:
+	"""Корень состояния контура: DSH_1C_STATE_DIR, затем legacy-переменная,
+	затем ~/.dsh/state/1c. Порядок повторяет src/state.ts и doctor.py:
+	путь переменной уже называет корень контура."""
+	for name in ("DSH_1C_STATE_DIR", "ZCODE_1C_STATE_DIR"):
+		value = os.environ.get(name) or ""
+		if value:
+			return Path(value).expanduser()
+	return Path.home() / ".dsh" / "state" / "1c"
+
+
+def session_state_dir(name: str) -> Path:
+	"""Каталог состояния подсистемы: <корень>/<name>/."""
+	return state_root() / name
 
 DEFAULT_TTL_S = 20 * 60
 
@@ -171,7 +189,7 @@ def acquire_base_lock(tree: str, connection: str, operation: str, sid: str,
 			return "busy", existing
 	path.parent.mkdir(parents=True, exist_ok=True)
 	lock = {
-		"connection": connection,
+		"connection": _without_credentials(connection),
 		"tree": tree,
 		"session_id": sid,
 		"operation": operation,
@@ -179,11 +197,18 @@ def acquire_base_lock(tree: str, connection: str, operation: str, sid: str,
 		else datetime_iso(),
 		"expires_ts": time.time() + ttl_s,
 	}
+	tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
 	try:
-		path.write_text(json.dumps(lock, ensure_ascii=False, indent=2), encoding="utf-8")
+		path.parent.mkdir(parents=True, exist_ok=True)
+		tmp.write_text(json.dumps(lock, ensure_ascii=False, indent=2), encoding="utf-8")
+		os.chmod(tmp, 0o600)
+		os.replace(tmp, path)
 	except OSError:
 		# нет доступа к каталогу состояния — из-за этого работу не блокируем
-		pass
+		try:
+			tmp.unlink(missing_ok=True)
+		except OSError:
+			pass
 	return "ok", None
 
 
@@ -295,7 +320,7 @@ def transfer_stand_lock(tree: str, connection: str, from_pid: int, to_pid: int) 
 
 
 def purge_stale_locks() -> int:
-	"""Выметает просроченные замки (вызывается SessionStart-хуком). Возвращает счёт."""
+	"""Выметает просроченные замки (старт сессии, session_clean). Возвращает счёт."""
 	directory = session_state_dir("ib-locks")
 	if not directory.is_dir():
 		return 0
@@ -332,7 +357,8 @@ if __name__ == "__main__":
 	import tempfile
 
 	with tempfile.TemporaryDirectory() as tmp:
-		os.environ["ZCODE_1C_STATE_DIR"] = tmp
+		os.environ["DSH_1C_STATE_DIR"] = tmp
+		os.environ.pop("ZCODE_1C_STATE_DIR", None)
 		status, _ = acquire_base_lock("/tree/a", "Srvr=host;Ref=erp;", "build", "s1")
 		print("первый захват:", status)
 		status, _ = acquire_base_lock("/tree/a", "Srvr=host;Ref=erp;", "load", "s1")
