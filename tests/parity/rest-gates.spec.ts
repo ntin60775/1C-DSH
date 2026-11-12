@@ -1,13 +1,14 @@
 /**
- * Паритет гейтов T4: `anon`, `retry`, `worktree-hint`, `session-clean`,
+ * Корпус гейтов T4: `anon`, `retry`, `worktree-hint`, `session-clean`,
  * `session-context`, `kd-session-start`.
  *
- * Каждый сценарий проигрывается на двух независимых фикстурах: TS-гейт и
- * python-эталон. Сверяются решение, класс причины, фрагменты причины и
- * заметки, побочные эффекты (файлы состояния, маркер станции kd).
+ * Каждый сценарий проигрывается на TS-гейте против ожиданий вектора
+ * (`tests/vectors/`): решение, класс причины, фрагменты причины и заметок,
+ * побочные эффекты (файлы состояния, маркер станции kd). Ожидания
+ * заморожены с python-эталона до его снятия в Т8.
  *
  * spec: Т4 — «паритет-тесты шести гейтов зелёные; векторы — в
- * `tests/vectors/`».
+ * `tests/vectors/`»; Т8 — регрессия живёт в векторах без python.
  * @module tests/parity/rest-gates.spec
  */
 
@@ -20,7 +21,6 @@ import {
   cleanup,
   markerState,
   prepare,
-  stepOracle,
   stepTs,
   type RestGate,
   type RestScenario,
@@ -40,55 +40,42 @@ for (const corpus of corpora) {
   for (const scenario of loadScenarios(corpus.url) as RestScenario[]) {
     describe(`${corpus.name}/${scenario.id}`, () => {
       it(scenario.describe, async () => {
-        const tsRuntime = prepare(scenario)
-        const oracleRuntime = prepare(scenario)
+        const runtime = prepare(scenario)
         try {
           for (const [index, step] of scenario.steps.entries()) {
             const where = `${scenario.id} шаг ${index + 1} (${step.phase})`
-            const ts = await stepTs(scenario.gate, step, tsRuntime)
-            const oracle = stepOracle(scenario.gate, step, oracleRuntime)
+            const ts = await stepTs(scenario.gate, step, runtime)
 
-            expect(oracle.decision, `${where}: эталон — ${oracle.result.stderr.slice(0, 300)}`).toBe(step.expect.decision)
-            expect(ts.decision, `${where}: TS`).toBe(step.expect.decision)
+            expect(ts.decision, `${where}: ${ts.text.slice(0, 300)}`).toBe(step.expect.decision)
             if (step.expect.decision === 'deny' || step.expect.decision === 'block') {
-              expect(ts.code, `${where}: класс TS`).toBe(step.expect.code)
-              expect(oracle.code, `${where}: класс эталона`).toBe(step.expect.code)
+              expect(ts.code, `${where}: класс причины`).toBe(step.expect.code)
             }
             for (const fragment of step.expect.reasonIncludes ?? []) {
-              expect(ts.text, `${where}: TS-причина без «${fragment}»`).toContain(fragment)
-              expect(oracle.result.stderr, `${where}: причина эталона без «${fragment}»`).toContain(fragment)
+              expect(ts.text, `${where}: причина без «${fragment}»`).toContain(fragment)
             }
             for (const fragment of step.expect.noticeIncludes ?? []) {
-              expect(ts.text, `${where}: заметка TS без «${fragment}»`).toContain(fragment)
-              expect(oracle.notice, `${where}: заметка эталона без «${fragment}»`).toContain(fragment)
+              expect(ts.text, `${where}: заметка без «${fragment}»`).toContain(fragment)
             }
             if (step.expect.noticeAbsent === true) {
-              expect(ts.text, `${where}: TS должен молчать`).toBe('')
-              expect(oracle.notice, `${where}: эталон должен молчать`).toBe('')
+              expect(ts.text, `${where}: гейт должен молчать`).toBe('')
             }
           }
 
           const after = scenario.expectAfter
           if (after !== undefined) {
-            const base = (runtime: typeof tsRuntime): string =>
-              scenario.gate === 'session-clean' ? runtime.fixture.stateDir : runtime.fixture.root
-            for (const runtime of [tsRuntime, oracleRuntime]) {
-              const where = runtime === tsRuntime ? 'TS' : 'эталон'
-              for (const relative of after.absent ?? []) {
-                expect(existsSync(join(base(runtime), relative)), `${where}: ${relative} должен быть удалён`).toBe(false)
-              }
-              for (const relative of after.present ?? []) {
-                expect(existsSync(join(base(runtime), relative)), `${where}: ${relative} должен остаться`).toBe(true)
-              }
+            const base = scenario.gate === 'session-clean' ? runtime.fixture.stateDir : runtime.fixture.root
+            for (const relative of after.absent ?? []) {
+              expect(existsSync(join(base, relative)), `${relative} должен быть удалён`).toBe(false)
+            }
+            for (const relative of after.present ?? []) {
+              expect(existsSync(join(base, relative)), `${relative} должен остаться`).toBe(true)
             }
             if (after.marker !== undefined) {
-              expect(await markerState(join(tsRuntime.fixture.root, 'marker'), after.marker), 'маркер TS').toBe(after.marker)
-              expect(await markerState(join(oracleRuntime.fixture.root, 'marker'), after.marker), 'маркер эталона').toBe(after.marker)
+              expect(await markerState(join(runtime.fixture.root, 'marker'), after.marker), 'маркер станции').toBe(after.marker)
             }
           }
         } finally {
-          cleanup(tsRuntime)
-          cleanup(oracleRuntime)
+          cleanup(runtime)
         }
       })
     })

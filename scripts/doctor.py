@@ -11,8 +11,11 @@
             из проектных входов и их живость;
   layout  — раскладка проекта: канон `.dsh/1c` либо legacy `.zcode/1c`;
   project — `v8project.yaml`, платформа, обязательный минимум топологии,
-            `build/out`, движок стиля;
+            `build/out`, движок стиля, запись в реестре проектов;
   state   — корень состояния контура, замки инфобаз, журнал гейтов.
+
+Реестр проектов (`projects.json` в корне состояния) создаёт мигратор;
+doctor сверяет запись с фактом и дописывает в неё свой результат.
 
 Выход: 0 — FAIL нет (WARN допустимы), 1 — есть FAIL. `--json` печатает
 только JSON: у каждого раздела есть `status` (`ok`/`warn`/`fail`) и `code`
@@ -29,6 +32,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -119,14 +123,18 @@ class Report:
 	def fail(self, name: str, message: str, code=None, **fields):
 		self._add("fail", name, message, code, **fields)
 
-	def finish(self, root: Path, dsh_home: Path) -> int:
+	def verdict(self):
+		"""`(status, exit)` по разделам: FAIL старше WARN, WARN старше ok."""
 		statuses = [self.sections[name]["status"] for name in SECTION_ORDER]
 		if "fail" in statuses:
-			status, code = "fail", 1
-		elif "warn" in statuses:
-			status, code = "warn", 0
-		else:
-			status, code = "ok", 0
+			return "fail", 1
+		if "warn" in statuses:
+			return "warn", 0
+		return "ok", 0
+
+	def finish(self, root: Path, dsh_home: Path) -> int:
+		status, code = self.verdict()
+		statuses = [self.sections[name]["status"] for name in SECTION_ORDER]
 		failed = sum(1 for item in statuses if item == "fail")
 		warned = sum(1 for item in statuses if item == "warn")
 		if self.as_json:
@@ -1076,8 +1084,81 @@ def check_style(report: Report, root: Path) -> None:
 	            code="project.style-missing")
 
 
+def registry_path() -> Path:
+	"""Реестр проектов: `projects.json` в корне состояния."""
+	return state_root()[0] / "projects.json"
+
+
+def check_registry(report: Report, root: Path) -> None:
+	"""Запись проекта в реестре: есть и совпадает с фактом.
+
+	Реестр создаёт мигратор; отсутствие записи — WARN (парк переводится
+	по одному), расхождение записи с фактом — WARN: факт главнее, запись
+	обновит мигратор. Версия в записи — на момент перевода, не пин.
+	"""
+	path = registry_path()
+	if not path.is_file():
+		report.warn("project", f"реестр проектов отсутствует ({path}) — "
+		            "запись создаёт мигратор", code="project.registry-missing")
+		return
+	data, error = load_json(path)
+	if error is not None or data is None or not isinstance(data.get("projects"), dict):
+		report.warn("project", f"реестр проектов не читается ({path}): "
+		            f"{error or 'нет поля projects'}",
+		            code="project.registry-unreadable")
+		return
+	entry = data["projects"].get(str(root))
+	if not isinstance(entry, dict):
+		report.warn("project", f"проекта нет в реестре ({path}) — запись "
+		            "создаёт мигратор", code="project.registry-missing")
+		return
+	layout_dir = report.sections["layout"].get("dir")
+	actual = {".dsh/1c": "dsh", ".zcode/1c": "zcode"}.get(layout_dir)
+	problems = []
+	if entry.get("path") != str(root):
+		problems.append("путь")
+	if actual is not None and entry.get("layout") != actual:
+		problems.append("раскладка")
+	if problems:
+		report.warn("project", f"реестр разошёлся с фактом: "
+		            f"{', '.join(problems)} — факт главнее, запись обновит "
+		            "мигратор", code="project.registry-diverged")
+		return
+	report.ok("project", f"реестр: запись совпадает с фактом (раскладка "
+	            f"{entry.get('layout')}, версия контура на момент перевода "
+	            f"{entry.get('contour_version') or '?'}, "
+	            f"{entry.get('migrated_at') or '?'})")
+
+
+def record_doctor(root: Path, status: str) -> None:
+	"""Дописать результат doctor в запись реестра; запись не создаёт.
+
+	Ошибка записи — предупреждение в stderr: отчёт doctor уже напечатан,
+	реестр — журнал, а не гейт.
+	"""
+	path = registry_path()
+	try:
+		data = json.loads(path.read_text(encoding="utf-8"))
+		projects = data.get("projects") if isinstance(data, dict) else None
+		if not isinstance(projects, dict) or str(root) not in projects:
+			return
+		entry = projects[str(root)]
+		if not isinstance(entry, dict):
+			return
+		entry["doctor"] = {
+			"status": status,
+			"checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+		}
+		tmp = path.with_name(path.name + ".tmp")
+		tmp.write_text(json.dumps(data, ensure_ascii=False, indent="\t",
+		                          sort_keys=True) + "\n", encoding="utf-8")
+		os.replace(tmp, path)
+	except (OSError, ValueError) as exc:
+		print(f"doctor: реестр проектов не обновлён ({exc})", file=sys.stderr)
+
+
 def check_project(report: Report, root: Path, project: dict) -> None:
-	"""Проект: v8project.yaml, платформа, топология, build/out, стиль."""
+	"""Проект: v8project.yaml, платформа, топология, build/out, стиль, реестр."""
 	v8_path = root / "v8project.yaml"
 	if not v8_path.is_file():
 		report.fail("project", "v8project.yaml не найден — это не проект 1С или "
@@ -1091,6 +1172,7 @@ def check_project(report: Report, root: Path, project: dict) -> None:
 	check_topology(report, root)
 	check_build_out(report, root)
 	check_style(report, root)
+	check_registry(report, root)
 
 
 # ── 7. state ────────────────────────────────────────────────────────────────
@@ -1203,7 +1285,10 @@ def main() -> int:
 	check_layout(report, root)
 	check_project(report, root, project)
 	check_state(report)
-	return report.finish(root, dsh_home)
+	status, code = report.verdict()
+	record_doctor(root, status)
+	report.finish(root, dsh_home)
+	return code
 
 
 if __name__ == "__main__":

@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
 """migrate_from_zcode.py — перенос данных контура из .zcode/1c в .dsh/1c.
 
-Проектные данные гейтов переезжают целиком: contour.json,
-contour.local.json, db-instances.yaml, templates/agents-section.md,
-unica-gate-escalations.txt, bsl-module-gate-escalations.txt,
-mcp-write-allow.txt, standards-exceptions.yaml, testpilot/profiles.yaml.
+Проектные данные гейтов переезжают целиком: маркер контура contour,
+contour.json, contour.local.json, db-instances.yaml,
+templates/agents-section.md, unica-gate-escalations.txt,
+bsl-module-gate-escalations.txt, mcp-write-allow.txt,
+standards-exceptions.yaml, testpilot/profiles.yaml.
 Старое место читается в двух формах: .zcode/1c/<файл>, а для файлов,
 которые исторически лежали на уровень выше, — .zcode/<файл>.
+
+Успешный перенос записывает проект в реестр
+`${DSH_1C_STATE_DIR:-~/.dsh/state/1c}/projects.json`: путь, раскладка,
+версия контура на момент перевода и дата. Реестр читают doctor.py и
+оператор; повторный перенос обновляет запись, дату первого перевода
+сохраняет. Битый реестр перенос не останавливает — запись пропускается
+с предупреждением.
 
 Ссылка на чекер стиля (skills/1c-bsl-code-style/scripts/bsl_style_check.py)
 переписывается на .dsh/1c/skills/... в перенесённых конфигах и в секции
@@ -41,18 +49,23 @@ mcp-write-allow.txt, standards-exceptions.yaml, testpilot/profiles.yaml.
 import difflib
 import hashlib
 import json
+import os
 import re
 import sys
+from datetime import date
 from pathlib import Path
 
 LEGACY = ".zcode/1c"
 DSH = ".dsh/1c"
 MANIFEST = ".dsh/1c/.zcode-migration.json"
 MANIFEST_VERSION = 1
+REGISTRY = "projects.json"
+REGISTRY_VERSION = 1
 
 # Входы контура: назначение в .dsh/1c → старые места по убыванию приоритета.
 # Первый найденный источник побеждает; дубли перечисляются в плане.
 INPUTS = (
+	("contour", (".zcode/1c/contour", ".zcode/contour")),
 	("contour.json", (".zcode/1c/contour.json",)),
 	("contour.local.json", (".zcode/1c/contour.local.json",)),
 	("db-instances.yaml", (".zcode/1c/db-instances.yaml",)),
@@ -209,6 +222,73 @@ def manifest_state(root: Path) -> tuple:
 		out[str(rel)] = {"sha256": meta["sha256"],
 		                 "size": size if isinstance(size, int) else None}
 	return "есть", out
+
+
+# ── реестр проектов ──────────────────────────────────────────────────────────
+
+def state_root() -> Path:
+	"""Корень состояния контура: env, затем legacy-env, затем умолчание.
+
+	Порядок повторяет `src/state.ts` и doctor.py: `DSH_HOME` подменяет
+	профили, на состояние не влияет.
+	"""
+	for name in ("DSH_1C_STATE_DIR", "ZCODE_1C_STATE_DIR"):
+		value = os.environ.get(name) or ""
+		if value:
+			return Path(value).expanduser()
+	return Path.home() / ".dsh" / "state" / "1c"
+
+
+def contour_version() -> str:
+	"""Версия контура на момент перевода — из package.json пакета."""
+	try:
+		data = json.loads((Path(__file__).resolve().parent.parent
+		                   / "package.json").read_text(encoding="utf-8"))
+	except (OSError, ValueError):
+		return ""
+	version = data.get("version") if isinstance(data, dict) else None
+	return version if isinstance(version, str) else ""
+
+
+def register_project(root: Path) -> bool:
+	"""Запись проекта в реестр; False — реестр не читается или не пишется.
+
+	Запись несёт путь, раскладку, версию контура и дату перевода. Повторный
+	перенос обновляет версию, дату первого перевода сохраняет. Атомарная
+	подмена: временный файл рядом, затем rename.
+	"""
+	path = state_root() / REGISTRY
+	try:
+		if path.is_file():
+			data = json.loads(path.read_text(encoding="utf-8"))
+		else:
+			data = {"version": REGISTRY_VERSION, "projects": {}}
+		if not isinstance(data, dict) or not isinstance(data.get("projects"), dict):
+			raise ValueError("реестр не объект с projects")
+	except (OSError, ValueError) as exc:
+		print(f"внимание: реестр проектов не читается ({exc}) — "
+		      "запись не создана")
+		return False
+	previous = data["projects"].get(str(root))
+	migrated_at = (previous.get("migrated_at")
+	               if isinstance(previous, dict) else None)
+	data["projects"][str(root)] = {
+		"path": str(root),
+		"layout": "dsh",
+		"contour_version": contour_version(),
+		"migrated_at": migrated_at if isinstance(migrated_at, str)
+		else date.today().isoformat(),
+	}
+	try:
+		path.parent.mkdir(parents=True, exist_ok=True)
+		tmp = path.with_name(REGISTRY + ".tmp")
+		tmp.write_text(json.dumps(data, ensure_ascii=False, indent="\t",
+		                          sort_keys=True) + "\n", encoding="utf-8")
+		os.replace(tmp, path)
+	except OSError as exc:
+		print(f"внимание: реестр проектов не записан ({exc})")
+		return False
+	return True
 
 
 # ── план ─────────────────────────────────────────────────────────────────────
@@ -380,6 +460,8 @@ def cmd_migrate(root: Path) -> int:
 			print("переводить нечего: ни .zcode/1c, ни .dsh/1c")
 			return 1
 		print("уже переведено: .dsh/1c на месте, расхождений нет")
+		if register_project(root):
+			print(f"реестр проектов: запись обновлена ({state_root() / REGISTRY})")
 		return 0
 	print_plan(root, plan)
 	if plan["drift_changed"]:
@@ -398,6 +480,8 @@ def cmd_migrate(root: Path) -> int:
 	else:
 		print("миграция выполнена: данные на месте, обновлены "
 		      "служебные файлы")
+	if register_project(root):
+		print(f"реестр проектов: запись создана ({state_root() / REGISTRY})")
 	print("проверь: python3 migrate_from_zcode.py <проект> --check")
 	return 0
 

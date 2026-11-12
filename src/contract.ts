@@ -3,12 +3,12 @@
  *
  * Гейт не знает про Cordis и DSH-события: адаптер в `index.ts` переводит
  * событие в {@link GateCall}, зовёт гейт и переводит решение обратно.
- * Благодаря этому гейт проверяется юнит-тестами и сверяется с python-эталоном
+ * Благодаря этому гейт проверяется юнит-тестами и сверяется с векторами паритета
  * без поднятия хоста.
  * @module dsh-1c-contour/contract
  */
 
-/** Класс причины — по нему сверяется паритет с эталоном и группируется журнал. */
+/** Класс причины — по нему сверяется корпус векторов и группируется журнал. */
 export type ReasonCode =
   /** Прямая правка исходника 1С инструментом файловой записи. */
   | 'source-edit'
@@ -71,7 +71,7 @@ export interface LockRequest {
   readonly sessionId: string
 }
 
-/** Запись замка на диске; поля совпадают с python-эталоном. */
+/** Запись замка на диске; поля унаследованы от ZCode-эталона. */
 export interface LockRecord {
   readonly connection: string
   readonly tree: string
@@ -117,7 +117,7 @@ export interface StyleCheckerPort {
 export interface GateState {
   /** Сессия-держатель состояния. */
   readonly sessionId: string
-  /** Текущее время в секундах эпохи — как у эталона в `expires_ts`. */
+  /** Текущее время в секундах эпохи — как у ZCode-эталона в `expires_ts`. */
   readonly nowSeconds: number
   /** Запись в журнал решений контура. */
   audit(rule: string, action: string, reason: string, decision?: 'blocked' | 'confirmed' | 'advisory'): void

@@ -141,7 +141,7 @@ wait_client тест2 && echo "ok=$n"
     write_cfg(proj, '{"1c_db": {"url": "http://127.0.0.1:6123/mcp"}}')
     (proj / "v8project.local.yaml").write_text(
         'infobases:\n  origin:\n    connection: File=build/ib\n', encoding="utf-8")
-    hooks_dir = str(REPO / "reference" / "gates")
+    hooks_dir = str(REPO / "scripts")
     state_dir = tmp / "state"
     # тестовый процесс и harness/скрипт должны видеть один каталог состояния
     os.environ["ZCODE_1C_STATE_DIR"] = str(state_dir)
@@ -628,7 +628,7 @@ wait_client тест2 && echo "ok=$n"
         'infobases:\n  origin:\n    connection: File=build/ib\n'
         'user: mu\npassword: mp\n', encoding="utf-8")
     mharness = (f"ROOT={shlex.quote(str(mc))}\n"
-                f"HOOKS_DIR={shlex.quote(str(REPO / 'reference' / 'gates'))}\n"
+                f"HOOKS_DIR={shlex.quote(str(REPO / 'scripts'))}\n"
                 f"CONN=\"$(python3 - \"$ROOT\" \"$HOOKS_DIR\" <<'PY'\n"
                 f"{mono_body}"
                 f"PY\n)\"\n"
@@ -652,7 +652,7 @@ wait_client тест2 && echo "ok=$n"
         "user: mu\npassword: ''   # пароль пользователя; файл вне git (канон контура)\n",
         encoding="utf-8")
     mharness2 = (f"ROOT={shlex.quote(str(mc2))}\n"
-                 f"HOOKS_DIR={shlex.quote(str(REPO / 'reference' / 'gates'))}\n"
+                 f"HOOKS_DIR={shlex.quote(str(REPO / 'scripts'))}\n"
                  f"CONN=\"$(python3 - \"$ROOT\" \"$HOOKS_DIR\" <<'PY'\n"
                  f"{mono_body}"
                  f"PY\n)\"\n"

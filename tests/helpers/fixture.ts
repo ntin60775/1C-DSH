@@ -53,10 +53,8 @@ export interface Fixture {
   readonly root: string
   /** Дерево проекта 1С. */
   readonly tree: string
-  /** Корень состояния контура для TS-гейта. */
+  /** Корень состояния контура для гейта. */
   readonly stateDir: string
-  /** Значение `ZCODE_1C_STATE_DIR` для python-эталона (тот же каталог замков). */
-  readonly legacyStateDir: string
 }
 
 /** Дополнительное содержимое кейса. */
@@ -101,12 +99,10 @@ export function createFixture(options: FixtureOptions = {}): Fixture {
     mkdirSync(dirname(target), { recursive: true })
     writeFileSync(target, content.replaceAll('$TMP', root), 'utf8')
   }
-  const legacyStateDir = join(root, 'legacy-state')
   return {
     root,
     tree,
-    stateDir: join(legacyStateDir, 'state', '1c'),
-    legacyStateDir,
+    stateDir: join(root, 'state', '1c'),
   }
 }
 

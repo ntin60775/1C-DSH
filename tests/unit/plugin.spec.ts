@@ -3,11 +3,12 @@
  * освобождение замка после, наблюдаемый исход в обоих видах.
  *
  * Хост подменён минимальным контекстом: тест проверяет разводку плагина, а
- * не Cordis. Освобождение замка проверяется на замке, который поставил
- * python-эталон, — это же и проверка совместимости формата.
+ * не Cordis. Освобождение замка проверяется на замке, положенном по
+ * формату контракта (`LockRecord`), — это же и проверка формата.
  *
  * spec: Т2 — «`tools/result` видит и успешный, и ошибочный исход — тест
- * на оба»; invariant: замок ИБ читается эталоном и TS-гейтом в обе стороны.
+ * на оба»; invariant: замок ИБ, положенный одним деревом, читается другим
+ * как занятость базы (формат контракта).
  * @module tests/unit/plugin.spec
  */
 
@@ -24,7 +25,7 @@ import { resolveProject } from '../../src/paths.js'
 import { sessionStateOf } from '../../src/session.js'
 import { createGateState } from '../../src/state.js'
 import { BSL, createFixture, V8PROJECT } from '../helpers/fixture.js'
-import { runOracle, seedPythonLock } from '../parity/oracle.js'
+import { seedBaseLock } from '../helpers/locks.js'
 
 /** Минимальный контекст плагина: запоминает обработчики событий. */
 interface FakeContext {
@@ -138,14 +139,14 @@ describe('tools/pre-execute', () => {
 })
 
 describe('tools/post-execute', () => {
-  it('отпускает замок, поставленный python-эталоном', async () => {
+  it('отпускает замок, положенный по формату контракта', async () => {
     const fixture = createFixture({ contour: {} })
-    const connection = seedPythonLock({
+    const connection = seedBaseLock({
       holderTree: fixture.tree,
       connectionSourceTree: fixture.tree,
       operation: 'push',
       sessionId: 's1',
-      legacyStateDir: fixture.legacyStateDir,
+      stateDir: fixture.stateDir,
     })
     const lockFile = lockPath(fixture.stateDir, connection, fixture.tree)
     expect(existsSync(lockFile)).toBe(true)
@@ -163,18 +164,13 @@ describe('tools/post-execute', () => {
     expect(decision).toEqual({ kind: 'accept' })
     expect(existsSync(lockFile)).toBe(false)
 
-    // Для эталона замка тоже нет: следующая его операция проходит.
-    const oracle = runOracle(
-      {
-        hook_event_name: 'PreToolUse',
-        session_id: 's1',
-        tool_name: 'mcp__unica__run',
-        tool_input: { args: { op: 'push', cwd: fixture.tree } },
-        cwd: fixture.tree,
-      },
-      { stateDir: fixture.legacyStateDir, cwd: fixture.tree },
+    // Замка нет: следующая операция того же дерева проходит.
+    const next = evaluatePre(
+      { tool: 'mcp__unica__run', args: { args: { op: 'push', cwd: fixture.tree } }, cwd: fixture.tree },
+      resolveProject(fixture.tree),
+      createGateState({ sessionId: 's1', stateDir: fixture.stateDir }),
     )
-    expect(oracle.exitCode, oracle.stderr).toBe(0)
+    expect(next).toMatchObject({ kind: 'allow' })
     rmSync(fixture.root, { recursive: true, force: true })
   })
 })
@@ -217,7 +213,7 @@ describe('tools/result', () => {
 })
 
 describe('совместимость замков', () => {
-  it('замок TS-гейта виден python-эталону как занятость базы', () => {
+  it('замок одного дерева виден другому как занятость базы', () => {
     const fixture = createFixture({
       contour: {},
       write: { 'other-tree/v8project.yaml': V8PROJECT },
@@ -230,20 +226,15 @@ describe('совместимость замков', () => {
     )
     expect(decision).toMatchObject({ kind: 'allow' })
 
-    // Эталон идёт из другого дерева с той же строкой подключения: база занята.
+    // Другое дерево с той же строкой подключения: база занята.
     const otherTree = `${fixture.root}/other-tree`
-    const oracle = runOracle(
-      {
-        hook_event_name: 'PreToolUse',
-        session_id: 's-other',
-        tool_name: 'mcp__unica__run',
-        tool_input: { args: { op: 'push', sourceSet: 'main', cwd: otherTree } },
-        cwd: otherTree,
-      },
-      { stateDir: fixture.legacyStateDir, cwd: otherTree },
+    const other = evaluatePre(
+      { tool: 'mcp__unica__run', args: { args: { op: 'push', sourceSet: 'main', cwd: otherTree } }, cwd: otherTree },
+      resolveProject(otherTree),
+      createGateState({ sessionId: 's-other', stateDir: fixture.stateDir }),
     )
-    expect(oracle.exitCode, oracle.stderr).toBe(2)
-    expect(oracle.stderr).toContain('База занята')
+    expect(other.kind).toBe('deny')
+    expect(other.kind === 'deny' && other.reason).toContain('База занята')
     const connection = resolveInfobaseConnection(fixture.tree) as string
     expect(existsSync(lockPath(fixture.stateDir, connection, fixture.tree))).toBe(true)
     rmSync(fixture.root, { recursive: true, force: true })

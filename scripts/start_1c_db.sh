@@ -214,10 +214,10 @@ PROXY_PIDFILE="/tmp/1c-mcp-proxy-$HASH.pid"
 VENV="$HOME/.local/venvs/1c-mcp-proxy"
 TOOLKIT="${ONEC_MCP_TOOLKIT_DIR:-$HOME/home/dev/contrib/clones/1c-mcp-toolkit}"
 
-# ── hooks контура: репо (scripts/../hooks), вендор (scripts/../../hooks),
-#    переходная раскладка 1C-DSH (scripts/../reference/gates) ──
+# ── слой замков: репо (scripts/ib_lock.py рядом со стартером), вендор
+#    проекта (scripts/../../hooks) — до снятия legacy-копий в Т10 ──
 HOOKS_DIR=""
-for rel in "../../hooks" "../hooks" "../reference/gates"; do
+for rel in "." "../../hooks" "../hooks"; do
 	# не-фатально: несуществующий кандидат не должен убить скрипт при set -e
 	cand="$(cd "$(dirname "${BASH_SOURCE[0]}")/$rel" 2>/dev/null && pwd || true)"
 	[[ -f "$cand/ib_lock.py" ]] && { HOOKS_DIR="$cand"; break; }

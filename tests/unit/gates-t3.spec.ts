@@ -1,7 +1,7 @@
 /**
  * Гейты T3: раскладка `.dsh`, поверхность из `contour.json`, чистые разборы.
  *
- * Паритет с python-эталоном — отдельный корпус (`tests/parity/gates.spec.ts`).
+ * Паритет-корпус (векторы) — отдельный набор (`tests/parity/gates.spec.ts`).
  * Здесь то, чего у эталона нет или что он проверял только на legacy-раскладке:
  * приоритет `.dsh`, override поверхности, порт чекера стиля.
  *
@@ -165,7 +165,7 @@ describe('сверка: осмысленность ответа', () => {
 describe('порт чекера стиля', () => {
   it('движок из 1C_STYLE_ENGINE вызывается с подкомандой check', async () => {
     const fixture = createFixture()
-    const stub = new URL('../helpers/fake-style-engine.py', import.meta.url).pathname
+    const stub = new URL('../helpers/fake-style-engine.mjs', import.meta.url).pathname
     const checker = createStyleChecker({ env: { ...process.env, '1C_STYLE_ENGINE': stub } })
     const rel = 'src/cf/CommonModules/M.bsl'
     const file = `${fixture.tree}/${rel}`
@@ -180,7 +180,7 @@ describe('порт чекера стиля', () => {
 
   it('фрагмент проверяется отдельным файлом и подписан «фрагмент»', async () => {
     const fixture = createFixture()
-    const stub = new URL('../helpers/fake-style-engine.py', import.meta.url).pathname
+    const stub = new URL('../helpers/fake-style-engine.mjs', import.meta.url).pathname
     const checker = createStyleChecker({ env: { ...process.env, '1C_STYLE_ENGINE': stub } })
     const report = await checker.snippet(['Плохо();'], fixture.tree)
     expect(report).toContain('фрагмент:')
@@ -222,10 +222,10 @@ describe('правки ревью-панели', () => {
   it('движок стиля получает подкоманду check один раз', async () => {
     const { chmodSync, writeFileSync, readFileSync } = await import('node:fs')
     const fixture = createFixture()
-    const recorder = `${fixture.root}/engine-argv.py`
+    const recorder = `${fixture.root}/engine-argv.mjs`
     writeFileSync(
       recorder,
-      '#!/usr/bin/env python3\nimport sys\nopen(sys.argv[0] + ".args", "w").write("\\n".join(sys.argv[1:]))\nsys.exit(0)\n',
+      '#!/usr/bin/env node\nimport { writeFileSync } from "node:fs"\nwriteFileSync(process.argv[1] + ".args", process.argv.slice(2).join("\\n"))\n',
       'utf8',
     )
     chmodSync(recorder, 0o755)

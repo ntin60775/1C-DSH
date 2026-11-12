@@ -1,14 +1,15 @@
 /**
- * Паритет `unica_source_gate`: TS-гейт против python-эталона.
+ * Корпус `unica_source_gate`: TS-гейт против векторов.
  *
- * Один корпус канонических кейсов (`tests/vectors/unica-source.json`) и два
- * адаптера: ZCode-payload для эталона и DSH-вызов для TS-гейта. Сверяются
- * решение, класс причины и (когда задан) текст причины. Имена инструментов
- * различаются (`Write`/`Edit`/`ApplyPatch` против `write`/`edit`/`apply_patch`),
- * поэтому сверка идёт на канонических кейсах, а не на сырых payload.
+ * Один корпус канонических кейсов (`tests/vectors/unica-source.json`):
+ * решение, класс причины и (когда задан) текст причины заморожены в
+ * векторе. До снятия python-эталона в Т8 каждый кейс сверялся и с
+ * эталоном через ZCode-адаптер; поля `oracle`/`oracleNote` в векторах
+ * хранят ту форму вызова как происхождение кейса.
  *
  * spec: Т2 — «паритет-тест `unica_source_gate` зелёный на корпусе кейсов
- * эталона: решение и класс причины совпадают».
+ * эталона: решение и класс причины совпадают»; Т8 — регрессия живёт в
+ * векторах без python.
  * @module tests/parity/unica-source.spec
  */
 
@@ -22,19 +23,13 @@ import { evaluatePre, patchPaths } from '../../src/gates/unica-source.js'
 import { resolveProject } from '../../src/paths.js'
 import { createGateState } from '../../src/state.js'
 import { createFixture, REBUILD_RULES } from '../helpers/fixture.js'
-import { classifyOracle, type OracleClass } from './classify.js'
-import { runOracle, seedPythonLock } from './oracle.js'
-
-/** ZCode-форма вызова: имя инструмента и его аргументы. */
-interface OracleCall {
-  readonly tool_name: string
-  readonly tool_input: unknown
-}
+import { seedBaseLock } from '../helpers/locks.js'
+import type { ReasonClass } from './classify.js'
 
 /** Ожидание кейса. */
 interface Expectation {
   readonly decision: 'allow' | 'deny'
-  readonly code?: Exclude<OracleClass, 'allow' | 'unknown'>
+  readonly code?: Exclude<ReasonClass, 'allow' | 'unknown'>
   readonly reasonIncludes?: readonly string[]
   readonly reasonEquals?: string
 }
@@ -45,7 +40,7 @@ interface Vector {
   readonly describe: string
   /** Пути, извлечённые из текста патча: для кейсов `apply_patch`. */
   readonly paths?: readonly string[]
-  /** Пояснение к форме эталонного вызова, когда она отличается от вызова DSH. */
+  /** Пояснение к форме эталонного вызова (происхождение кейса). */
   readonly oracleNote?: string
   readonly cwd?: string
   readonly fixture?: {
@@ -61,7 +56,7 @@ interface Vector {
     readonly sessionId: string
   }
   readonly call: { readonly tool: string; readonly args: unknown }
-  readonly oracle?: OracleCall
+  readonly oracle?: { readonly tool_name: string; readonly tool_input: unknown }
   readonly expect: Expectation
 }
 
@@ -92,20 +87,6 @@ function caseCwd(value: string, root: string): string {
   return isAbsolute(substituted) ? substituted : join(root, substituted)
 }
 
-/**
- * ZCode-адаптер по умолчанию: имя инструмента и его аргументы.
- *
- * `apply_patch` DSH несёт патч текстом, а ZCode-инструмент получал готовые
- * пути, поэтому такой кейс задаёт форму эталона явно.
- */
-function oracleCallFor(vector: Vector): OracleCall {
-  if (vector.oracle !== undefined) return vector.oracle
-  const names: Record<string, string> = { write: 'Write', edit: 'Edit', bash: 'Bash' }
-  const mapped = names[vector.call.tool]
-  if (mapped === undefined) return { tool_name: vector.call.tool, tool_input: vector.call.args }
-  return { tool_name: mapped, tool_input: vector.call.args }
-}
-
 for (const vector of vectors) {
   describe(vector.id, () => {
     it(vector.describe, () => {
@@ -120,12 +101,12 @@ for (const vector of vectors) {
       const sessionId = 's1'
 
       if (vector.seedLock !== undefined) {
-        seedPythonLock({
+        seedBaseLock({
           holderTree: caseCwd(vector.seedLock.holderTree, fixture.root),
           connectionSourceTree: caseCwd(vector.seedLock.fromTree, fixture.root),
           operation: vector.seedLock.operation,
           sessionId: vector.seedLock.sessionId,
-          legacyStateDir: fixture.legacyStateDir,
+          stateDir: fixture.stateDir,
         })
       }
 
@@ -147,31 +128,15 @@ for (const vector of vectors) {
         createGateState({ sessionId, stateDir: fixture.stateDir }),
       )
 
-      const oracle = oracleCallFor(vector)
-      const oracleResult = runOracle(
-        {
-          hook_event_name: 'PreToolUse',
-          session_id: sessionId,
-          tool_name: oracle.tool_name,
-          tool_input: substitute(oracle.tool_input, fixture.root),
-          cwd,
-        },
-        { stateDir: fixture.legacyStateDir, cwd },
-      )
-      const oracleClass = classifyOracle(oracleResult)
-
-      expect(oracleClass, `эталон: ${oracleResult.stderr.slice(0, 400)}`).toBe(vector.expect.decision === 'allow' ? 'allow' : vector.expect.code)
       expect(decision.kind).toBe(vector.expect.decision)
       if (decision.kind !== 'deny') return
 
-      expect(decision.code).toBe(oracleClass)
+      expect(decision.code).toBe(vector.expect.code)
       for (const fragment of vector.expect.reasonIncludes ?? []) {
-        expect(decision.reason, `TS-причина без «${fragment}»`).toContain(fragment)
-        expect(oracleResult.stderr, `причина эталона без «${fragment}»`).toContain(fragment)
+        expect(decision.reason, `причина без «${fragment}»`).toContain(fragment)
       }
       if (vector.expect.reasonEquals !== undefined) {
         expect(decision.reason).toBe(vector.expect.reasonEquals)
-        expect(oracleResult.stderr.trim()).toBe(vector.expect.reasonEquals)
       }
     })
   })
@@ -189,7 +154,7 @@ describe('корпус паритета', () => {
   })
 
   it('кейсы правила пересборки сверяют текст причины, а не только класс', () => {
-    // Классификатор эталона выводит rebuild-rule как запасной вариант для
+    // Классификатор выводит rebuild-rule как запасной вариант для
     // неизвестного блока: без сверки текста такой кейс прошёл бы даром.
     const wordless = vectors.filter(
       (vector) => vector.expect.code === 'rebuild-rule' && vector.expect.reasonEquals === undefined,
@@ -197,13 +162,11 @@ describe('корпус паритета', () => {
     expect(wordless.map((vector) => vector.id)).toEqual([])
   })
 
-  it('кейсы apply_patch описывают пути патча и форму эталона', () => {
+  it('кейсы apply_patch описывают пути патча', () => {
     const patches = vectors.filter((vector) => vector.call.tool === 'apply_patch')
     expect(patches.length).toBeGreaterThan(0)
     for (const vector of patches) {
       expect(vector.paths, vector.id).toBeDefined()
-      expect(vector.oracleNote, vector.id).toBeDefined()
-      expect(vector.oracle, vector.id).toBeDefined()
     }
   })
 })

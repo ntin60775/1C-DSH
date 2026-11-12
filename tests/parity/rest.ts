@@ -1,11 +1,11 @@
 /**
- * Паритет гейтов T4: `anon`, `retry`, `worktree-hint`, `session-clean`,
+ * Корпус гейтов T4: `anon`, `retry`, `worktree-hint`, `session-clean`,
  * `session-context`, `kd-session-start`.
  *
- * Каждый сценарий проигрывается дважды на независимых фикстурах: TS-гейт
- * (чистые функции + память сессии) и python-эталон (процесс хука со своим
- * файловым состоянием). Сверяются решение, класс причины, названные
+ * Каждый сценарий проигрывается на TS-гейте (чистые функции + память
+ * сессии) против ожиданий вектора: решение, класс причины, названные
  * фрагменты заметок и побочные эффекты (файлы состояния, маркер станции).
+ * Ожидания заморожены с python-эталона до его снятия в Т8.
  * @module tests/parity/rest
  */
 
@@ -23,8 +23,7 @@ import { evaluatePost as worktreePost } from '../../src/gates/worktree-hint.js'
 import { resolveProject } from '../../src/paths.js'
 import { createGateState } from '../../src/state.js'
 import { createFixture, type Fixture } from '../helpers/fixture.js'
-import { classifyOracle, type OracleClass } from './classify.js'
-import { gateScript, runOracle, type OracleResult } from './oracle.js'
+import type { ReasonClass } from './classify.js'
 import { substitute } from './scenario.js'
 
 /** Гейт корпуса T4. */
@@ -43,7 +42,7 @@ export interface RestStep {
   readonly result?: { readonly isError?: boolean }
   readonly expect: {
     readonly decision: 'allow' | 'deny' | 'accept' | 'block'
-    readonly code?: OracleClass
+    readonly code?: ReasonClass
     readonly reasonIncludes?: readonly string[]
     readonly noticeIncludes?: readonly string[]
     readonly noticeAbsent?: boolean
@@ -102,24 +101,6 @@ export interface StepResult {
   readonly code: string
   /** Причина отказа либо текст заметки. */
   readonly text: string
-}
-
-/** ZCode-имя инструмента для эталона. */
-const ZCODE_NAMES: Readonly<Record<string, string>> = {
-  write: 'Write',
-  edit: 'Edit',
-  apply_patch: 'ApplyPatch',
-  bash: 'Bash',
-}
-
-/** Скрипт эталона по имени гейта. */
-const GATE_SCRIPTS: Readonly<Record<RestGate, string>> = {
-  'anon': 'anon_gate.py',
-  'retry': 'retry_gate.py',
-  'worktree-hint': 'worktree_hint.py',
-  'session-clean': 'session_clean.py',
-  'session-context': 'session_context.py',
-  'kd-session-start': 'kd_session_start.py',
 }
 
 /** git-команда в фикстуре. */
@@ -272,60 +253,6 @@ export async function stepTs(
       return { decision: 'accept', code: 'accept', text: '' }
     }
   }
-}
-
-/** Заметка эталона: `additionalContext` из stdout. */
-export function oracleNotice(result: OracleResult): string {
-  const text = result.stdout.trim()
-  if (text === '') return ''
-  try {
-    const parsed: unknown = JSON.parse(text)
-    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-      const context = (parsed as Record<string, unknown>)['additionalContext']
-      if (typeof context === 'string') return context
-    }
-  } catch {
-    // Не JSON — заметки нет.
-  }
-  return ''
-}
-
-/** Проиграть шаг python-эталоном. */
-export function stepOracle(
-  gate: RestGate,
-  step: RestStep,
-  runtime: RestRuntime,
-): { result: OracleResult; notice: string; decision: 'allow' | 'deny' | 'accept' | 'block'; code: OracleClass } {
-  const raw = step.call ?? { tool: '', args: {} }
-  const args = substitute(raw.args, runtime.fixture.root)
-  const zcode = ZCODE_NAMES[raw.tool] ?? raw.tool
-  const isPost = step.phase === 'post' || step.phase === 'result' || step.phase === 'session'
-  const event: Record<string, unknown> = {
-    hook_event_name:
-      step.phase === 'session'
-        ? 'SessionStart'
-        : step.phase === 'result'
-          ? step.result?.isError === true ? 'PostToolUseFailure' : 'PostToolUse'
-          : step.phase === 'post' ? 'PostToolUse' : 'PreToolUse',
-    session_id: 's1',
-    tool_name: zcode,
-    tool_input: args,
-    cwd: runtime.cwd,
-    is_error: step.result?.isError === true,
-  }
-  if (step.phase === 'session') event['source'] = 'startup'
-  const result = runOracle(event, {
-    stateDir: runtime.fixture.legacyStateDir,
-    cwd: runtime.cwd,
-    script: gateScript(GATE_SCRIPTS[gate]),
-    ...gate === 'kd-session-start'
-      ? { env: { ...process.env, KD_RULES_STATION: runtime.station } }
-      : {},
-  })
-  const decision: 'allow' | 'deny' | 'accept' | 'block' = result.exitCode === 0
-    ? isPost ? 'accept' : 'allow'
-    : isPost ? 'block' : 'deny'
-  return { result, notice: oracleNotice(result), decision, code: classifyOracle(result) }
 }
 
 /** Дождаться маркера либо убедиться, что его нет. */

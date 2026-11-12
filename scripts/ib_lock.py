@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""ib_lock.py — замок на информационную базу (порт lib/ib-lock.ts дона 1c-omp).
+"""ib_lock.py — замок на информационную базу для python/bash-скриптов контура.
+
+Слой замков стартера стенда и e2e-прогона (решение 10 спеки: скрипты
+остаются python/bash). Формат и ключ совпадают с `src/lock.ts` гейтов;
+корень состояния — DSH_1C_STATE_DIR, затем legacy ZCODE_1C_STATE_DIR,
+затем ~/.dsh/state/1c. Происхождение — порт lib/ib-lock.ts дона 1c-omp.
 
 Серверная база одна на все деревья проекта: отдельную на каждый ворктри не
 поднять. Изоляции там быть не может, поэтому единственный достижимый
@@ -36,7 +41,20 @@ import subprocess
 import time
 from pathlib import Path
 
-from contour_common import session_state_dir
+def state_root() -> Path:
+	"""Корень состояния контура: DSH_1C_STATE_DIR, затем legacy-переменная,
+	затем ~/.dsh/state/1c. Порядок повторяет src/state.ts и doctor.py:
+	путь переменной уже называет корень контура."""
+	for name in ("DSH_1C_STATE_DIR", "ZCODE_1C_STATE_DIR"):
+		value = os.environ.get(name) or ""
+		if value:
+			return Path(value).expanduser()
+	return Path.home() / ".dsh" / "state" / "1c"
+
+
+def session_state_dir(name: str) -> Path:
+	"""Каталог состояния подсистемы: <корень>/<name>/."""
+	return state_root() / name
 
 DEFAULT_TTL_S = 20 * 60
 

@@ -1,7 +1,7 @@
 /**
  * Контур проекта: поверхность Unica, правила пересборки, allowlist эскалаций.
  *
- * Перенос `reference/gates/contour_common.py` и частей
+ * Перенос ZCode-модуля `contour_common` и частей
  * `unica_source_gate.py`. Инварианты пересборки остаются ДАННЫМИ
  * (`contour.json` → `unica.rebuild_rules`), а не кодом.
  * @module dsh-1c-contour/contour
@@ -268,7 +268,7 @@ export function ruleMatchesSource(rule: RebuildRule, sourceSet: string, extensio
 /**
  * Сравнить значение аргумента с ожидаемым значением правила.
  *
- * Схема правила может нести не только скаляры: эталон сравнивает структуры
+ * Схема правила может нести не только скаляры: ZCode-эталон сравнивал структуры
  * python-равенством, поэтому объекты и списки сверяются по содержимому, а не
  * по ссылке (иначе `require` всегда срабатывал бы, а `forbid` — никогда).
  * @param actual - значение из аргументов вызова.

@@ -6,6 +6,9 @@
         проекте с bundle и пресетом, три фикстуры поломки с разными
         причинами, `--json` с полями bundle/preset/skills/mcp/layout/project,
         тест зелёный без deploy_recon;
+  spec: tickets/dsh-contour/T8-pilot.md — запись в реестре проектов есть и
+        совпадает с фактом; doctor сверяет её и дописывает свой вердикт
+        (спека, «Готово» 9);
   invariant: `--json` печатает ровно JSON; doctor не зависит от живой машины
         (HOME, DSH_HOME и PATH указывают во временные каталоги, живой MCP не
         поднимается — `--no-ping`); неизвестный флаг не глотается;
@@ -169,8 +172,19 @@ def write_project(fx: Fixture, *, layout: str = "dsh", contour=None,
 	folder = ".dsh/1c" if layout == "dsh" else ".zcode/1c"
 	data = root / folder
 	(data / "testpilot").mkdir(parents=True, exist_ok=True)
+	(data / "contour").write_text("test\n", encoding="utf-8")
+	# Стиль-движок и платформа — заглушки: раздел project чист до проверки
+	# реестра, иначе ранние WARN перехватывают код раздела.
+	style = data / "skills" / "1c-bsl-code-style" / "scripts" / "bsl_style_check.py"
+	style.parent.mkdir(parents=True, exist_ok=True)
+	style.write_text("# stub\n", encoding="utf-8")
+	platform = root / "tools" / "1cv8"
+	platform.parent.mkdir(parents=True, exist_ok=True)
+	platform.write_text("", encoding="utf-8")
 	(data / "contour.json").write_text(json.dumps(
-		contour if contour is not None else {"1c_db": {"url": "http://127.0.0.1:1/mcp"}}),
+		contour if contour is not None else {
+			"1c_db": {"url": "http://127.0.0.1:1/mcp"},
+			"1c": {"platform": {"path": str(platform)}}}),
 		encoding="utf-8")
 	if local is not None:
 		(data / "contour.local.json").write_text(json.dumps(local), encoding="utf-8")
@@ -193,6 +207,22 @@ def failing(report: dict) -> list:
 	              if report[name]["status"] == "fail")
 
 
+def write_registry(fx: Fixture, entry=None, raw=None) -> Path:
+	"""Реестр проектов в корне состояния фикстуры (умолчание HOME)."""
+	path = fx.home / ".dsh" / "state" / "1c" / "projects.json"
+	path.parent.mkdir(parents=True, exist_ok=True)
+	if raw is not None:
+		path.write_text(raw, encoding="utf-8")
+		return path
+	if entry is None:
+		entry = {"path": str(fx.project), "layout": "dsh",
+		         "contour_version": "9.9.9", "migrated_at": "2026-11-12"}
+	path.write_text(json.dumps({"version": 1,
+	                            "projects": {str(fx.project): entry}},
+	                           ensure_ascii=False), encoding="utf-8")
+	return path
+
+
 def main() -> int:
 	with tempfile.TemporaryDirectory() as tmp:
 		# ── 1. Здоровая установка: exit 0, --json с шестью полями ──
@@ -201,6 +231,7 @@ def main() -> int:
 		make_testpilot(fx)
 		write_install(fx, make_package(Path(tmp) / "healthy" / "pkgsrc"))
 		write_project(fx)
+		registry = write_registry(fx)
 		health = fx.report()
 		data = health["data"]
 		r = health["result"]
@@ -220,6 +251,14 @@ def main() -> int:
 		check("--json: раскладка .dsh/1c", data["layout"]["dir"] == ".dsh/1c",
 		      json.dumps(data["layout"]))
 		check("здоровая установка — ни одного FAIL", not failing(data), failing(data))
+		check("реестр: запись совпадает с фактом — project ok",
+		      data["project"]["status"] == "ok", json.dumps(data["project"])[:400])
+		recorded = json.loads(registry.read_text(encoding="utf-8"))
+		doctor_field = recorded["projects"][str(fx.project)].get("doctor", {})
+		check("реестр: doctor дописал свой вердикт",
+		      doctor_field.get("status") == data["status"]
+		      and isinstance(doctor_field.get("checked_at"), str),
+		      str(doctor_field))
 		human = fx.run()
 		check("здоровая установка — человеческий вывод без FAIL",
 		      "FAIL" not in human.stdout and "итог: зелёный" in human.stdout,
@@ -465,6 +504,50 @@ def main() -> int:
 		      instances["data"]["mcp"]["code"] == "mcp.instances"
 		      and "объявлен дважды" in instances["result"].stdout,
 		      instances["result"].stdout[-800:])
+
+		# ── 13. Реестр проектов: нет записи, расхождение, битый файл ──
+		# spec: docs/plans/dsh-contour.md, «Готово» 9 — реестр читают doctor
+		# и оператор; запись создаёт мигратор.
+		fx_noreg = Fixture(Path(tmp) / "no-registry")
+		make_launcher(fx_noreg)
+		make_testpilot(fx_noreg)
+		write_install(fx_noreg, make_package(Path(tmp) / "no-registry" / "pkgsrc"))
+		write_project(fx_noreg)
+		noreg = fx_noreg.report()
+		check("реестра нет — WARN project.registry-missing, exit 0",
+		      noreg["result"].returncode == 0
+		      and noreg["data"]["project"]["code"] == "project.registry-missing",
+		      json.dumps(noreg["data"]["project"])[:400])
+		check("реестра нет — запись не создана",
+		      not (fx_noreg.home / ".dsh" / "state" / "1c"
+		           / "projects.json").exists(), "doctor создал запись")
+
+		fx_div = Fixture(Path(tmp) / "registry-diverged")
+		make_launcher(fx_div)
+		make_testpilot(fx_div)
+		write_install(fx_div, make_package(Path(tmp) / "registry-diverged" / "pkgsrc"))
+		write_project(fx_div)
+		write_registry(fx_div, entry={"path": str(fx_div.project),
+		                              "layout": "zcode",
+		                              "contour_version": "9.9.9",
+		                              "migrated_at": "2026-11-12"})
+		div = fx_div.report()
+		check("реестр разошёлся: раскладка — WARN project.registry-diverged",
+		      div["result"].returncode == 0
+		      and div["data"]["project"]["code"] == "project.registry-diverged",
+		      json.dumps(div["data"]["project"])[:400])
+
+		fx_bad = Fixture(Path(tmp) / "registry-broken")
+		make_launcher(fx_bad)
+		make_testpilot(fx_bad)
+		write_install(fx_bad, make_package(Path(tmp) / "registry-broken" / "pkgsrc"))
+		write_project(fx_bad)
+		write_registry(fx_bad, raw="{not json")
+		bad = fx_bad.report()
+		check("битый реестр — WARN project.registry-unreadable, exit 0",
+		      bad["result"].returncode == 0
+		      and bad["data"]["project"]["code"] == "project.registry-unreadable",
+		      json.dumps(bad["data"]["project"])[:400])
 
 		return summary()
 
