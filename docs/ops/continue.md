@@ -113,7 +113,7 @@ MCP-записи `unica`, `1c-testpilot`, `1c-db` (+ инстансы), `1c-kd`,
 с BOM+CRLF отклоняется, работает селектор уровня метода.
 
 Т6 (раскладка `.dsh/1c`, все входы гейтов, legacy, мигратор) ОТГРУЖЕН
-12.11, слияние `7fefd29`; **приёмка — за оператором**. Канон — `.dsh/1c/` для всех входов:
+12.11, слияние `7fefd29`, **принят оператором 12.11 — тикет закрыт**. Канон — `.dsh/1c/` для всех входов:
 `contour`, `mcp-write-allow.txt`, `unica-gate-escalations.txt`,
 `bsl-module-gate-escalations.txt`, `testpilot/profiles.yaml`,
 `standards-exceptions.yaml`, путь чекера стиля. Порядок чтения — одна
