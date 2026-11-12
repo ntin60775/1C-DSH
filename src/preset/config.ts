@@ -300,8 +300,8 @@ export function mcpRows(
         serverName: 'unica',
         transport: 'stdio',
         // Юника отдаёт ответ только в `structuredContent`; клиент MCP DSH
-        // проецирует его в текст модели начиная с 0.2.2-rc.2. Для стокового
-        // 0.2.2-rc.1 есть фолбэк `scripts/unica_mcp_proxy.py` (docs/UNICA.md).
+        // проецирует его в текст модели начиная с 0.2.2-rc.2 — пресет
+        // требует DSH с этим фиксом (docs/UNICA.md).
         command: unica,
         args: ['mcp'],
         cwd: project.root,
