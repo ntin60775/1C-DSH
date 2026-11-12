@@ -89,7 +89,7 @@ kd — legacy-путь `~/.local/share/1c-zcode` до Т6. Живые пробы
 в модуль, результат виден модели текстом. Контроли: Standard mode в том
 же проекте — инструментов нет; пресет `1c` вне 1С-проекта — ни скиллов
 контура, ни Юники, ни `mcp__unica__*`. Подробности — тикет
-[tickets/dsh-contour/T5-preset.md](../tickets/dsh-contour/T5-preset.md).
+[tickets/dsh-contour/T5-preset.md](../../tickets/dsh-contour/T5-preset.md).
 
 Мост `scripts/unica_mcp_proxy.py` снят и удалён (решение оператора):
 пресет ставит `unica mcp` напрямую и требует DSH с фиксом `mcp-client`
