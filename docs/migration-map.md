@@ -1,4 +1,17 @@
+---
+node_type: reference
+title: Карта переноса 1c-omp → 1c-zcode (история)
+service: _platform
+status: archived
+updated: 2026-11-12
+---
+
 # Карта переноса 1c-omp → 1c-zcode
+
+> **История.** ZCode-слой снят юнитом `dsh-contour`
+> ([plans/dsh-contour.md](plans/dsh-contour.md)); карта описывает порт
+> 1c-omp → 1c-zcode и сохранена как снимок. Актуальное устройство контура —
+> [dsh-gates.md](dsh-gates.md) и [dsh-install.md](dsh-install.md).
 
 Донор: `../1c-omp`. Здесь — куда ложится каждый слой донора на механики ZCode
 и что с ним. Правило переноса: копируется смысл, механика переводится
