@@ -299,14 +299,13 @@ export function mcpRows(
       config: {
         serverName: 'unica',
         transport: 'stdio',
-        // Мост: Юника отдаёт ответ только в `structuredContent`, а клиент MCP
-        // DSH показывает модели один `content` — без перекладки инструменты
-        // молчат. Подробности — `scripts/unica_mcp_proxy.py`.
-        command: 'python3',
-        args: [join(env.packageRoot, 'scripts', 'unica_mcp_proxy.py')],
+        // Юника отдаёт ответ только в `structuredContent`; клиент MCP DSH
+        // проецирует его в текст модели начиная с 0.2.2-rc.2. Для стокового
+        // 0.2.2-rc.1 есть фолбэк `scripts/unica_mcp_proxy.py` (docs/UNICA.md).
+        command: unica,
+        args: ['mcp'],
         cwd: project.root,
         env: {
-          UNICA_LAUNCHER: unica,
           UNICA_RUNTIME_CACHE_DIR: unicaRuntimeCache(home),
         },
         startupTimeoutMs: 30_000,

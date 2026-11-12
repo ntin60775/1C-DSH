@@ -62,12 +62,13 @@ python3 scripts/install_unica_skills.py --check
 
 ## MCP-запись `unica`
 
-Запись ставит пресет `1c`, а не проект. Stdio-команда записи — мост
-`python3 "$DSH_1C_ROOT/scripts/unica_mcp_proxy.py"`: он запускает `unica mcp`
-с `cwd` корня проекта и перекладывает ответ из `structuredContent` в
-`content` (клиент MCP DSH показывает модели только `content`). Воркспейс
-Юники фиксируется при старте; вызов инструмента `cwd` не переключает: для
-второй копии — своя сессия, а не второй вызов.
+Запись ставит пресет `1c`, а не проект. Stdio-команда записи — `unica mcp`
+(лаунчер `~/.local/bin/unica`, подмена — `UNICA_LAUNCHER`) с `cwd` корня
+проекта. Юника отвечает только `structuredContent`; клиент MCP DSH
+проецирует его в текст модели начиная с 0.2.2-rc.2 (фикс `mcp-client`,
+ntin60775/deepseek-harness#1). Воркспейс Юники фиксируется при старте;
+вызов инструмента `cwd` не переключает: для второй копии — своя сессия,
+а не второй вызов.
 
 - `UNICA_RUNTIME_CACHE_DIR` указывает на глобальный кэш; проект своего
   кэша не держит.
@@ -76,6 +77,16 @@ python3 scripts/install_unica_skills.py --check
   `run`, `docs`, `task.get/result/cancel`.
 - Соседние записи пресета: `1c-testpilot`, `1c-db` (с инстансами
   мультистенда), `1c-kd`.
+
+### Фолбэк для стокового DSH 0.2.2-rc.1
+
+Клиент MCP без фикса показывает модели только `content`, и ответы Юники
+приходят пустыми. Обход — мост `scripts/unica_mcp_proxy.py`: прозрачный
+stdio-фильтр, запускает `unica mcp` и перекладывает непустой
+`structuredContent` в `content[0].text`. Запись через мост выглядит так:
+команда `python3`, аргумент — `"$DSH_1C_ROOT/scripts/unica_mcp_proxy.py"`,
+в окружении `UNICA_LAUNCHER` (путь к лаунчеру) и `UNICA_RUNTIME_CACHE_DIR`.
+Пресет `1c` этот путь не использует: он требует DSH с фиксом `mcp-client`.
 
 ## Поверхность 0.15
 

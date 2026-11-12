@@ -107,17 +107,38 @@ describe('readProject и mcpRows', () => {
       expect(rows[0]?.config).toMatchObject({
         transport: 'stdio',
         cwd: tree.root,
-        command: 'python3',
-        args: ['/pkg/scripts/unica_mcp_proxy.py'],
+        command: '/home/tester/.local/bin/unica',
+        args: ['mcp'],
         env: {
           UNICA_RUNTIME_CACHE_DIR: '/home/tester/.local/share/unica/runtimes',
-          UNICA_LAUNCHER: '/home/tester/.local/bin/unica',
         },
       })
       expect(rows[1]?.config.env?.['TC1C_PROFILES_FILE']).toBe(join(tree.root, '.dsh', '1c', 'testpilot', 'profiles.yaml'))
       expect(rows[2]?.config.url).toBe('http://127.0.0.1:6101/mcp')
       expect(rows[3]?.config.url).toBe('http://127.0.0.1:9060/mcp')
       expect(rows[4]?.config.url).toBe('http://127.0.0.1:6101/mcp?channel=second')
+    } finally {
+      tree.cleanup()
+    }
+  })
+
+  it('UNICA_LAUNCHER подменяет команду записи unica', () => {
+    const tree = tempTree({ '.dsh/1c/contour.json': '{}' })
+    try {
+      const reading = readProject(join(tree.root, '.dsh', '1c'), (path) => {
+        try {
+          return readFileSync(path, 'utf8')
+        } catch {
+          return null
+        }
+      })
+      const rows = mcpRows(project(tree.root), reading, {
+        packageRoot: '/pkg',
+        home: '/home/tester',
+        env: { UNICA_LAUNCHER: '/opt/unica/bin/unica' },
+      })
+      expect(rows[0]?.config.command).toBe('/opt/unica/bin/unica')
+      expect(rows[0]?.config.args).toEqual(['mcp'])
     } finally {
       tree.cleanup()
     }
