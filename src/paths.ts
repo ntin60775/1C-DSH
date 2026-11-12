@@ -7,7 +7,7 @@
  * @module dsh-1c-contour/paths
  */
 
-import { readFileSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 
 import type { ContourProject } from './contract.js'
@@ -113,6 +113,61 @@ function isDir(path: string): boolean {
   } catch {
     return false
   }
+}
+
+/**
+ * Каталоги раскладки в порядке приоритета для проектного входа.
+ *
+ * Канон — `.dsh/1c/`: там лежат все входы контура. `.dsh/` без `1c` читается
+ * как промежуточная раскладка ранних тикетов, `.zcode/1c/` и `.zcode/` —
+ * legacy на время переезда парка (снимается в Т10).
+ */
+export const LAYOUT_DIRS: readonly string[] = ['.dsh/1c', '.dsh', '.zcode/1c', '.zcode']
+
+/**
+ * Кандидаты пути проектного входа: канон, промежуточная раскладка, legacy.
+ * @param root - корень дерева 1С.
+ * @param relative - путь внутри каталога раскладки.
+ * @returns пути в порядке приоритета.
+ */
+export function layoutCandidates(root: string, relative: string): string[] {
+  return LAYOUT_DIRS.map((dir) => join(root, dir, relative))
+}
+
+/**
+ * Найти проектный вход, читая кандидатов по приоритету.
+ *
+ * Отсутствие файла — переход к следующему кандидату. Существующий, но не
+ * читаемый вход останавливает поиск: молча уступать следующей раскладке
+ * нельзя, иначе сломанный канон подменяется старым legacy-файлом (для
+ * признака контура это означало бы «test» вместо «prod» и разрешённые
+ * мутации на проде).
+ * @param root - корень дерева 1С.
+ * @param relative - путь внутри каталога раскладки.
+ * @param read - чтение файла как текста; `null` — файла нет либо он не читается.
+ * @returns содержимое (либо `null` для нечитаемого), путь и подпись раскладки.
+ */
+export function findLayoutFile(
+  root: string,
+  relative: string,
+  read: (path: string) => string | null,
+): { text: string | null; path: string; label: string } | null {
+  for (const dir of LAYOUT_DIRS) {
+    const path = join(root, dir, relative)
+    const text = read(path)
+    if (text !== null) return { text, path, label: `${dir}/${relative}` }
+    if (existsSync(path)) return { text: null, path, label: `${dir}/${relative}` }
+  }
+  return null
+}
+
+/**
+ * Каталог раскладки проекта для путей и сообщений гейтов.
+ * @param project - проект контура либо `null`.
+ * @returns `.dsh/1c` для канона и промежуточной раскладки, `.zcode/1c` для legacy.
+ */
+export function layoutDirOf(project: ContourProject | null): string {
+  return project?.layout === 'zcode' ? LAYOUT_DIRS[2] as string : LAYOUT_DIRS[0] as string
 }
 
 /**

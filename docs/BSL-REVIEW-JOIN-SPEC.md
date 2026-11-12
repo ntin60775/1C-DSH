@@ -12,7 +12,7 @@
 ## 1. Цель
 
 Детерминированная склейка трёх входов — сохранённый вывод `unica.check` ×
-`references/routing.md` × `.zcode/1c/standards-exceptions.yaml` — в
+`references/routing.md` × `.dsh/1c/standards-exceptions.yaml` — в
 размеченный перечень находок и готовые строки отчёта. Скрипт забирает
 рутину гашения и группировки, агент остаётся там, где нужны факты:
 метаданные (`unica.view`), раскрытие стандарта (`unica.docs`), сверка шума.
@@ -74,7 +74,7 @@ pipe-таблица с заголовком «Код диагностики | К
   как и сейчас; для находки без матча скрипт ставит `matched: false`,
   агент ведёт её по таблице руками.
 
-### 3.3 `.zcode/1c/standards-exceptions.yaml`
+### 3.3 `.dsh/1c/standards-exceptions.yaml`
 
 Формат — references/exceptions-contract.md, `version: 1`. Python
 ограничен stdlib (канон контура), PyYAML не вводится (см. §8, развилка 3),
@@ -142,7 +142,8 @@ python3 bsl_review_join.py --node <addr> --check-out FILE [--check-out FILE…] 
 По умолчанию routing берётся относительно скрипта
 (`../skills/1c-bsl-review-standards/references/routing.md` — mapping
 `scripts/ → .zcode/1c/scripts/` и скилла уже есть в deploy.json, новых
-mappings не нужно), exceptions — `<project>/.zcode/1c/standards-exceptions.yaml`.
+mappings не нужно), exceptions — `<project>/.dsh/1c/standards-exceptions.yaml`
+(при отсутствии — промежуточная `.dsh/` и legacy `.zcode/1c`, `.zcode`).
 Коды возврата: `0` — прогон отработал (есть находки или чисто — решает
 агент по JSON), `2` — fail-closed по любому из входов.
 

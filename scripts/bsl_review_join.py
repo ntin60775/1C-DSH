@@ -2,7 +2,7 @@
 """bsl_review_join.py — скрипт-джойн ревьюера 1c-bsl-review-standards (ишью #24).
 
 Склейка трёх входов: сохранённые страницы unica.check одного узла ×
-references/routing.md × .zcode/1c/standards-exceptions.yaml → размеченные
+references/routing.md × .dsh/1c/standards-exceptions.yaml → размеченные
 находки и строки отчёта. Чистая функция: MCP и сеть не трогает; незнакомая
 схема любого входа — fail-closed (exit 2), частичного отчёта нет.
 
@@ -31,7 +31,10 @@ from pathlib import Path
 
 SCHEMA = "bsl-review-join/1"
 DEFAULT_ROUTING = "../skills/1c-bsl-review-standards/references/routing.md"
-DEFAULT_EXCEPTIONS = ".zcode/1c/standards-exceptions.yaml"
+EXCEPTIONS_CANDIDATES = (".dsh/1c/standards-exceptions.yaml",
+                        ".dsh/standards-exceptions.yaml",
+                        ".zcode/1c/standards-exceptions.yaml",
+                        ".zcode/standards-exceptions.yaml")
 LOCATION_KEYS = ("location", "range", "span", "position")
 CURSOR_KEYS = ("cursor", "next_cursor")
 REPORT_CLASSES = ("query-performance", "metric")
@@ -450,8 +453,12 @@ def main():
 
 	routing = (Path(args.routing) if args.routing
 	           else Path(__file__).resolve().parent.parent / DEFAULT_ROUTING)
-	exceptions = (Path(args.exceptions) if args.exceptions
-	              else Path(args.project) / DEFAULT_EXCEPTIONS)
+	if args.exceptions:
+		exceptions = Path(args.exceptions)
+	else:
+		exceptions = next((Path(args.project) / rel for rel in EXCEPTIONS_CANDIDATES
+		                   if (Path(args.project) / rel).is_file()),
+		                  Path(args.project) / EXCEPTIONS_CANDIDATES[0])
 	try:
 		warnings = []
 		findings, suppressed, complete, page_warn = load_pages(args.pages)

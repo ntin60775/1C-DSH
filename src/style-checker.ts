@@ -28,6 +28,7 @@ export const ENGINE_NAME = 'bsl-style-engine'
 
 /** Скрипты пака в порядке приоритета: новая раскладка, затем legacy. */
 const PACK_CHECKERS: readonly string[] = [
+  '.dsh/1c/skills/1c-bsl-code-style/scripts/bsl_style_check.py',
   '.dsh/skills/1c-bsl-code-style/scripts/bsl_style_check.py',
   '.zcode/skills/1c-bsl-code-style/scripts/bsl_style_check.py',
   '.dsh/style/scripts/bsl_style_check.py',

@@ -14,17 +14,18 @@
  * Блокируются только нарушения в изменённых строках; `Rights.xml`
  * проверяется целиком — запретный класс по парку не встречается.
  *
- * Эскалация — `.dsh/bsl-module-gate-escalations.txt` (legacy `.zcode`):
+ * Эскалация — `bsl-module-gate-escalations.txt` в раскладке проекта: канон
+ * `.dsh/1c`, затем промежуточная `.dsh` и legacy `.zcode/1c`, `.zcode`:
  * строка «`<rule-id>:<подстрока пути>`» либо «`<подстрока пути>`».
  * @module dsh-1c-contour/gates/bsl-module
  */
 
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type { ContourProject, ExecutedCall, GateCall, GateState, PostDecision } from '../contract.js'
 import { unicaArgs, unicaServerName, unicaVerb } from '../contour.js'
-import { normalizeSourcePath } from '../paths.js'
+import { LAYOUT_DIRS, normalizeSourcePath } from '../paths.js'
 import { bslTargets, changedLines, freshBslFiles, planBslTexts, rawPathsOf, type Span, spanOfNewText } from './edits.js'
 
 /** Имя правила в журнале решений. */
@@ -150,18 +151,43 @@ export function checkRights(text: string): string[] {
 }
 
 /**
+ * Файл эскалаций носителя, который читается первым: канон либо фактическая
+ * legacy-раскладка. Сообщения гейта называют его, а не канон вслепую.
+ * @param project - проект контура.
+ * @returns путь относительно корня дерева.
+ */
+export function escalationFileLabel(project: ContourProject | null): string {
+  if (project !== null) {
+    for (const layout of LAYOUT_DIRS) {
+      try {
+        if (statSync(join(project.root, layout, ESCALATION_FILE)).isFile()) {
+          return `${layout}/${ESCALATION_FILE}`
+        }
+      } catch {
+        // Нет файла в этой раскладке — смотрим следующую.
+      }
+    }
+  }
+  return `${LAYOUT_DIRS[0]}/${ESCALATION_FILE}`
+}
+
+/**
  * Эскалации носителя: пары «правило, подстрока пути».
  * @param project - проект контура.
  * @returns список исключений; пусто — файла нет.
  */
 export function escalationSkips(project: ContourProject | null): [string | null, string][] {
   if (project === null) return []
-  for (const layout of ['.dsh', '.zcode']) {
+  for (const layout of LAYOUT_DIRS) {
+    const path = join(project.root, layout, ESCALATION_FILE)
     let text: string
     try {
-      text = readFileSync(join(project.root, layout, ESCALATION_FILE), 'utf8')
+      text = readFileSync(path, 'utf8')
     } catch {
-      continue
+      // Файла нет — смотрим следующую раскладку. Файл есть, но не читается —
+      // не уступаем legacy: иначе сломанный канон молча теряет исключения.
+      if (!existsSync(path)) continue
+      return []
     }
     const out: [string | null, string][] = []
     for (const raw of text.split('\n')) {
@@ -222,7 +248,7 @@ export function verdict(
     `БЛОК: правка нарушает контракт носителя (гейт bsl-module-gate, канал: ${origin}).`,
     `Норма контура: ${rules.map((rule) => RULE_NORMS[rule] ?? '').join('; ')}.`,
     'Исправь перечисленные строки и повтори правку.',
-    `Осознанное исключение — .dsh/${ESCALATION_FILE}: строка «<rule-id>:<подстрока пути>» или «<подстрока пути>».`,
+    `Осознанное исключение — ${escalationFileLabel(project)}: строка «<rule-id>:<подстрока пути>» или «<подстрока пути>».`,
   ]
   state.audit(RULE, action, `нарушения носителя в изменённых строках (${hot.length})`)
   return { kind: 'block', feedback: [...header, '', ...lines].join('\n') }

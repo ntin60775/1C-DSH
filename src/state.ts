@@ -32,12 +32,17 @@ export interface AuditEntry {
 
 /**
  * Корень состояния контура.
+ *
+ * Порядок: `DSH_1C_STATE_DIR`, затем legacy `ZCODE_1C_STATE_DIR` (проект ещё
+ * не переехал, но состояние уже задано старой переменной), затем
+ * `~/.dsh/state/1c`.
  * @param env - окружение процесса.
- * @returns `DSH_1C_STATE_DIR` либо `~/.dsh/state/1c`.
+ * @returns каталог состояния контура.
  */
 export function defaultStateDir(env: NodeJS.ProcessEnv = process.env): string {
-  const configured = env['DSH_1C_STATE_DIR']
-  if (configured !== undefined && configured !== '') {
+  for (const name of ['DSH_1C_STATE_DIR', 'ZCODE_1C_STATE_DIR']) {
+    const configured = env[name]
+    if (configured === undefined || configured === '') continue
     return configured.startsWith('~') ? join(homedir(), configured.slice(1)) : configured
   }
   return join(homedir(), '.dsh', 'state', '1c')

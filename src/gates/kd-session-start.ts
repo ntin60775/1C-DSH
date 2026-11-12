@@ -20,7 +20,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 import type { ContourProject } from '../contract.js'
-import { readJsonObject } from '../paths.js'
+import { LAYOUT_DIRS, readJsonObject } from '../paths.js'
 
 /** Таймаут пробы живости станции. */
 const ALIVE_TIMEOUT_MS = 1000
@@ -107,10 +107,10 @@ export function stationAlive(url: string, timeoutMs = ALIVE_TIMEOUT_MS): Promise
   })
 }
 
-/** Скрипт старта станции: новая раскладка первой, legacy второй. */
+/** Скрипт старта станции: канон `.dsh/1c`, затем промежуточная и legacy-раскладки. */
 export function startScript(root: string): string | null {
-  for (const name of ['.dsh', '.zcode']) {
-    const path = join(root, name, '1c', 'scripts', 'start_kd_rules.sh')
+  for (const layout of LAYOUT_DIRS) {
+    const path = join(root, layout, 'scripts', 'start_kd_rules.sh')
     try {
       if (statSync(path).isFile()) return path
     } catch {

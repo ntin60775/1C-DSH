@@ -11,13 +11,15 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
 import type { ContourProject } from './contract.js'
-import { normalizeSourcePath } from './paths.js'
+import { LAYOUT_DIRS, layoutDirOf, normalizeSourcePath } from './paths.js'
 
 /** Имя файла allowlist'а эскалаций внутри каталога раскладки. */
 export const ESCALATION_FILE_NAME = 'unica-gate-escalations.txt'
 
 /** Канонические пути раскладки проекта для сообщений гейта. */
 export interface ContourPaths {
+  /** Каталог раскладки проекта: `.dsh/1c` либо legacy `.zcode/1c`. */
+  readonly layoutDir: string
   /** Путь allowlist'а эскалаций в канонической раскладке. */
   readonly escalationFile: string
   /** Скрипт инициализации ворктри в канонической раскладке. */
@@ -25,15 +27,16 @@ export interface ContourPaths {
 }
 
 /**
- * Пути раскладки проекта: новая `.dsh` по умолчанию, legacy `.zcode` пока читается.
+ * Пути раскладки проекта: канон `.dsh/1c` по умолчанию, legacy `.zcode/1c` пока читается.
  * @param project - найденный проект контура либо `null` вне проекта.
  * @returns пути для сообщений гейта и поиска файлов.
  */
 export function contourPaths(project: ContourProject | null): ContourPaths {
-  const layout = project?.layout === 'zcode' ? '.zcode' : '.dsh'
+  const layoutDir = layoutDirOf(project)
   return {
-    escalationFile: `${layout}/${ESCALATION_FILE_NAME}`,
-    initWorktreeScript: `${layout}/1c/scripts/init_worktree.sh`,
+    layoutDir,
+    escalationFile: `${layoutDir}/${ESCALATION_FILE_NAME}`,
+    initWorktreeScript: `${layoutDir}/scripts/init_worktree.sh`,
   }
 }
 
@@ -375,7 +378,7 @@ export interface EscalationReport {
  */
 export function escalationEntries(targetRoot: string, sessionCwd: string): EscalationReport {
   for (const root of [targetRoot, sessionCwd]) {
-    for (const layout of ['.dsh', '.zcode']) {
+    for (const layout of LAYOUT_DIRS) {
       const path = join(root, layout, ESCALATION_FILE_NAME)
       let raw: string
       try {
