@@ -135,7 +135,15 @@ def _yaml_scalar(raw: str) -> str:
 
 
 def parse_instances(root: Path) -> list:
+	"""Разбор db-instances.yaml проекта (legacy-раскладка `.zcode/1c`)."""
+	return parse_instances_at(root / DB_INSTANCES)
+
+
+def parse_instances_at(path: Path) -> list:
 	"""Разбор db-instances.yaml (минимальный строгий поднабор YAML).
+
+	@param path: сам файл: раскладку выбирает вызывающий (doctor читает
+	         канон `.dsh/1c`, legacy-разводка — `.zcode/1c`).
 
 	Возвращает записи {name, channel, display, publish_port, connection,
 	user, password, _seen} в порядке объявления — полный состав, чтобы
@@ -145,7 +153,6 @@ def parse_instances(root: Path) -> list:
 	[a-z0-9_-]{1,64} или канал вне [A-Za-z0-9_-]{1,64} —
 	ValueError с текстом для оператора (fail-loud, тихий фолбэк запрещён).
 	"""
-	path = root / DB_INSTANCES
 	instances: list = []
 	in_block = False
 	current = None

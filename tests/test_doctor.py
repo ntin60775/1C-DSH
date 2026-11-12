@@ -1,11 +1,24 @@
 #!/usr/bin/env python3
-"""Тесты doctor.py: contour.json — distrobox-режим ibsrv, платформа, venv testpilot.
+"""Тесты doctor.py: проверка установки контура на DSH и проекта.
 
-Doctor на tmp-проекте без unica даёт FAIL-строки — тест проверяет не итоговый
-exit, а конкретные строки вывода про contour-ключи. Запуск:
-python3 tests/test_doctor.py
+Цели (правило качества — .agents/skills/testing/references/quality-rule.md):
+  spec: tickets/dsh-contour/T7-doctor.md, «Критерии приёмки» — exit 0 на
+        проекте с bundle и пресетом, три фикстуры поломки с разными
+        причинами, `--json` с полями bundle/preset/skills/mcp/layout/project,
+        тест зелёный без deploy_recon;
+  invariant: `--json` печатает ровно JSON; doctor не зависит от живой машины
+        (HOME, DSH_HOME и PATH указывают во временные каталоги, живой MCP не
+        поднимается — `--no-ping`); неизвестный флаг не глотается;
+  target: bundle.rows не считает вложенные `- id:` внутри `config:`
+        пресета — реальный дефект разбора патча (тикет, «Границы и
+        расхождения»: 34 строки вместо двух).
+
+Сеть: фикстуры пробуют только заведомо закрытый 127.0.0.1:1, поэтому проба
+`1c-db` даёт WARN, а не FAIL. Запуск: python3 tests/test_doctor.py
 """
 import json
+import os
+from collections import defaultdict
 import shutil
 import subprocess
 import sys
@@ -17,457 +30,441 @@ from _lib import check, summary  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 DOCTOR = REPO / "scripts" / "doctor.py"
+BUNDLE = "dsh-1c-contour"
+
+PRESET_ROW = """    - id: preset-1c
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: 1c
+        name: 'Контур 1С'
+        order: 10
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+"""
 
 
-def run_doctor(root: Path, env_extra=None):
-	import os
-	env = dict(os.environ)
-	env.pop("PUBLISH_IBSRV", None)
-	env.pop("TESTPILOT_PYTHON", None)
-	env.update(env_extra or {})
-	# doctor импортирует contour_common из репо-хуков и вендоренной раскладки;
-	# в tmp-проекте раскладки нет — раскладку репо он находит от себя
-	return subprocess.run(
-		[sys.executable, str(DOCTOR), str(root), "--no-ping"],
-		capture_output=True, text=True, env=env, timeout=120)
+class Fixture:
+	"""Временная машина: HOME, DSH_HOME, PATH и проект в одном каталоге."""
+
+	def __init__(self, base: Path):
+		self.base = base
+		self.home = base / "home"
+		self.dsh = base / "dsh"
+		self.project = base / "project"
+		self.bin = base / "bin"
+		self.bin.mkdir(parents=True)
+		self.project.mkdir(parents=True)
+
+	def env(self, extra=None) -> dict:
+		env = dict(os.environ)
+		for name in ("DSH_1C_STATE_DIR", "ZCODE_1C_STATE_DIR", "UNICA_LAUNCHER",
+		             "DSH_1C_TESTPILOT", "KD_RULES_STATION", "1C_STYLE_ENGINE",
+		             "UNICA_RUNTIME_CACHE_DIR"):
+			env.pop(name, None)
+		env["HOME"] = str(self.home)
+		env["DSH_HOME"] = str(self.dsh)
+		# Только временный каталог: ни testpilot, ни unica, ни стиль-движка
+		# с машины тест не видит.
+		env["PATH"] = str(self.bin)
+		env.update(extra or {})
+		return env
+
+	def run(self, *flags, extra_env=None):
+		return self.run_argv(str(self.project), "--no-ping", *flags, extra_env=extra_env)
+
+	def run_argv(self, *argv, extra_env=None):
+		return subprocess.run(
+			[sys.executable, str(DOCTOR), *argv],
+			capture_output=True, text=True, env=self.env(extra_env), timeout=120)
+
+	def report(self, *flags, extra_env=None) -> dict:
+		"""Прогон с --json; неразобранный вывод — пустой отчёт (провал
+		показывают проверки, а не трейсбек теста)."""
+		result = self.run("--json", *flags, extra_env=extra_env)
+		try:
+			data = json.loads(result.stdout)
+		except json.JSONDecodeError:
+			data = {}
+		data = data if isinstance(data, dict) else {}
+		# Раздела или поля нет в отчёте (старый doctor) — пустое значение,
+		# чтобы провал показывали проверки, а не KeyError теста.
+		data = defaultdict(lambda: defaultdict(lambda: None), data)
+		return {"result": result, "data": data}
 
 
-def scaffold(root: Path, contour: str):
-	(root / ".zcode" / "1c").mkdir(parents=True, exist_ok=True)
-	(root / ".zcode" / "1c" / "contour.json").write_text(contour, encoding="utf-8")
-	(root / "v8project.yaml").write_text("infobases:\n  origin:\n", encoding="utf-8")
+def make_launcher(fx: Fixture) -> Path:
+	"""Лаунчер Юники: живой MCP не нужен, doctor проверяет только наличие."""
+	path = fx.home / ".local" / "bin" / "unica"
+	path.parent.mkdir(parents=True, exist_ok=True)
+	path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+	path.chmod(0o755)
+	return path
+
+
+def make_testpilot(fx: Fixture) -> Path:
+	path = fx.bin / "1c-testpilot"
+	path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+	path.chmod(0o755)
+	return path
+
+
+def make_package(base: Path, *, preset: bool = True, skills: bool = True) -> Path:
+	"""Пакет контура: патч, сборка и корпус скиллов.
+
+	Корпус скиллов и команд — ссылки на настоящий репозиторий: тест
+	проверяет счёт настоящего состава, а не придуманного. `lib/` — заглушки,
+	чтобы тест не зависел от шага сборки.
+	"""
+	package = base / "pkg"
+	(package / "lib" / "preset").mkdir(parents=True)
+	(package / "lib" / "index.js").write_text("// stub\n", encoding="utf-8")
+	(package / "lib" / "preset" / "index.js").write_text("// stub\n", encoding="utf-8")
+	(package / "package.json").write_text(json.dumps({
+		"name": BUNDLE,
+		"version": "9.9.9",
+		"dsh": {"bundle": {"patch": "./cordis.patch.yml"}},
+	}), encoding="utf-8")
+	rows = "- insert:\n    - id: 1c-contour\n      name: 'dsh-1c-contour'\n"
+	if preset:
+		rows += PRESET_ROW
+	(package / "cordis.patch.yml").write_text(rows, encoding="utf-8")
+	if skills:
+		os.symlink(REPO / "skills", package / "skills")
+		os.symlink(REPO / "commands", package / "commands")
+	else:
+		(package / "skills").mkdir()
+		(package / "commands").mkdir()
+	return package
+
+
+def write_install(fx: Fixture, package: Path, *, selected: str = "1c",
+                  bundle: bool = True) -> None:
+	profile = fx.dsh / "profiles" / "web"
+	(profile / "node_modules").mkdir(parents=True)
+	(profile / "package.json").write_text(json.dumps({
+		"name": "dsh-profile-web",
+		"private": True,
+		"dependencies": {BUNDLE: f"link:{package}"},
+		"dsh": {"profile": {"bundles": ["@deepseek-ai/dsh-base"]
+		                    + ([BUNDLE] if bundle else [])}},
+	}), encoding="utf-8")
+	os.symlink(package, profile / "node_modules" / BUNDLE)
+	patch = ""
+	if selected:
+		patch = ("- id: agent-preset-registry\n"
+		         "  name: '@deepseek-ai/dsh-agent-preset-registry'\n"
+		         "  config:\n"
+		         f"    selectedDefault: '{selected}'\n")
+	(profile / "cordis.patch.yml").write_text(patch, encoding="utf-8")
+
+
+V8PROJECT = "workPath: build\nformat: DESIGNER\nsource-set:\n  - name: main\n    type: CONFIGURATION\n    path: src/cf\n"
+V8LOCAL = "infobases:\n  origin:\n    connection: 'File=build/ib'\n"
+
+
+def write_project(fx: Fixture, *, layout: str = "dsh", contour=None,
+                  local=None, topology: bool = True) -> Path:
+	root = fx.project
+	folder = ".dsh/1c" if layout == "dsh" else ".zcode/1c"
+	data = root / folder
+	(data / "testpilot").mkdir(parents=True, exist_ok=True)
+	(data / "contour.json").write_text(json.dumps(
+		contour if contour is not None else {"1c_db": {"url": "http://127.0.0.1:1/mcp"}}),
+		encoding="utf-8")
+	if local is not None:
+		(data / "contour.local.json").write_text(json.dumps(local), encoding="utf-8")
+	(data / "testpilot" / "profiles.yaml").write_text("profiles: {}\n", encoding="utf-8")
+	(root / "v8project.yaml").write_text(V8PROJECT, encoding="utf-8")
+	(root / "v8project.local.yaml").write_text(V8LOCAL, encoding="utf-8")
+	if topology:
+		for relative in ("src/cf", "src/cfe", "src/epf", "src/erf", "tools", "vendor",
+		                 "tests/e2e"):
+			(root / relative).mkdir(parents=True, exist_ok=True)
+		for relative in ("packagedef", "AGENTS.md", ".gitignore", ".gitattributes"):
+			(root / relative).write_text("", encoding="utf-8")
+	return root
+
+
+def failing(report: dict) -> list:
+	"""Разделы в FAIL и их коды."""
+	return sorted((name, report[name]["code"]) for name in
+	              ("bundle", "preset", "skills", "mcp", "layout", "project", "state")
+	              if report[name]["status"] == "fail")
 
 
 def main() -> int:
 	with tempfile.TemporaryDirectory() as tmp:
-		root = Path(tmp)
+		# ── 1. Здоровая установка: exit 0, --json с шестью полями ──
+		fx = Fixture(Path(tmp) / "healthy")
+		make_launcher(fx)
+		make_testpilot(fx)
+		write_install(fx, make_package(Path(tmp) / "healthy" / "pkgsrc"))
+		write_project(fx)
+		health = fx.report()
+		data = health["data"]
+		r = health["result"]
+		check("здоровая установка — exit 0", r.returncode == 0, r.stdout[-600:])
+		check("--json валиден и без человеческих строк",
+		      r.stdout.lstrip().startswith("{") and isinstance(data, dict), r.stdout[:200])
+		for field in ("bundle", "preset", "skills", "mcp", "layout", "project"):
+			check(f"--json содержит поле {field}", field in data, sorted(data))
+		check("--json: bundle ok с профилем и строками",
+		      data["bundle"]["status"] == "ok" and data["bundle"]["profile"] == "web"
+		      and data["bundle"]["rows"] == ["1c-contour", "preset-1c"], json.dumps(data["bundle"]))
+		check("--json: preset 1c выбран по умолчанию",
+		      data["preset"]["status"] == "ok" and data["preset"]["id"] == "1c"
+		      and data["preset"]["default"] == "1c", json.dumps(data["preset"]))
+		check("--json: скиллов 15 из 15", data["skills"]["found"] == 15
+		      and data["skills"]["expected"] == 15, json.dumps(data["skills"]))
+		check("--json: раскладка .dsh/1c", data["layout"]["dir"] == ".dsh/1c",
+		      json.dumps(data["layout"]))
+		check("здоровая установка — ни одного FAIL", not failing(data), failing(data))
+		human = fx.run()
+		check("здоровая установка — человеческий вывод без FAIL",
+		      "FAIL" not in human.stdout and "итог: зелёный" in human.stdout,
+		      human.stdout[-800:])
+		guard = DOCTOR.read_text(encoding="utf-8")
+		check("doctor не импортирует deploy_recon (критерий приёмки)",
+		      "import deploy_recon" not in guard and "from deploy_recon" not in guard,
+		      "импорт нашёлся")
 
-		# ── distrobox:auto — легитимный режим, WARN про хост не звучит ──
-		scaffold(root, '{"1c": {"publish": {"ibsrv": "distrobox:auto"}}}')
-		r = run_doctor(root)
-		check("distrobox:auto — OK-строка", "distrobox-режим (auto)" in r.stdout, r.stdout[:400])
-		check("WARN про хост-поиск исчез", "на хосте не найден" not in r.stdout, r.stdout[:400])
+		# ── 2. Фикстура «нет пресета»: свой код и своя причина ──
+		fx_preset = Fixture(Path(tmp) / "no-preset")
+		make_launcher(fx_preset)
+		make_testpilot(fx_preset)
+		write_install(fx_preset, make_package(Path(tmp) / "no-preset" / "pkgsrc",
+		                                      preset=False))
+		write_project(fx_preset)
+		broken_preset = fx_preset.report()
+		check("нет пресета — exit 1", broken_preset["result"].returncode == 1,
+		      broken_preset["result"].stdout[-400:])
+		check("нет пресета — код preset.missing",
+		      broken_preset["data"]["preset"]["code"] == "preset.missing",
+		      json.dumps(broken_preset["data"]["preset"]))
+		check("нет пресета — FAIL только в разделе preset",
+		      [name for name, _ in failing(broken_preset["data"])] == ["preset"],
+		      failing(broken_preset["data"]))
+		human = fx_preset.run()
+		check("нет пресета — причина в человеческом выводе",
+		      "FAIL preset:" in human.stdout and "preset-1c" in human.stdout,
+		      human.stdout[-500:])
 
-		# ── distrobox:<имя> ──
-		scaffold(root, '{"1c": {"publish": {"ibsrv": "distrobox:onec-dev"}}}')
-		r = run_doctor(root)
-		check("именованный контейнер отражён в выводе", "onec-dev" in r.stdout, r.stdout[:400])
+		# ── 3. Фикстура «MCP не поднялся»: нет команды 1c-testpilot ──
+		fx_mcp = Fixture(Path(tmp) / "no-mcp")
+		make_launcher(fx_mcp)
+		write_install(fx_mcp, make_package(Path(tmp) / "no-mcp" / "pkgsrc"))
+		write_project(fx_mcp)
+		broken_mcp = fx_mcp.report()
+		check("MCP не поднялся — exit 1", broken_mcp["result"].returncode == 1,
+		      broken_mcp["result"].stdout[-400:])
+		check("MCP не поднялся — код mcp.testpilot-missing",
+		      broken_mcp["data"]["mcp"]["code"] == "mcp.testpilot-missing",
+		      json.dumps(broken_mcp["data"]["mcp"])[:600])
+		check("MCP не поднялся — FAIL только в разделе mcp",
+		      [name for name, _ in failing(broken_mcp["data"])] == ["mcp"],
+		      failing(broken_mcp["data"]))
+		mcp_human = fx_mcp.run()
+		check("MCP не поднялся — причина в человеческом выводе",
+		      "FAIL mcp:" in mcp_human.stdout and "1c-testpilot" in mcp_human.stdout,
+		      mcp_human.stdout[-500:])
+		check("MCP не поднялся — message раздела соответствует коду",
+		      "1c-testpilot" in (broken_mcp["data"]["mcp"]["message"] or ""),
+		      str(broken_mcp["data"]["mcp"]["message"]))
 
-		# ── 1c.platform.path из contour.json резолвится ──
-		fake_platform = Path(tmp) / "fake-1cv8"
-		fake_platform.write_text("#!/bin/sh\n", encoding="utf-8")
-		scaffold(root, '{"1c": {"publish": {"ibsrv": "distrobox:auto"},'
-		               '"platform": {"path": "%s"}}}' % fake_platform)
-		r = run_doctor(root)
-		check("платформа из contour.json — OK", "(contour.json)" in r.stdout, r.stdout[:400])
+		# ── 4. Фикстура «скиллов ноль»: свой код и своя причина ──
+		fx_skills = Fixture(Path(tmp) / "no-skills")
+		make_launcher(fx_skills)
+		make_testpilot(fx_skills)
+		write_install(fx_skills, make_package(Path(tmp) / "no-skills" / "pkgsrc",
+		                                      skills=False))
+		write_project(fx_skills)
+		broken_skills = fx_skills.report()
+		check("скиллов ноль — exit 1", broken_skills["result"].returncode == 1,
+		      broken_skills["result"].stdout[-400:])
+		check("скиллов ноль — код skills.none",
+		      broken_skills["data"]["skills"]["code"] == "skills.none",
+		      json.dumps(broken_skills["data"]["skills"]))
+		check("скиллов ноль — FAIL только в разделе skills",
+		      [name for name, _ in failing(broken_skills["data"])] == ["skills"],
+		      failing(broken_skills["data"]))
+		skills_human = fx_skills.run()
+		check("скиллов ноль — причина в человеческом выводе",
+		      "FAIL skills:" in skills_human.stdout
+		      and "контурных скиллов нет" in skills_human.stdout,
+		      skills_human.stdout[-500:])
 
-		# ── 1c.testpilot.python из contour.json подхвачен ──
-		fake_py = Path(tmp) / "fake-python"
-		fake_py.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
-		fake_py.chmod(0o755)
-		scaffold(root, '{"1c": {"publish": {"ibsrv": "distrobox:auto"},'
-		               '"testpilot": {"python": "%s"}}}' % fake_py)
-		r = run_doctor(root)
-		check("venv testpilot из contour.json в выводе", str(fake_py) in r.stdout, r.stdout[:400])
+		codes = {broken_preset["data"]["preset"]["code"],
+		         broken_mcp["data"]["mcp"]["code"],
+		         broken_skills["data"]["skills"]["code"]}
+		check("три фикстуры — три разных кода причин", len(codes) == 3, sorted(codes))
 
-		# ── env перекрывает contour (ibsrv) ──
-		scaffold(root, '{"1c": {"publish": {"ibsrv": "distrobox:auto"}}}')
-		r = run_doctor(root, {"PUBLISH_IBSRV": str(fake_platform)})
-		check("env PUBLISH_IBSRV старше contour", "резолвится: " + str(fake_platform) in r.stdout,
-		      r.stdout[:400])
+		# ── 5. Пресет объявлен, но не выбран: WARN, exit 0 ──
+		fx_default = Fixture(Path(tmp) / "other-default")
+		make_launcher(fx_default)
+		make_testpilot(fx_default)
+		write_install(fx_default, make_package(Path(tmp) / "other-default" / "pkgsrc"),
+		              selected="standard")
+		write_project(fx_default)
+		other = fx_default.report()
+		check("пресет не по умолчанию — exit 0 (WARN, не FAIL)",
+		      other["result"].returncode == 0, other["result"].stdout[-400:])
+		check("пресет не по умолчанию — код preset.not-default",
+		      other["data"]["preset"]["status"] == "warn"
+		      and other["data"]["preset"]["code"] == "preset.not-default",
+		      json.dumps(other["data"]["preset"]))
 
-		# ── пустой contour: прежняя WARN-логика хоста ──
-		scaffold(root, "{}")
-		r = run_doctor(root)
-		check("без ibsrv — WARN с подсказкой distrobox:<имя>", "distrobox:<имя>" in r.stdout,
-		      r.stdout[:400])
-
-		# ── 1c-db недоступен: подсказка зовёт bash, не python3 (#14) ──
-		scaffold(root, '{"1c_db": {"url": "http://127.0.0.1:9/mcp"}}')
-		r = run_doctor(root)
-		check("1c-db закрыт — WARN с подсказкой подъёма",
-		      "1c-db не отвечает" in r.stdout and "start_1c_db.sh" in r.stdout,
-		      r.stdout[:400])
-		check("подсказка запускает скрипт через bash",
-		      "bash .zcode/1c/scripts/start_1c_db.sh" in r.stdout, r.stdout[:400])
-		check("python3 перед bash-скриптом не советуется",
-		      "python3 .zcode/1c/scripts/start_1c_db.sh" not in r.stdout, r.stdout[:400])
-
-		# ── build/out: свалка в корне — WARN; канон и отсутствие — молчание ──
-		# Юнит build-out-canon, тикет Т1, критерии К1/К6
-		# (docs/plans/build-out-canon.md): WARN строго мягкий (FAIL нет),
-		# перечень усекается до 8, канонное имя обязано носить каталог.
-		scaffold(root, "{}")
-		out = root / "build" / "out"
-		out.mkdir(parents=True)
-		(out / "va-run.log").write_text("log", encoding="utf-8")
-		(out / "pilot-50").mkdir()
-		r = run_doctor(root)
-		check("свалка build/out — WARN с перечнем чужого",
-		      "WARN build/out:" in r.stdout
-		      and "вне канонных каталогов (2)" in r.stdout
-		      and "pilot-50, va-run.log" in r.stdout, r.stdout[:1200])
-		check("свалка build/out не даёт FAIL (каталог опционален)",
-		      "FAIL build/out" not in r.stdout and "distrobox:<имя>" in r.stdout,
-		      r.stdout[:1200])
-		for i in range(10):
-			(out / f"junk-{i:02d}.log").write_text("x", encoding="utf-8")
-		r = run_doctor(root)
-		check("длинный перечень усечён до 8 с многоточием",
-		      "вне канонных каталогов (12)" in r.stdout
-		      and ", …" in r.stdout and "junk-07.log" in r.stdout
-		      and "junk-08.log" not in r.stdout, r.stdout[:1200])
-		for i in range(10):
-			(out / f"junk-{i:02d}.log").unlink()
-		(out / "cfe").write_text("файл с канонным именем", encoding="utf-8")
-		r = run_doctor(root)
-		check("файл с канонным именем — тоже чужое",
-		      "вне канонных каталогов (3)" in r.stdout and "cfe" in r.stdout,
-		      r.stdout[:1200])
-		(out / "cfe").unlink()
-		for name in ("cf", "cfe", "epf", "erf", "reports", "tmp"):
-			(out / name).mkdir()
-		(out / "va-run.log").unlink()
-		(out / "pilot-50").rmdir()
-		r = run_doctor(root)
-		check("шесть канонных каталогов — молчание",
-		      "вне канонных каталогов" not in r.stdout
-		      and "distrobox:<имя>" in r.stdout, r.stdout[:1200])
-		shutil.rmtree(out)
-		r = run_doctor(root)
-		check("build/out отсутствует — молчание",
-		      "вне канонных каталогов" not in r.stdout
-		      and "distrobox:<имя>" in r.stdout, r.stdout[:1200])
-
-		# ── NER-эшелон анонимизации: мягкая зависимость в venv прокси ──
-		def fake_venv(state: str) -> Path:
-			"""Fake venv прокси: bin/python — заглушка с нужным кодом выхода."""
-			base = root / f"fakevenv-{state}"
-			py = base / ".local" / "venvs" / "1c-mcp-proxy" / "bin" / "python"
-			py.parent.mkdir(parents=True, exist_ok=True)
-			py.write_text(f"#!/bin/sh\nexit {0 if state == 'ok' else 1}\n",
-			              encoding="utf-8")
-			py.chmod(0o755)
-			return base
-
-		scaffold(root, "{}")
-		r = run_doctor(root, {"HOME": str(fake_venv("ok"))})
-		check("NER: spacy+модель на месте — OK-строка",
-		      "NER анонимизации 1c-db: spacy + модель ru_core_news_md на месте" in r.stdout,
-		      r.stdout[:600])
-		r = run_doctor(root, {"HOME": str(fake_venv("нет-spacy"))})
-		check("NER: venv без spacy — WARN с лечением",
-		      "NER анонимизации выключен" in r.stdout
-		      and "install_1c_mcp_proxy.sh" in r.stdout, r.stdout[:600])
-		check("NER-провал не FAIL (мягкая зависимость)",
-		      "FAIL NER" not in r.stdout, r.stdout[:600])
-		r = run_doctor(root, {"HOME": str(root / "fakevenv-нет-venv")})
-		check("NER: venv прокси нет — WARN с установкой",
-		      "venv прокси 1c-db не найден" in r.stdout
-		      and "install_1c_mcp_proxy.sh" in r.stdout, r.stdout[:600])
-
-		# ── 2c. kd-rules-mcp: мягкая зависимость (WARN, не FAIL) ──
-		scaffold(root, "{}")
-		r = run_doctor(root, {"KD_RULES_STATION": str(Path(tmp) / "нет-станции")})
-		check("kd: станции нет — WARN с install-подсказкой",
-		      "станция не установлена" in r.stdout and "install_kd_rules.sh" in r.stdout,
-		      r.stdout[:600])
-		fake_station = Path(tmp) / "kd-station"
-		fake_station.mkdir()
-		(fake_station / "pyproject.toml").write_text("[project]\nname = 'kd'\n", encoding="utf-8")
-		# url — заведомо мёртвый порт: на машине с живым сервером 8060 кейс
-		# «сервер молчит» иначе теряет детерминизм
-		scaffold(root, '{"1c_kd": {"url": "http://127.0.0.1:9/mcp"}}')
-		r = run_doctor(root, {"KD_RULES_STATION": str(fake_station)})
-		check("kd: станция есть, сервер молчит — WARN со start-подсказкой",
-		      "сервер не отвечает" in r.stdout and "start_kd_rules.sh" in r.stdout,
-		      r.stdout[:600])
-
-		# ── 3b. обязательный минимум топологии (зовёт scaffold check) ──
-		r = run_doctor(root)
-		check("неполный минимум — FAIL с перечнем",
-		      "обязательная топология неполна" in r.stdout
-		      and "packagedef" in r.stdout and "vendor" in r.stdout,
-		      r.stdout[:600])
-		check("FAIL ведёт в навык и полный ритуал",
-		      "1c-project-layout" in r.stdout and "ПОЛНЫЙ ритуал" in r.stdout,
-		      r.stdout[:600])
-		for rel in ("src/cf", "src/cfe", "src/epf", "src/erf", "tools", "vendor"):
-			(root / rel).mkdir(parents=True, exist_ok=True)
-		for rel in ("packagedef", "AGENTS.md", ".gitignore", ".gitattributes"):
-			(root / rel).write_text("", encoding="utf-8")
-		# юнит-наследие omp-эпохи (erp-mini-кейс): tests/cfe жив, tests/e2e нет
-		(root / "tests/cfe/Тесты").mkdir(parents=True, exist_ok=True)
-		r = run_doctor(root)
-		check("чистое наследие — doctor ведёт в перенос покрытия (#18)",
-		      "обязательная топология неполна: tests/e2e" in r.stdout
-		      and "перенос покрытия" in r.stdout, r.stdout[:600])
-		check("чистое наследие — без «ПОЛНЫЙ ритуал»",
-		      "ПОЛНЫЙ ритуал" not in r.stdout, r.stdout[:600])
-		import shutil as _sh
-		_sh.rmtree(root / "tests/cfe")
-		# канон: каталог рождается первым перенесённым тестом (конвертация из архива)
-		(root / "tests/e2e").mkdir(parents=True, exist_ok=True)
-		r = run_doctor(root)
-		check("полный минимум — OK-строка",
-		      "минимум топологии выполнен" in r.stdout, r.stdout[:600])
-		check("FAIL топологии исчез", "обязательная топология неполна" not in r.stdout,
-		      r.stdout[:600])
-
-		# ── 3c. v8project 0.15: отказы схемы и local-слой ──
-		def v8_case(name: str, text: str, needle: str, local: str = ""):
-			(root / "v8project.yaml").write_text(text, encoding="utf-8")
-			(root / "v8project.local.yaml").write_text(local, encoding="utf-8")
-			result = run_doctor(root)
-			check(name, needle in result.stdout, result.stdout[:900])
-
-		BASE = "workPath: build\nformat: DESIGNER\nsource-set:\n  - name: main\n    type: CONFIGURATION\n    path: src/cf\n"
-		v8_case("v8 0.15: builder отклонён", BASE + "builder: designer\n",
-		        "ключ builder отвергается схемой 0.15")
-		v8_case("v8 0.15: basePath отклонён", BASE + "basePath: src\n",
-		        "basePath не входит в контракт")
-		v8_case("v8 0.15: execution_timeout отклонён", BASE + "execution_timeout: 300\n",
-		        "общего execution_timeout в 0.15 нет")
-		v8_case("v8 0.15: partialLoadThreshold отклонён",
-		        BASE + "push:\n  partialLoadThreshold: 0.5\n",
-		        "partialLoadThreshold отвергается")
-		v8_case("v8 0.15: верхнеуровневый connection отклонён",
-		        BASE + "connection: 'File=build/ib'\n",
-		        "верхнеуровневый connection не использовать")
-		v8_case("v8 0.15: несколько именованных баз отклонены",
-		        BASE + "infobases:\n  origin:\n    connection: 'File=build/ib'\n"
-		               "  second:\n    connection: 'File=build/ib2'\n",
-		        "именованные базы second")
-		v8_case("v8 0.15: смесь infobase и infobases отклонена",
-		        BASE + "infobase:\n  connection: 'File=build/ib'\n"
-		               "infobases:\n  origin:\n    connection: 'File=build/ib'\n",
-		        "infobase и infobases в одном файле")
-		v8_case("v8 0.15: infobases в main — WARN про local",
-		        BASE + "infobases:\n  origin:\n    connection: 'File=build/ib'\n",
-		        "канон — v8project.local.yaml")
-		v8_case("v8 0.15: local-слой — канон",
-		        BASE,
-		        "привязка базы в local-слое",
-		        local="infobases:\n  origin:\n    connection: 'File=build/ib'\n")
-		v8_case("v8 0.15: лишняя база в local отклонена",
-		        BASE,
-		        "именованные базы extra",
-		        local="infobases:\n  origin:\n    connection: 'File=build/ib'\n"
-		              "  extra:\n    connection: 'File=build/ib2'\n")
-		# ── 3d. platform path: inline-комментарий шаблона не уезжает в путь ──
-		(root / "v8project.yaml").write_text(BASE, encoding="utf-8")
-		(root / "v8project.local.yaml").write_text(
-			"tools:\n  platform:\n    version: '8.3.99.9999'\n"
-			"    path: '/opt/1cv8/x86_64/8.3.99.9999'   # каталог установки, БЕЗ strict-пина\n",
+		# ── 5b. Порядок слоёв selectedDefault: home применяется последним ──
+		# spec: тикет Т7, «preset» — умолчание читается из patch-документа
+		# профиля и home-слоя; DSH применяет home последним.
+		fx_layers = Fixture(Path(tmp) / "layers")
+		make_launcher(fx_layers)
+		make_testpilot(fx_layers)
+		write_install(fx_layers, make_package(Path(tmp) / "layers" / "pkgsrc"),
+		              selected="standard")
+		write_project(fx_layers)
+		(fx_layers.dsh / "cordis.patch.yml").write_text(
+			"- id: agent-preset-registry\n  config:\n    selectedDefault: '1c'\n",
 			encoding="utf-8")
-		r = run_doctor(root)
-		check("platform: путь без inline-комментария",
-		      "не найдена: /opt/1cv8/x86_64/8.3.99.9999;" in r.stdout
-		      and "каталог установки" not in r.stdout,
-		      r.stdout[:900])
-		(root / "v8project.local.yaml").write_text("", encoding="utf-8")
-
-		# ── 3c/41. живой статус конфигурационных хуков (fake state) ──
-		import json as _json
-		import os as _os
-		import time as _time
-		from datetime import date as _date
-
-		def hook_state(name: str, audit_age: float, doc_age: float,
-		               pending: bool) -> Path:
-			"""Fake state: журналы с управляемым возрастом + лог хоста."""
-			base = root / f"fakestate-{name}"
-			audit = base / "logs" / "rule-audit.jsonl"
-			audit.parent.mkdir(parents=True, exist_ok=True)
-			audit.write_text("", encoding="utf-8")
-			doc = base / "state" / "1c" / "doc-gate" / "session_x.json"
-			doc.parent.mkdir(parents=True, exist_ok=True)
-			doc.write_text("{}", encoding="utf-8")
-			now = _time.time()
-			for path, age in ((audit, audit_age), (doc, doc_age)):
-				_os.utime(path, (now - age, now - age))
-			if pending:
-				log = base / "cli" / "log" / f"zcode-{_date.today().isoformat()}.jsonl"
-				log.parent.mkdir(parents=True, exist_ok=True)
-				line = _json.dumps({"event": "config.project_hooks.pending_trust",
-				                    "context": {"configPath": str(root / ".zcode" / "config.json"),
-				                                "diagnosticCode":
-				                                    "config_project_hooks_pending_trust"}})
-				log.write_text(line + "\n", encoding="utf-8")
-			return base
-
-		def wired_config(age: float) -> None:
-			"""config.json с уводом mtime в прошлое (момент «разводки»)."""
-			cfg = root / ".zcode" / "config.json"
-			cfg.parent.mkdir(parents=True, exist_ok=True)
-			cfg.write_text("{}", encoding="utf-8")
-			now = _time.time()
-			_os.utime(cfg, (now - age, now - age))
-
-		wired_config(age=3600)
-		r = run_doctor(root, {"ZCODE_1C_STATE_DIR": str(hook_state("fresh", 7200, 7200, False))})
-		check("41: следов после разводки нет — WARN без паники",
-		      "исполнений хуков после последней разводки не видно" in r.stdout
-		      and "best-effort" in r.stdout, r.stdout[:900])
-		check("41: pending-ветка не звучит без лога",
-		      "доверие воркспейса" not in r.stdout, r.stdout[:900])
-
-		r = run_doctor(root, {"ZCODE_1C_STATE_DIR": str(hook_state("audit", 60, 7200, False))})
-		check("41: свежий rule-audit — OK «исполняются»",
-		      "хуки исполняются после последней разводки (rule-audit)" in r.stdout,
-		      r.stdout[:900])
-
-		r = run_doctor(root, {"ZCODE_1C_STATE_DIR": str(hook_state("doc", 7200, 60, False))})
-		check("41: свежий doc-gate — OK «исполняются»",
-		      "хуки исполняются после последней разводки (doc-gate)" in r.stdout,
-		      r.stdout[:900])
-
-		r = run_doctor(root, {"ZCODE_1C_STATE_DIR": str(hook_state("calm", 60, 7200, True))})
-		check("41: pending_trust при живом исполнении — OK с расшифровкой",
-		      "запись парсинга" in r.stdout and "не блокировка" in r.stdout,
-		      r.stdout[:900])
-
-		r = run_doctor(root, {"ZCODE_1C_STATE_DIR": str(hook_state("cold", 7200, 7200, True))})
-		check("41: pending_trust без следов — WARN ведёт в доверие UI",
-		      "доверие воркспейса" in r.stdout and "pending_trust" in r.stdout,
-		      r.stdout[:900])
-		check("41: pending_trust без следов — не FAIL",
-		      "исполнений хуков после последней разводки не видно" in r.stdout,
-		      r.stdout[:900])
-
-		# ── 1b. артефакты рантайма: манифест ↔ кэш (fake HOME) ──
-		import json as _json
-		SHA86 = "e" * 64
-
-		def make_home(state: str) -> Path:
-			home = root / f"fakehome-{state}"
-			ver = "0.15.0-rc.1"
-			install = home / ".zcode/cli/plugins/cache/unica-next/unica" / ver
-			install.mkdir(parents=True)
-			(install / "runtime-manifest.json").write_text(_json.dumps({
-				"artifacts": {"bsl-analyzer": {
-					"version": "0.2.86", "role": "engine",
-					"targets": {"linux-x64": {
-						"asset": {"sha256": SHA86},
-						"files": [{"path": "bsl-analyzer", "sha256": SHA86,
-						           "executable": True}],
-					}},
-				}},
-			}, ), encoding="utf-8")
-			reg = home / ".zcode/cli/plugins"
-			reg.mkdir(parents=True, exist_ok=True)
-			(reg / "installed_plugins.json").write_text(_json.dumps({
-				"plugins": [{"id": "unica@unica-next", "name": "unica",
-				             "version": ver, "installPath": str(install)}],
-			}), encoding="utf-8")
-			rt = home / ".zcode/cli/plugins/data/unica@unica-next/runtimes"
-			if state in ("stale", "ok", "partial"):
-				if state == "stale":
-					good = rt / f"bsl-analyzer/0.2.67--{'c' * 64}/linux-x64"
-					aver, asha = "0.2.67", "c" * 64
-				else:
-					good = rt / f"bsl-analyzer/0.2.86--{SHA86}/linux-x64"
-					aver, asha = "0.2.86", SHA86
-				good.mkdir(parents=True)
-				binary = good / "bsl-analyzer"
-				binary.write_text("#!/bin/sh\n", encoding="utf-8")
-				binary.chmod(0o755)
-				(good / ".ready.json").write_text(_json.dumps(
-					{"artifact": "bsl-analyzer", "version": aver,
-				     "target": "linux-x64", "assetSha256": asha}), encoding="utf-8")
-			if state == "partial":
-				(rt / ".partial/bsl-analyzer").mkdir(parents=True)
-			return home
-
-		scaffold(root, "{}")
-		r = run_doctor(root, {"HOME": str(make_home("stale"))})
-		check("устаревший кэш — FAIL с артефактом и версией",
-		      "артефакт bsl-analyzer 0.2.86 отсутствует" in r.stdout, r.stdout[:600])
-		check("FAIL называет provider_unavailable", "provider_unavailable" in r.stdout,
-		      r.stdout[:600])
-		check("FAIL ведёт в скилл 1c-unica-artifacts", "1c-unica-artifacts" in r.stdout,
-		      r.stdout[:600])
-
-		r = run_doctor(root, {"HOME": str(make_home("ok"))})
-		check("полный кэш — OK-строка", "артефакты манифеста на месте" in r.stdout,
-		      r.stdout[:600])
-
-		r = run_doctor(root, {"HOME": str(make_home("partial"))})
-		check(".partial — WARN", "остался .partial" in r.stdout, r.stdout[:600])
-		check(".partial не роняет чек артефактов",
-		      "артефакты манифеста на месте" in r.stdout, r.stdout[:600])
-
-		r = run_doctor(root, {"HOME": str(make_home("empty"))})
-		check("нет кэша рантаймов — WARN про первый старт",
-		      "кэш рантаймов юники не создан" in r.stdout, r.stdout[:600])
-		check("без кэша нет FAIL по артефактам",
-		      "отсутствует в кэше" not in r.stdout, r.stdout[:600])
-
-		# ── мультистенд #37: db-instances.yaml и фактический url 1c-db ──
-		# url на порт 1 — проба отказывает мгновенно, детерминированно;
-		# фейковый HOME без venv прокси — без NER-проба (spacy грузится десятки секунд)
-		fast_home = tempfile.mkdtemp(prefix="doctor-fast-home-")
-		fast = {"HOME": fast_home}
-		scaffold(root, '{"1c_db": {"url": "http://127.0.0.1:1/mcp"}, '
-		               '"1c": {"publish": {"ibsrv": "distrobox:auto", "port": 8414}}}')
-		r = run_doctor(root, fast)
-		check("моно: файла нет — OK, не WARN",
-		      "моно-режим 1c-db (штатно)" in r.stdout,
-		      r.stdout[:600])
-
-		def inst_yaml(text: str):
-			(root / ".zcode" / "1c" / "db-instances.yaml").write_text(text, encoding="utf-8")
-			return run_doctor(root, fast)
-
-		r = inst_yaml(
-			"instances:\n  inst2:\n    connection: File=build/ib2\n    user: u\n"
-			'    password: ""\n    display: 98\n    publish_port: 6011\n')
-		check("инстансы: состав зелёный",
-		      "инстансы inst2 — коллизий каналов/дисплеев/портов нет" in r.stdout,
-		      r.stdout[:600])
-
-		r = inst_yaml(
-			"instances:\n  a:\n    channel: same\n    connection: File=x\n    user: u\n"
-			'    password: ""\n    display: 98\n    publish_port: 8414\n'
-			"  b:\n    channel: same\n    connection: File=y\n    user: u\n"
-			"    display: 98\n    publish_port: 8414\n")
-		for needle, label in (
-				("канал same объявлен дважды", "дубль канала пойман"),
-				("дисплей :98 объявлен дважды", "дубль дисплея пойман"),
-				("publish_port 8414 инстанса a совпадает с портом main", "порт main пойман"),
-				("инстанс b: нет поля password", "presence password пойман (пустой валиден)"),
-		):
-			check(label, needle in r.stdout, r.stdout[:600])
-
-		r = inst_yaml("instances:\n  Base2:\n    connection: File=x\n    user: u\n"
-		              '    password: ""\n')
-		check("имя вне matcher — FAIL",
-		      "matcher mcp-гейта" in r.stdout, r.stdout[:600])
-		(root / ".zcode" / "1c" / "db-instances.yaml").unlink()
-
-		# drift порта: local применён — ok; желаемый изменился — WARN
-		loc = root / ".zcode" / "1c" / "contour.local.json"
-		loc.write_text(json.dumps({"1c_db": {"url": "http://127.0.0.1:6004/mcp",
-		                                     "desired_url": "http://127.0.0.1:1/mcp"}}),
-		               encoding="utf-8")
-		r = run_doctor(root, fast)
-		check("drift применён — ok-строка с фактическим url",
-		      "drift порта применён" in r.stdout and "6004" in r.stdout, r.stdout[:600])
-		loc.write_text(json.dumps({"1c_db": {"url": "http://127.0.0.1:6004/mcp",
-		                                     "desired_url": "http://127.0.0.1:9/mcp"}}),
-		               encoding="utf-8")
-		r = run_doctor(root, fast)
-		check("устаревший local — WARN",
-		      "contour.local.json устарел" in r.stdout, r.stdout[:600])
-		loc.unlink()
-
-		# wire-дрейф: MCP-запись не совпадает с фактическим url — WARN
-		(root / ".zcode" / "config.json").write_text(json.dumps(
-			{"mcp": {"servers": {"1c-db": {"url": "http://127.0.0.1:6003/mcp"}}}}),
+		home_wins = fx_layers.report()
+		check("home-слой перекрывает профиль: selectedDefault 1c",
+		      home_wins["data"]["preset"]["status"] == "ok"
+		      and home_wins["data"]["preset"]["default"] == "1c",
+		      json.dumps(home_wins["data"]["preset"])[:400])
+		(fx_layers.dsh / "cordis.patch.yml").write_text(
+			"- id: agent-preset-registry\n  config:\n    selectedDefault: 'standard'\n",
 			encoding="utf-8")
-		r = run_doctor(root, fast)
-		check("MCP-запись не совпадает с фактическим url — WARN",
-		      "не совпадает с фактическим url" in r.stdout, r.stdout[:600])
+		(fx_layers.dsh / "profiles" / "web" / "cordis.patch.yml").write_text(
+			"- id: agent-preset-registry\n  config:\n    selectedDefault: '1c'\n",
+			encoding="utf-8")
+		profile_loses = fx_layers.report()
+		check("профильный слой не перебивает home: WARN, default standard",
+		      profile_loses["data"]["preset"]["status"] == "warn"
+		      and profile_loses["data"]["preset"]["default"] == "standard",
+		      json.dumps(profile_loses["data"]["preset"])[:400])
+
+		# ── 5c. CLI: пробельная форма --profile, чужой флаг — exit 2 ──
+		# invariant: незнакомый флаг не глотается.
+		space_form = fx_layers.run("--profile", "web")
+		check("--profile с пробелом применяется, exit 0",
+		      space_form.returncode == 0 and "профиль web" in space_form.stdout,
+		      space_form.stdout[-400:])
+		typo = fx_layers.run_argv("--nope", str(fx_layers.project))
+		check("неизвестный флаг — exit 2 и причина в stderr",
+		      typo.returncode == 2 and "--nope" in typo.stderr, typo.stderr[:300])
+
+		# ── 6. Раскладка: legacy — WARN, канон — OK ──
+		fx_legacy = Fixture(Path(tmp) / "legacy")
+		make_launcher(fx_legacy)
+		make_testpilot(fx_legacy)
+		write_install(fx_legacy, make_package(Path(tmp) / "legacy" / "pkgsrc"))
+		write_project(fx_legacy, layout="zcode")
+		legacy = fx_legacy.report()
+		check("legacy-раскладка — WARN layout.legacy, exit 0",
+		      legacy["result"].returncode == 0
+		      and legacy["data"]["layout"]["code"] == "layout.legacy",
+		      json.dumps(legacy["data"]["layout"])[:400])
+		check("legacy-раскладка ведёт в мигратор",
+		      "migrate_from_zcode.py" in legacy["result"].stdout,
+		      legacy["result"].stdout[-500:])
+
+		# ── 7. Канон и legacy разошлись: мигратор --check = 2, FAIL ──
+		fx_diverged = Fixture(Path(tmp) / "diverged")
+		make_launcher(fx_diverged)
+		make_testpilot(fx_diverged)
+		write_install(fx_diverged, make_package(Path(tmp) / "diverged" / "pkgsrc"))
+		write_project(fx_diverged)
+		legacy_dir = fx_diverged.project / ".zcode" / "1c"
+		legacy_dir.mkdir(parents=True)
+		(legacy_dir / "contour.json").write_text(
+			json.dumps({"1c_db": {"url": "http://127.0.0.1:9/mcp"}}), encoding="utf-8")
+		diverged = fx_diverged.report()
+		check("канон разошёлся с legacy — exit 1",
+		      diverged["result"].returncode == 1, diverged["result"].stdout[-400:])
+		check("канон разошёлся с legacy — код layout.diverged",
+		      diverged["data"]["layout"]["code"] == "layout.diverged",
+		      json.dumps(diverged["data"]["layout"])[:400])
+
+		# ── 8. Чужой профиль и невключённый bundle — разные коды ──
+		fx_profile = Fixture(Path(tmp) / "profile")
+		make_launcher(fx_profile)
+		make_testpilot(fx_profile)
+		write_install(fx_profile, make_package(Path(tmp) / "profile" / "pkgsrc"))
+		write_project(fx_profile)
+		unknown = fx_profile.report("--profile=missing")
+		check("неизвестный профиль — bundle.no-profile",
+		      unknown["data"]["bundle"]["code"] == "bundle.no-profile",
+		      json.dumps(unknown["data"]["bundle"])[:400])
+		fx_off = Fixture(Path(tmp) / "not-enabled")
+		make_launcher(fx_off)
+		make_testpilot(fx_off)
+		write_install(fx_off, make_package(Path(tmp) / "not-enabled" / "pkgsrc"),
+		              bundle=False)
+		write_project(fx_off)
+		not_enabled = fx_off.report()
+		check("bundle в зависимостях, но не в bundles — bundle.not-enabled",
+		      not_enabled["data"]["bundle"]["code"] == "bundle.not-enabled",
+		      json.dumps(not_enabled["data"]["bundle"])[:400])
+
+		# ── 9. Проект: схема 0.15 ловится (старая проверка жива) ──
+		fx_schema = Fixture(Path(tmp) / "schema")
+		make_launcher(fx_schema)
+		make_testpilot(fx_schema)
+		write_install(fx_schema, make_package(Path(tmp) / "schema" / "pkgsrc"))
+		write_project(fx_schema)
+		(fx_schema.project / "v8project.yaml").write_text(
+			V8PROJECT + "builder: designer\n", encoding="utf-8")
+		schema = fx_schema.report()
+		check("v8project 0.15: builder отвергнут — project.schema",
+		      schema["data"]["project"]["code"] == "project.schema"
+		      and "builder" in schema["result"].stdout, schema["result"].stdout[-600:])
+
+		# ── 10. Незавершённая топология — FAIL с ритуалом навыка ──
+		fx_topo = Fixture(Path(tmp) / "topology")
+		make_launcher(fx_topo)
+		make_testpilot(fx_topo)
+		write_install(fx_topo, make_package(Path(tmp) / "topology" / "pkgsrc"))
+		write_project(fx_topo, topology=False)
+		topo = fx_topo.report()
+		check("неполная топология — FAIL с ритуалом 1c-project-layout",
+		      topo["data"]["project"]["code"] == "project.topology"
+		      and "1c-project-layout" in topo["result"].stdout,
+		      topo["result"].stdout[-600:])
+
+		# ── 11. Состояние: legacy-переменная — WARN, корень из env ──
+		fx_state = Fixture(Path(tmp) / "state")
+		make_launcher(fx_state)
+		make_testpilot(fx_state)
+		write_install(fx_state, make_package(Path(tmp) / "state" / "pkgsrc"))
+		write_project(fx_state)
+		legacy_state = Path(tmp) / "state" / "legacy-state"
+		state_report = fx_state.report(
+			extra_env={"ZCODE_1C_STATE_DIR": str(legacy_state)})
+		check("legacy-переменная состояния — WARN state.legacy-env",
+		      state_report["data"]["state"]["status"] == "warn"
+		      and state_report["data"]["state"]["code"] == "state.legacy-env",
+		      json.dumps(state_report["data"]["state"])[:400])
+		check("корень состояния взят из переменной",
+		      state_report["data"]["state"]["dir"] == str(legacy_state),
+		      json.dumps(state_report["data"]["state"])[:400])
+
+		# ── 12. Инстансы 1c-db: коллизия ловится, MCP-запись названа ──
+		fx_inst = Fixture(Path(tmp) / "instances")
+		make_launcher(fx_inst)
+		make_testpilot(fx_inst)
+		write_install(fx_inst, make_package(Path(tmp) / "instances" / "pkgsrc"))
+		write_project(fx_inst)
+		(fx_inst.project / ".dsh" / "1c" / "db-instances.yaml").write_text(
+			"instances:\n"
+			"  same:\n    channel: one\n    connection: File=x\n    user: u\n"
+			'    password: ""\n    display: 98\n'
+			"  twice:\n    channel: one\n    connection: File=y\n    user: u\n"
+			'    password: ""\n    display: 98\n', encoding="utf-8")
+		instances = fx_inst.report()
+		check("инстансы: дубль канала и дисплея — FAIL mcp.instances",
+		      instances["data"]["mcp"]["code"] == "mcp.instances"
+		      and "объявлен дважды" in instances["result"].stdout,
+		      instances["result"].stdout[-800:])
 
 		return summary()
 
