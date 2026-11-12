@@ -74,7 +74,7 @@ INPUTS = (
 		".zcode/1c/testpilot/profiles.yaml")),
 )
 
-STYLE_NEW = ".dsh/skills/1c-bsl-code-style/scripts/bsl_style_check.py"
+STYLE_NEW = ".dsh/1c/skills/1c-bsl-code-style/scripts/bsl_style_check.py"
 # Старые адреса чекера: пак контура, прежняя раскладка style/ и голая
 # ссылка от корня плагина. Голую форму берём, только если перед ней нет
 # пути: в .dsh/1c/skills/... она уже новая и не трогается.

@@ -55,10 +55,10 @@ whenToUse: "Проект 1С подключается к контуру (впе�
    `tools/va-env.local.json`, `v8project.local.yaml`, `build/`,
    `.dsh/1c/db-instances.yaml` (креды инстансов 1c-db),
    `.dsh/1c/contour.local.json` (локальный оверлей контура),
-   `.dsh/contour` (если помечаешь деревья по месту). Сама раскладка
+   `.dsh/1c/contour` (если помечаешь деревья по месту). Сама раскладка
    `.dsh/1c` — только contour.json и шаблоны; `db-instances.yaml`,
    `contour.local.json` и `profiles.yaml` остаются вне git.
-6. **Признак контура**: тестовое дерево — файл `.dsh/contour` со словом
+6. **Признак контура**: тестовое дерево — файл `.dsh/1c/contour` со словом
    `test` (прод по умолчанию, fail-closed). Ключ `contour:` в
    `v8project.local.yaml` не писать: v8-runner 0.15 отвергает незнакомый
    верхнеуровневый ключ local-слоя, и `unica.run` падает с `bad_value`.

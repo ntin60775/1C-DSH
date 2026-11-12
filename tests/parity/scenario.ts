@@ -81,17 +81,44 @@ export interface ScenarioRuntime {
 }
 
 /**
+ * Раскладка, в которую кладутся проектные входы сценария.
+ *
+ * Корпус написан на legacy `.zcode`; канон `.dsh/1c` доказывается повторным
+ * прогоном того же сценария с перенесёнными входами. `contour.json`
+ * переезжает вместе с ними: его место задаёт `layout`, а не имя файла.
+ */
+export type FixtureLayout = 'legacy' | 'canon'
+
+/** Перенести входы сценария в канон `.dsh/1c`. */
+function canon(inputs: Readonly<Record<string, string>>): Record<string, string> {
+  const result: Record<string, string> = {}
+  for (const [path, text] of Object.entries(inputs)) {
+    result[path.replace(/^tree\/\.zcode\//, 'tree/.dsh/1c/')] = text
+  }
+  return result
+}
+
+/**
  * Подготовить окружение сценария: дерево, память, чекер.
  * @param scenario - сценарий корпуса.
  * @param checker - порт чекера стиля для TS-гейта.
+ * @param layout - раскладка входов: как в корпусе или канон `.dsh/1c`.
  * @returns окружение для шагов.
  */
-export function prepare(scenario: Scenario, checker?: StyleCheckerPort): ScenarioRuntime {
+export function prepare(
+  scenario: Scenario,
+  checker?: StyleCheckerPort,
+  layout: FixtureLayout = 'legacy',
+): ScenarioRuntime {
+  const write = scenario.fixture?.write === undefined
+    ? undefined
+    : layout === 'canon' ? canon(scenario.fixture.write) : scenario.fixture.write
+  const contourLayout = layout === 'canon' ? 'dsh' : scenario.fixture?.layout
   const fixture = createFixture({
-    ...scenario.fixture?.write === undefined ? {} : { write: scenario.fixture.write },
+    ...write === undefined ? {} : { write },
     ...scenario.fixture?.mkdir === undefined ? {} : { mkdir: scenario.fixture.mkdir },
     ...scenario.fixture?.contour === undefined ? {} : { contour: scenario.fixture.contour },
-    ...scenario.fixture?.layout === undefined ? {} : { layout: scenario.fixture.layout },
+    ...contourLayout === undefined ? {} : { layout: contourLayout },
   })
   const cwd = join(fixture.root, scenario.cwd ?? 'tree')
   const memoryStore = new Map<string, unknown>()

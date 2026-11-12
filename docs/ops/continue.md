@@ -112,8 +112,23 @@ MCP-записи `unica`, `1c-testpilot`, `1c-db` (+ инстансы), `1c-kd`,
 `.dsh/1c/…` — сведение в Т6; `code.insert` с `selector.anchor` по модулю
 с BOM+CRLF отклоняется, работает селектор уровня метода.
 
-Следующее — Т6 (раскладка `.dsh/1c`, все входы гейтов, legacy, мигратор)
-по команде оператора.
+Т6 (раскладка `.dsh/1c`, все входы гейтов, legacy, мигратор) ОТГРУЖЕН
+12.11, слияние — за приёмкой оператора. Канон — `.dsh/1c/` для всех входов:
+`contour`, `mcp-write-allow.txt`, `unica-gate-escalations.txt`,
+`bsl-module-gate-escalations.txt`, `testpilot/profiles.yaml`,
+`standards-exceptions.yaml`, путь чекера стиля. Порядок чтения — одна
+таблица `LAYOUT_DIRS` в `src/paths.ts` (`.dsh/1c` → `.dsh` → `.zcode/1c` →
+`.zcode`); состояние — `DSH_1C_STATE_DIR`, legacy `ZCODE_1C_STATE_DIR` ещё
+читается. Доказательства: `tests/unit/layout-t6.spec.ts` (приоритет канона
+по каждому входу, паритет раскладок, корень состояния, инвариант «одна
+таблица») и `tests/parity/layout.spec.ts` (33 сценария корпуса T3,
+переигранные с входами в `.dsh/1c`). Набор: 322 vitest + python-набор +
+линт 19/19. Границы: `wire_config.py` жив (его разбирает doctor — Т7);
+`.zcode/config.json` остаётся legacy-фолбэком url станции КД (снятие —
+Т10); полный проход по ZCode-докам — Т9.
+
+Следующее — Т7 (doctor под DSH: раскладка, пресет, MCP, состояние) по
+команде оператора.
 
 ## Унаследованное состояние (до переезда)
 

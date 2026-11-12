@@ -67,6 +67,32 @@ def main() -> int:
 	page = str(FIXTURES / "check_page.json")
 
 	with tempfile.TemporaryDirectory() as tmp:
+		# ── путь исключений по умолчанию: канон .dsh/1c, затем legacy ──
+		proj = Path(tmp) / "proj"
+		(proj / ".zcode" / "1c").mkdir(parents=True)
+		(proj / ".zcode" / "1c" / "standards-exceptions.yaml").write_text(
+			JOURNAL_OK, encoding="utf-8")
+		r = run("--node", NODE, "--check-out", page, "--project", str(proj),
+		        "--routing", str(VENDOR_ROUTING))
+		check("без --exceptions: legacy-журнал найден", r.returncode == 0,
+		      r.stderr[:300])
+		rep = json.loads(r.stdout)
+		check("без --exceptions: исключение применено",
+		      any(x["verdict_candidate"] == "waived" for x in rep["findings"]),
+		      json.dumps(rep["findings"], ensure_ascii=False)[:300])
+
+		(proj / ".dsh" / "1c").mkdir(parents=True)
+		(proj / ".dsh" / "1c" / "standards-exceptions.yaml").write_text(
+			"version: 1\nexceptions: []\n", encoding="utf-8")
+		r = run("--node", NODE, "--check-out", page, "--project", str(proj),
+		        "--routing", str(VENDOR_ROUTING))
+		check("без --exceptions: канон перекрывает legacy (exit 0)",
+		      r.returncode == 0, r.stderr[:300])
+		rep = json.loads(r.stdout)
+		check("без --exceptions: пустой канон снял исключения legacy",
+		      all(x["verdict_candidate"] != "waived" for x in rep["findings"]),
+		      json.dumps(rep["findings"], ensure_ascii=False)[:300])
+
 		# ── вендорен-таблица: маркерные строки раньше fallback ──
 		r = run("--node", NODE, "--check-out", page, "--project", project,
 		        "--routing", str(VENDOR_ROUTING), "--exceptions", write_journal(tmp, JOURNAL_OK))

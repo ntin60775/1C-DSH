@@ -51,7 +51,7 @@ Fail-safe направление: неоднозначность трактуе�
 ## Границы
 
 - Эскалации на bash-ветку не действуют: allowlist
-  `.zcode/unica-gate-escalations.txt` открывает только прямые правки
+  `.dsh/1c/unica-gate-escalations.txt` открывает только прямые правки
   Write/Edit/ApplyPatch.
 - Прочие in-place-инструменты (`perl -pi`, `awk -i inplace`, `ed`, `ex`)
   контрактом не покрываются: обнаружение по sed и перенаправлению; новый

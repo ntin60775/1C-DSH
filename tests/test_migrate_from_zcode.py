@@ -37,7 +37,7 @@ LEGACY_INPUTS = {
 OLD_STYLE = ".zcode/skills/1c-bsl-code-style/scripts/bsl_style_check.py"
 OLD_STYLE_1C = (".zcode/1c/skills/1c-bsl-code-style/scripts/"
                 "bsl_style_check.py")
-NEW_STYLE = ".dsh/skills/1c-bsl-code-style/scripts/bsl_style_check.py"
+NEW_STYLE = ".dsh/1c/skills/1c-bsl-code-style/scripts/bsl_style_check.py"
 PROSE = "своя проза: " + OLD_STYLE
 
 

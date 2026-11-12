@@ -6,7 +6,8 @@
  * меняющие данные или состояние сессии — нет. Прод-контур блокирует их до
  * эскалации, тест-контур пропускает, отсутствие признака считается продом.
  *
- * Признак контура: файл `.dsh/contour` (legacy `.zcode/contour`) со словом
+ * Признак контура: файл `contour` в раскладке проекта (канон `.dsh/1c`, затем
+ * промежуточная `.dsh` и legacy `.zcode/1c`, `.zcode`) со словом
  * `test`/`prod`; ключ `contour:` в `v8project*.yaml` — только обратная
  * совместимость старых проектов.
  *
@@ -21,7 +22,7 @@ import { dirname, join } from 'node:path'
 import type { ContourProject, GateCall, GateState, PreDecision } from '../contract.js'
 import { contourPaths, mcpShortName } from '../contour.js'
 import { describeHolder } from '../lock.js'
-import { resolvedPath } from '../paths.js'
+import { findLayoutFile, resolvedPath } from '../paths.js'
 
 /** Имя правила в журнале решений. */
 export const RULE = 'mcp-unsafe-gate'
@@ -54,18 +55,14 @@ function readText(path: string): string | null {
 }
 
 /**
- * Первый найденный файл раскладки: новая `.dsh`, затем legacy `.zcode`.
+ * Первый найденный файл раскладки: канон `.dsh/1c`, промежуточная `.dsh`,
+ * legacy `.zcode/1c` и `.zcode`.
  * @param root - корень дерева.
  * @param relative - путь внутри каталога раскладки.
- * @returns содержимое и путь файла либо `null`.
+ * @returns содержимое, путь файла и подпись раскладки либо `null`.
  */
-function readLayoutFile(root: string, relative: string): { text: string; path: string } | null {
-  for (const layout of ['.dsh', '.zcode']) {
-    const path = join(root, layout, relative)
-    const text = readText(path)
-    if (text !== null) return { text, path }
-  }
-  return null
+function readLayoutFile(root: string, relative: string): { text: string | null; path: string; label: string } | null {
+  return findLayoutFile(root, relative, readText)
 }
 
 /**
@@ -76,7 +73,7 @@ function readLayoutFile(root: string, relative: string): { text: string; path: s
 export function contourOf(project: ContourProject | null): 'test' | 'prod' {
   if (project === null) return 'prod'
   const marker = readLayoutFile(project.root, 'contour')
-  if (marker !== null) {
+  if (marker?.text !== null && marker?.text !== undefined) {
     const value = marker.text.trim().toLowerCase()
     if (value.startsWith('test')) return 'test'
     if (value.startsWith('prod')) return 'prod'
@@ -117,19 +114,25 @@ export function dangerousTools(project: ContourProject | null): Map<string, Set<
  * @param project - проект контура.
  * @returns разрешённые имена и признак «разрешено всё».
  */
-export function escalations(project: ContourProject | null): { allowed: Set<string>; allTools: boolean } {
+export function escalations(project: ContourProject | null): {
+  allowed: Set<string>
+  allTools: boolean
+  /** Фактически прочитанный файл разрешений; `null` — разрешений нет. */
+  label: string | null
+} {
   const allowed = new Set<string>()
   let allTools = false
-  if (project === null) return { allowed, allTools }
+  if (project === null) return { allowed, allTools, label: null }
   const found = readLayoutFile(project.root, 'mcp-write-allow.txt')
-  if (found === null) return { allowed, allTools }
+  // Нет файла или канон не читается — разрешений нет: отказ безопаснее.
+  if (found?.text === null || found === null) return { allowed, allTools, label: null }
   for (const raw of found.text.split('\n')) {
     const line = raw.split('#', 1)[0]?.trim() ?? ''
     if (line === '') continue
     if (line === '*') allTools = true
     else allowed.add(line)
   }
-  return { allowed, allTools }
+  return { allowed, allTools, label: found.label }
 }
 
 /**
@@ -197,7 +200,7 @@ function fileConnection(root: string, base: string): string {
 export function profileConnection(project: ContourProject | null, profile: string): string | null {
   if (profile === '' || project === null) return null
   const found = readLayoutFile(project.root, 'testpilot/profiles.yaml')
-  if (found === null) return null
+  if (found?.text === null || found === null) return null
   let inProfiles = false
   let current: string | null = null
   let base: string | null = null
@@ -288,7 +291,7 @@ function blockMessage(
   project: ContourProject,
   contour: string,
 ): string {
-  const layout = contourPaths(project).escalationFile.split('/')[0] ?? '.dsh'
+  const layout = contourPaths(project).layoutDir
   return [
     `Инструмент ${short} (сервер ${server}) меняет данные/состояние базы,`,
     `а контур проекта — ${contour} (mcp-unsafe-gate).`,
@@ -369,13 +372,12 @@ export function evaluatePre(
     state.audit(RULE, `${short} (${server}, ${project.root})`, 'тест-контур: изменяющий вызов разрешён', 'confirmed')
     return { kind: 'allow', code: 'none' }
   }
-  const { allowed, allTools } = escalations(project)
+  const { allowed, allTools, label } = escalations(project)
   if (allTools || allowed.has(short)) {
-    const layout = contourPaths(project).escalationFile.split('/')[0] ?? '.dsh'
     state.audit(
       RULE,
       `${short} (${server}, ${project.root})`,
-      `эскалация из ${layout}/mcp-write-allow.txt`,
+      `эскалация из ${label ?? `${contourPaths(project).layoutDir}/mcp-write-allow.txt`}`,
       'confirmed',
     )
     return { kind: 'allow', code: 'none' }
