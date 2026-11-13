@@ -1,10 +1,13 @@
 /**
  * `unica_source_gate` на DSH: исходники 1С правятся только через Unica.
  *
- * Перенос ZCode-гейта `unica_source_gate` без упрощений:
+ * Перенос ZCode-гейта `unica_source_gate` без упрощений; состав
+ * блокируемых деревьев сужен спекой `external-epf-loop`:
  *
- * 1. `write` / `edit` / `apply_patch` по `src/{cf,cfe,epf,erf}` и `tests/epf`
+ * 1. `write` / `edit` / `apply_patch` по `src/{cf,cfe}` и `tests/epf`
  *    блокируются; единственный обход — allowlist эскалаций проекта.
+ *    Внешние `src/epf` и `src/erf` вне гейта: каркас — файлами по
+ *    `epf-init`/`erf-init`, правка узлов — `unica.apply`.
  * 2. `bash` с `sed -i` или перенаправлением в исходник блокируется; sed
  *    разбирается по операндам, правка копии вне исходников проходит.
  * 3. Вызовы `mcp__*unica*__*`: неинициализированный ворктри, правила

@@ -45,6 +45,10 @@ describe('bashWritesToSource', () => {
     "sed -i 's/a/b/ /tmp/w.bsl",
     'sed -i \'s/a/b/\' src/docs/readme.md',
     'cat src/cf/CommonModules/Модуль.bsl',
+    // spec: docs/plans/external-epf-loop.md, «Готово» п. 5 — bash-ветка
+    // читает тот же SOURCE_PREFIXES: внешние epf/erf вне гейта.
+    'sed -i \'s/a/b/\' src/epf/Обработка/epf.epf',
+    'echo x > src/erf/Отчёт/erf.erf',
   ]
 
   for (const command of passing) {
