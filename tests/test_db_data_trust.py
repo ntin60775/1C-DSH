@@ -9,6 +9,7 @@ spec: docs/plans/external-epf-loop.md, «Готово» п. 4 — диалог �
 
 Запуск: python3 tests/test_db_data_trust.py
 """
+import subprocess
 import sys
 from pathlib import Path
 
@@ -43,18 +44,28 @@ def main() -> int:
 	      "каждый новый бинарник" in part, part[:200])
 	check("Т4: якорь доверия — контент",
 	      "привязан к контенту" in part, part[:200])
-	check("Т4: старая рамка «доверие к пути» снята",
-	      "сбрасывает доверие платформы к пути" not in text)
+	old = [line for line in text.splitlines() if "доверие платформы к пути" in line]
+	check("Т4: старая рамка «доверие платформы к пути» снята",
+	      not old, "; ".join(old)[:200])
 
 	# spec: «Готово» п. 4 — симптом недоставленного подтверждения
 	check("Т4: execute-каналы висят до 180 с", "180 с" in part, part[:200])
-	check("Т4: симптом назван флапом стенда", "флап" in part, part[:200])
+	check("Т4: симптом назван флапом стенда", "флап стенда" in part, part[:200])
 
 	# spec: «Готово» п. 4 — кросс-ссылка и машинный путь подтверждения
 	check("Т4: кросс-ссылка на 1c-testpilot в разделе",
 	      "1c-testpilot" in part, part[:200])
 	check("Т4: машинный путь — Button0 тест-клиентом",
 	      "Button0" in part, part[:200])
+
+	# критерий 4 тикета: линт фронтматтера носителя — самомарш, как у
+	# соседних скилл-тестов (test_unica_artifacts_skill.py)
+	lint = subprocess.run(
+		[sys.executable, str(ROOT / "scripts" / "lint_skill_frontmatter.py"),
+		 str(SKILL.parent)],
+		capture_output=True, text=True)
+	check("Т4: линтер фронтматтера 1c-db-data чист",
+	      lint.returncode == 0, lint.stdout[:300])
 	return summary()
 
 
