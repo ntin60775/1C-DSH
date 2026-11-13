@@ -357,6 +357,69 @@ def main() -> None:
 		               os.path.join(p12, "tests/e2e/test_contour_basics.py")))
 		_lib.check("--force --remove: свой тест проекта не тронут",
 		           os.path.isfile(os.path.join(p12, "tests/e2e/test_own.py")))
+
+		# ── 15. канон src/epf и src/erf (юнит #62, Т2) ──
+		# spec: docs/plans/external-epf-loop.md, «Готово» п. 2 — канон
+		# разметки, маршрут работы и проверка собранного в шаблонах AGENTS
+		# каталогов src/epf и src/erf. Ожидаемые литералы — из спеки и
+		# тикета Т2 (tickets/external-epf-loop/T2-src-epf-canon.md).
+		p13 = os.path.join(tmp, "epfcanon")
+		r = sh("structure", "--dir", p13, "--name", "epfproj")
+		_lib.check("Т2: скэфолд exit 0", r.returncode == 0, r.stderr[:200])
+		epf_p = Path(p13) / "src/epf/AGENTS.md"
+		erf_p = Path(p13) / "src/erf/AGENTS.md"
+		_lib.check("Т2: AGENTS каталогов развёрнуты",
+		           epf_p.is_file() and erf_p.is_file(), str(p13))
+		if r.returncode == 0 and epf_p.is_file() and erf_p.is_file():
+			epf = epf_p.read_text(encoding="utf-8")
+			erf = erf_p.read_text(encoding="utf-8")
+			_lib.check("Т2 epf: канон ChildItems с порядком секций",
+			           "AutoCommandBar → ChildItems → Attributes → Commands" in epf,
+			           epf[:200])
+			_lib.check("Т2 epf: маршрут сборки/разбора через 1c-ibcmd-delivery",
+			           "epf-load" in epf and "epf-dump" in epf
+			           and "1c-ibcmd-delivery" in epf, epf[:200])
+			_lib.check("Т2 epf: ссылка на reference epf-binary",
+			           "epf-binary" in epf and "1c-project-layout" in epf, epf[:200])
+			_lib.check("Т2 epf: маршрут каркаса и правки узлов",
+			           "epf-init" in epf and "unica.apply" in epf, epf[:200])
+			_lib.check("Т2 epf: разные UUID и примитивные колонки",
+			           "UUID корневого XML и `Forms/Форма.xml` — разные" in epf
+			           and "только примитивные типы" in epf, epf[:200])
+			_lib.check("Т2 epf: класс epf/erf назван", ".erf" in epf, epf[:200])
+			_lib.check("Т2 epf: привязка к классу обработок",
+			           "имя обработки" in epf, epf[:200])
+			_lib.check("Т2 epf: противоречащая строка про Unica удалена",
+			           "только через Unica" not in epf, epf[:200])
+			_lib.check("Т2 epf: финальный перевод строки",
+			           epf.endswith("\n"), repr(epf[-20:]))
+			_lib.check("Т2 erf: тот же канон разметки",
+			           "AutoCommandBar → ChildItems → Attributes → Commands" in erf,
+			           erf[:200])
+			_lib.check("Т2 erf: маршрут сборки/разбора и reference",
+			           "epf-load" in erf and "epf-binary" in erf
+			           and "1c-ibcmd-delivery" in erf
+			           and "1c-project-layout" in erf, erf[:200])
+			_lib.check("Т2 erf: каркас erf-init и правка unica.apply",
+			           "erf-init" in erf and "unica.apply" in erf, erf[:200])
+			_lib.check("Т2 erf: разные UUID и примитивные колонки",
+			           "UUID корневого XML и `Forms/Форма.xml` — разные" in erf
+			           and "только примитивные типы" in erf, erf[:200])
+			_lib.check("Т2 erf: привязка к классу отчётов",
+			           "имя отчёта" in erf and ".epf" in erf, erf[:200])
+			_lib.check("Т2 erf: противоречащая строка про Unica удалена",
+			           "только через Unica" not in erf, erf[:200])
+			_lib.check("Т2 erf: финальный перевод строки",
+			           erf.endswith("\n"), repr(erf[-20:]))
+			# invariant: skills/1c-project-layout/templates/agents — канон
+			# разметки и проверка собранного в обоих шаблонах совпадают
+			# посимвольно (класс epf/erf, «тот же канон» спеки); страховка
+			# от рассинхрона always-носителей.
+			_mark = "## Канон разметки формы"
+			_lib.check("Т2: канон в обоих шаблонах совпадает (без рассинхрона)",
+			           _mark in epf and _mark in erf
+			           and epf.split(_mark, 1)[1] == erf.split(_mark, 1)[1],
+			           "секция канона не найдена или тексты разошлись")
 	finally:
 		shutil.rmtree(tmp, ignore_errors=True)
 	sys.exit(_lib.summary())
