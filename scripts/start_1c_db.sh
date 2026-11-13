@@ -28,6 +28,11 @@
 #                   # (File= абсолютный или относительный от корня); прокси/
 #                   # Xvfb/WM и стоп-скрипты не гасятся
 #   start_1c_db.sh <project-root> --proxy-only / --stop-proxy
+#   start_1c_db.sh <project-root> --status   # состояние стенда без подъёма:
+#                   # процессы с базой (Usr/Pwd маскированы), владелец порта
+#                   # (ss), лок 1Cv8.1CL, stand-замок; --instance X — стенд
+#                   # инстанса. Тот же блок плагин onec_db дописывает к
+#                   # ошибке ожидания канала (юнит #56 Т6)
 #   start_1c_db.sh <project-root> --print-config  # url порт epf mode channel — и выход
 #   start_1c_db.sh <project-root> --instance base2  # стенд инстанса: связь,
 #                   # канал и дисплей — из .dsh/1c/db-instances.yaml
@@ -153,6 +158,7 @@ for arg in "$@"; do
 	--stop) MODE="stop" ;;
 	--proxy-only) MODE="proxy_only" ;;
 	--stop-proxy) MODE="stop_proxy" ;;
+	--status) MODE="status" ;;
 	--print-config) MODE="print_config" ;;
 	--instance)
 		if [[ $INSTANCE_SET -eq 1 ]]; then
@@ -222,6 +228,8 @@ for rel in "." "../../hooks" "../hooks"; do
 	cand="$(cd "$(dirname "${BASH_SOURCE[0]}")/$rel" 2>/dev/null && pwd || true)"
 	[[ -f "$cand/ib_lock.py" ]] && { HOOKS_DIR="$cand"; break; }
 done
+# Каталог самого стартера: сборка состояния (--status) живёт рядом с ним.
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
 
 # ── --stop --base: гашение всех клиентов базы по признаку File= в cmdline
 # (юнит #56 Т1). Клиенты, поднятые мимо скрипта (testpilot-клиенты), прежним
@@ -371,6 +379,25 @@ if [[ $BASE_SET -eq 1 ]]; then
 	# rc хелпера проходит как есть: 2 — конфигурационный отказ, 1 — клиенты
 	# пережили kill (конвенция exit 2 для «исправь вызов» сохранена)
 	stop_base_py "$BASE_CONN" || exit $?
+	exit 0
+fi
+
+# ── --status: состояние стенда без подъёма (юнит #56 Т6) ──
+# Сборка — scripts/db_status.py (один носитель: её же зовёт плагин onec_db
+# при таймауте ожидания канала). Ветка до конфигов, прокси и клиента:
+# нечитаемый контур не мешает диагностике, старт не зовётся. --instance
+# передаётся как есть — негодная запись отвергается сборкой (exit 2).
+if [[ $MODE == status ]]; then
+	COLLECTOR="$SELF_DIR/db_status.py"
+	if [[ ! -f "$COLLECTOR" ]]; then
+		echo "✗ нет $COLLECTOR — сборка состояния живёт рядом со стартером; поставь пакет контура целиком" >&2
+		exit 2
+	fi
+	if [[ -n "$INSTANCE" ]]; then
+		python3 "$COLLECTOR" "$ROOT" --instance "$INSTANCE" || exit $?
+	else
+		python3 "$COLLECTOR" "$ROOT" || exit $?
+	fi
 	exit 0
 fi
 
