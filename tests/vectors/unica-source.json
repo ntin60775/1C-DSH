@@ -843,7 +843,7 @@
     }
   },
   {
-    "id": "write-erf-source",
+    "id": "edit-erf-source",
     "describe": "edit в src/erf проходит: правка узлов внешних отчётов вне гейта",
     "call": {
       "tool": "edit",

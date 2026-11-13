@@ -9,7 +9,8 @@
  *
  * spec: Т2 — «паритет-тест `unica_source_gate` зелёный на корпусе кейсов
  * эталона: решение и класс причины совпадают»; Т8 — регрессия живёт в
- * векторах без python.
+ * векторах без python; Т5 (#62) — сужение гейта: внешние epf/erf вне
+ * охранного списка (docs/plans/external-epf-loop.md, «Готово» п. 5).
  * @module tests/parity/unica-source.spec
  */
 

@@ -32,6 +32,21 @@ export const SOURCE_PREFIXES: readonly string[] = [
   'tests/epf/',
 ]
 
+/**
+ * Каталоги сканирования BSL-правок для style/module-гейтов.
+ *
+ * Шире охранного `SOURCE_PREFIXES`: внешние `src/epf/` и `src/erf/` вне
+ * гейта исходников (каркас — файлами), но BSL-правки их узлов через
+ * `unica.apply` остаются под проверкой стиля и носителя — приоритет пака
+ * `1c-bsl-code-style` действует на любую BSL-правку. Разделение списков —
+ * решением оператора при исполнении Т5 спеки `external-epf-loop`.
+ */
+export const BSL_SCAN_PREFIXES: readonly string[] = [
+  ...SOURCE_PREFIXES,
+  'src/epf/',
+  'src/erf/',
+]
+
 /** Маркеры корня проекта 1С — имена файлов в каталоге. */
 export const PROJECT_MARKERS: readonly string[] = [
   'v8project.yaml',

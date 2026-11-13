@@ -1,6 +1,6 @@
 ---
 name: 1c-contour
-description: "Карта контура 1С-разработки под DSH поверх Unica 0.15 (unica.view/search/apply/check/docs/diff/run): исходники правятся только через unica.apply (план→запись), мутации требуют сверки с unica.docs (гейт), прод-контур fail-closed, стиль BSL — пак 1c-bsl-code-style. Применяй при любой работе с исходниками 1С (src/cf, src/cfe, src/epf, src/erf)."
+description: "Карта контура 1С-разработки под DSH поверх Unica 0.15 (unica.view/search/apply/check/docs/diff/run): исходники src/cf, src/cfe и tests/epf правятся только через unica.apply (план→запись), внешние epf/erf — каркас файлами по epf-init/erf-init, правка узлов unica.apply; мутации требуют сверки с unica.docs (гейт), прод-контур fail-closed, стиль BSL — пак 1c-bsl-code-style. Применяй при любой работе с исходниками 1С (src/cf, src/cfe, src/epf, src/erf)."
 whenToUse: "Любая работа в проекте 1С с Unica: чтение/правка метаданных и кода, сборка и загрузка, работа с базой, e2e-тесты, вопросы стиля/стандартов БСП/проектирования API."
 ---
 

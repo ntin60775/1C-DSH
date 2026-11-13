@@ -12,7 +12,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type { GateCall } from '../contract.js'
-import { normalizeSourcePath, SOURCE_PREFIXES } from '../paths.js'
+import { normalizeSourcePath, BSL_SCAN_PREFIXES } from '../paths.js'
 
 /** Заголовок правки файла в патче `apply_patch`. */
 export const PATCH_FILE_RE = /^\*\*\* (?:Update|Add) File: (.+)$/
@@ -191,13 +191,14 @@ function walkFiles(base: string): string[] {
 }
 
 /**
- * Все `.bsl` в канонических каталогах исходников дерева.
+ * Все `.bsl` в каталогах сканирования BSL (`BSL_SCAN_PREFIXES`: охранные
+ * каталоги плюс внешние epf/erf — их узлы правятся через `unica.apply`).
  * @param root - корень дерева.
  * @returns абсолютные пути.
  */
 export function bslFilesUnder(root: string): string[] {
   const files: string[] = []
-  for (const prefix of SOURCE_PREFIXES) {
+  for (const prefix of BSL_SCAN_PREFIXES) {
     const base = join(root, prefix.replace(/\/$/, ''))
     for (const relative of walkFiles(base)) {
       if (!relative.toLowerCase().endsWith('.bsl')) continue
@@ -208,7 +209,7 @@ export function bslFilesUnder(root: string): string[] {
 }
 
 /**
- * Свежие `.bsl` в канонических каталогах дерева.
+ * Свежие `.bsl` в каталогах сканирования BSL (`BSL_SCAN_PREFIXES`).
  *
  * Свежесть — кандидат на проверку после `unica.apply`, а не доказательство:
  * гейт носителя всё равно ищет в этих файлах текст плана.
@@ -220,7 +221,7 @@ export function bslFilesUnder(root: string): string[] {
 export function freshBslFiles(root: string, sinceMs: number, slackMs: number): string[] {
   const fresh: string[] = []
   const cutoff = sinceMs - slackMs
-  for (const prefix of SOURCE_PREFIXES) {
+  for (const prefix of BSL_SCAN_PREFIXES) {
     const base = join(root, prefix.replace(/\/$/, ''))
     for (const relative of walkFiles(base)) {
       if (!relative.toLowerCase().endsWith('.bsl')) continue

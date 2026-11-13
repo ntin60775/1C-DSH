@@ -3,21 +3,32 @@
  *
  * spec: docs/plans/external-epf-loop.md, «Готово» п. 5 — `src/epf` и
  * `src/erf` удалены из `SOURCE_PREFIXES` (остаток `src/cf`, `src/cfe`,
- * `tests/epf`); bash-ветка читает тот же список. Ожидаемые значения —
- * из спеки и тикета Т5 (tickets/external-epf-loop/T5-gate-invariant.md),
- * не из кода гейта.
+ * `tests/epf`); bash-ветка читает тот же список. Сканы style/module-гейтов
+ * читают `BSL_SCAN_PREFIXES` (охранный список плюс внешние epf/erf) —
+ * разделение перечислений решением оператора при исполнении Т5.
+ * Ожидаемые значения — из спеки и тикета Т5
+ * (tickets/external-epf-loop/T5-gate-invariant.md), не из кода гейта.
  * @module tests/unit/gates-t5.spec
  */
 
 import { rmSync } from 'node:fs'
+import { relative } from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import type { GateCall } from '../../src/contract.js'
+import { bslFilesUnder, freshBslFiles } from '../../src/gates/edits.js'
 import { evaluatePre } from '../../src/gates/unica-source.js'
-import { resolveProject, SOURCE_PREFIXES } from '../../src/paths.js'
+import { BSL_SCAN_PREFIXES, resolveProject, SOURCE_PREFIXES } from '../../src/paths.js'
 import { createGateState } from '../../src/state.js'
 import { createFixture } from '../helpers/fixture.js'
+
+/** Корни фикстур текущего теста — уборка и на красном прогоне. */
+const roots: string[] = []
+
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
 
 /** Собрать вызов инструмента. */
 function call(tool: string, args: unknown, cwd: string): GateCall {
@@ -58,9 +69,9 @@ describe('прямая правка внешних epf/erf проходит', ()
   for (const c of cases) {
     it(`${c.name} — allow`, () => {
       const fixture = createFixture()
+      roots.push(fixture.root)
       const decision = run(fixture, call(c.tool, c.args, fixture.tree))
       expect(decision).toMatchObject({ kind: 'allow', code: 'none' })
-      rmSync(fixture.root, { recursive: true, force: true })
     })
   }
 })
@@ -82,9 +93,37 @@ describe('защита cf/cfe/tests-epf не ослаблена', () => {
   for (const c of cases) {
     it(`${c.name} — deny ${c.code}`, () => {
       const fixture = createFixture()
+      roots.push(fixture.root)
       const decision = run(fixture, call(c.tool, c.args, fixture.tree))
       expect(decision).toMatchObject({ kind: 'deny', code: c.code })
-      rmSync(fixture.root, { recursive: true, force: true })
     })
   }
+})
+
+describe('сканирующий список BSL_SCAN_PREFIXES', () => {
+  it('состав: охранный список плюс внешние epf/erf', () => {
+    expect([...BSL_SCAN_PREFIXES]).toEqual(['src/cf/', 'src/cfe/', 'tests/epf/', 'src/epf/', 'src/erf/'])
+  })
+
+  it('bslFilesUnder находит .bsl внешних epf/erf', () => {
+    const fixture = createFixture({
+      write: {
+        'tree/src/epf/Обработка/Ext/ObjectModule.bsl': '// модуль обработки\n',
+        'tree/src/erf/Отчёт/Ext/ObjectModule.bsl': '// модуль отчёта\n',
+      },
+    })
+    roots.push(fixture.root)
+    const files = bslFilesUnder(fixture.tree).map((path) => relative(fixture.tree, path))
+    expect(files).toContain('src/epf/Обработка/Ext/ObjectModule.bsl')
+    expect(files).toContain('src/erf/Отчёт/Ext/ObjectModule.bsl')
+  })
+
+  it('freshBslFiles возвращает свежий .bsl внешней обработки', () => {
+    const fixture = createFixture({
+      write: { 'tree/src/epf/Обработка/Ext/ObjectModule.bsl': '// модуль обработки\n' },
+    })
+    roots.push(fixture.root)
+    const fresh = freshBslFiles(fixture.tree, Date.now(), 60_000)
+    expect(fresh).toContain('src/epf/Обработка/Ext/ObjectModule.bsl')
+  })
 })
