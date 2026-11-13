@@ -3,7 +3,7 @@ node_type: index
 title: Спеки юнитов контура
 service: _platform
 status: active
-updated: 2026-11-12
+updated: 2026-11-13
 ---
 
 # Спеки юнитов
@@ -22,6 +22,9 @@ updated: 2026-11-12
   (ишью #62): Т1, Т3 приняты; дальше Т2, Т4, Т5, Т6.
 - [e2e-client-lifecycle.md](e2e-client-lifecycle.md) — жизненный цикл
   тест-клиентов e2e (ишью #56): Т1–Т5 приняты; дальше Т6–Т10.
+- [team-delivery-preset-ids.md](team-delivery-preset-ids.md) — шов
+  доставки контура для стековых пресетов 1С (юнит `team-profiles`
+  ntin, тикет 05): T1 слит 13.11, приёмка у оператора.
 
 ## Завершённые
 
