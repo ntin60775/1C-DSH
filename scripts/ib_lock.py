@@ -118,16 +118,47 @@ def stand_lock_key(connection: str, tree: str) -> str:
 	"""Ключ stand-замка: stand: + нормализация без Usr=/Pwd=.
 
 	Пароль в ключ не входит: смена пароля в local-слое не должна создавать
-	второй стенд на ту же базу. Пустые сегменты (хвост «;») отбрасываются.
+	второй стенд на ту же базу. Учётки срезаются до нормализации и с учётом
+	кавычек: `Pwd="p1;p2"` — один сегмент, хвост пароля в ключ не течёт.
 	"""
-	norm = ";".join(part for part in _normalized_connection(connection, tree).split(";")
-	                if part and not part.startswith(("usr=", "pwd=")))
+	parts = [part for part in split_connection(connection)
+	         if part.strip().lower()[:4] not in ("usr=", "pwd=")]
+	norm = ";".join(part for part in _normalized_connection(";".join(parts), tree).split(";")
+	                if part)
 	return hashlib.sha1(f"stand:{norm}".encode("utf-8")).hexdigest()
 
 
-def _without_credentials(connection: str) -> str:
-	"""Строка подключения без Usr=/Pwd=: пароль не живёт в файлах состояния."""
-	return ";".join(part for part in connection.split(";")
+def split_connection(connection: str):
+	"""Сегменты строки соединения: `;` внутри кавычек сегмент не режет.
+
+	Значение с `;` приходит в кавычках (`Pwd="p1;p2"`: стартер собирает
+	строку из password записи инстанса). Рез по первому `;` напечатал бы
+	хвост пароля отдельным сегментом — маскирование обязано понимать кавычки.
+	"""
+	parts, buf, quote = [], [], ""
+	for char in connection:
+		if quote:
+			buf.append(char)
+			if char == quote:
+				quote = ""
+			continue
+		if char in "'\"":
+			quote = char
+			buf.append(char)
+			continue
+		if char == ";":
+			parts.append("".join(buf))
+			buf = []
+			continue
+		buf.append(char)
+	parts.append("".join(buf))
+	return parts
+
+
+def without_credentials(connection: str) -> str:
+	"""Строка подключения без Usr=/Pwd=: пароль не живёт ни в файлах
+	состояния, ни в выводе диагностики (один носитель маскирования)."""
+	return ";".join(part for part in split_connection(connection)
 	                if part.strip().lower()[:4] not in ("usr=", "pwd="))
 
 
@@ -188,7 +219,7 @@ def acquire_base_lock(tree: str, connection: str, operation: str, sid: str,
 			return "busy", existing
 	path.parent.mkdir(parents=True, exist_ok=True)
 	lock = {
-		"connection": _without_credentials(connection),
+		"connection": without_credentials(connection),
 		"tree": tree,
 		"session_id": sid,
 		"operation": operation,
@@ -238,7 +269,7 @@ def acquire_stand_lock(tree: str, connection: str, pid: int, operation: str = "s
 	path = _stand_lock_path(connection, tree)
 	lock = {
 		"kind": "stand",
-		"connection": _without_credentials(connection),
+		"connection": without_credentials(connection),
 		"tree": tree,
 		"pid": pid,
 		"operation": operation,

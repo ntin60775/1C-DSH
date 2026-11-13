@@ -23,7 +23,8 @@ function writeLock(path: string, lock: Record<string, unknown>): void {
   writeFileSync(path, `${JSON.stringify(lock, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
 }
 
-/** Строка подключения без Usr=/Pwd= — как `_without_credentials` стартера. */
+/** Строка подключения без Usr=/Pwd= — правило маскирования контура
+ * (`ib_lock.without_credentials`; на входе тестов кавычек с `;` нет). */
 function withoutCredentials(connection: string): string {
   return connection
     .split(';')

@@ -5,25 +5,27 @@
 плагин onec_db при таймауте ожидания канала (дописывает блок к ошибке).
 Своей копии сборки у вызывающих нет.
 
-Что собирается (четыре группы — по ним читают таймаут «ожидание
-потребителя 1С»):
+Что собирается (четыре группы — по ним читают таймаут канала, в логе
+тулкита это «Timeout waiting for the 1C consumer»):
 
 1. процессы с базой в cmdline — `File=`/`Srvr=` в argv, Usr/Pwd маскированы
-   (`ib_lock._without_credentials`: строка печатается без кредов вовсе);
+   (`ib_lock.without_credentials`: строка печатается без кредов вовсе);
 2. владелец порта — `ss -tlnp` по порту из url, прокси тулкита или
    посторонний процесс;
 3. лок сеанса `1Cv8.1CL` — есть/нет в каталоге файловой базы;
 4. stand-замок — живой держатель (pid клиента) либо свободен.
 
 Входы контура (url, инстансы) читаются раскладкой `contour_paths`
-(`.dsh/1c` → `.dsh`): адрес — фактический, с локальным оверлеем порта
-(дрейф мультистенда). Сборка ничего не гасит и не поднимает, стенд не
-требует: недоступное честно помечается «не проверен», выход 0. Выход 2 —
-вызов негоден (неизвестный инстанс, разбор `db-instances.yaml`).
+(`.dsh/1c`, затем промежуточная `.dsh`): адрес — фактический, с локальным
+оверлеем порта (дрейф мультистенда). Сборка ничего не гасит и не поднимает,
+стенд не требует: недоступное честно помечается «не проверен». Коды
+выхода: 0 — состояние снято (в том числе с пробелами), 2 — вызов негоден
+(неизвестный инстанс, разбор `db-instances.yaml`, нет корня), 1 — сборка
+сорвалась (вызывающий показывает текст причины).
 
 Печатать креды запрещено: stand-замок и состояние замков пишутся
 `ib_lock` без Usr/Pwd, cmdline клиентов маскируется на чтении (правило
-маскирования одно — `ib_lock._without_credentials`).
+маскирования одно — `ib_lock.without_credentials`, кавычки с `;` целы).
 
 Граница видимости: `/proc` и `ss` показывают процессы и владельцев портов
 в пределах пользователя — чужой клиент не читается, у чужого слушателя
@@ -52,6 +54,12 @@ def _fail(message: str) -> None:
 
 # ── url и привязка базы ──
 
+def _note_input(notes: list, found, error: str, tail: str) -> None:
+	"""Заметка о нечитаемом входе: имя файла уже названо в тексте `load_json`."""
+	reason = error.split(": ", 1)[-1] if ": " in error else error
+	notes.append(f"{found[1]}: {reason} — {tail}")
+
+
 def _base_url(root: Path, notes: list) -> str:
 	"""Желаемый url из contour.json; локальный оверлей порта — как в контуре."""
 	contour = {}
@@ -59,14 +67,14 @@ def _base_url(root: Path, notes: list) -> str:
 	if found:
 		data, error = contour_paths.load_json(found[0])
 		if error:
-			notes.append(f"{found[1]}: {error} — url по умолчанию")
+			_note_input(notes, found, error, "url по умолчанию")
 		contour = data or {}
 	local = {}
 	found = contour_paths.find_input(root, "contour.local.json")
 	if found:
 		data, error = contour_paths.load_json(found[0])
 		if error:
-			notes.append(f"{found[1]}: {error} — дрейф порта не учтён")
+			_note_input(notes, found, error, "дрейф порта не учтён")
 		local = data or {}
 	return contour_paths.actual_db_url(contour, local)
 
@@ -135,7 +143,7 @@ def _resolve(root: Path, instance: str, notes: list):
 	entries, error = _instances(root)
 	if error:
 		notes.append(f"db-instances.yaml не разобран: {error}")
-	elif entries is not None:
+	else:
 		matches = [entry for entry in entries
 		           if (entry["channel"] or entry["name"]) == channel]
 		if len(matches) == 1 and matches[0]["connection"]:
@@ -151,7 +159,7 @@ def _resolve(root: Path, instance: str, notes: list):
 
 def _file_base(conn: str, root: Path):
 	"""Каталог файловой базы из строки соединения; None — серверная/пустая."""
-	for part in conn.split(";"):
+	for part in ib_lock.split_connection(conn):
 		if part.strip().lower().startswith("file="):
 			value = part[5:].strip().strip('"')
 			if not value:
@@ -163,7 +171,7 @@ def _file_base(conn: str, root: Path):
 
 def _masked_connection(conn: str) -> str:
 	"""Строка соединения без Usr/Pwd (читается файлом — как пишет ib_lock)."""
-	return ib_lock._without_credentials(conn).strip()
+	return ib_lock.without_credentials(conn).strip()
 
 
 # ── процессы с базой в cmdline ──
@@ -205,7 +213,7 @@ def _on_base(connection: str, base) -> bool:
 	"""
 	if base is None:
 		return False
-	for part in connection.split(";"):
+	for part in ib_lock.split_connection(connection):
 		if part.strip().lower().startswith("file="):
 			value = part[5:].strip().strip('"')
 			return bool(value) and value.startswith("/") \
@@ -248,19 +256,25 @@ def _processes(base=None) -> list:
 
 # ── владелец порта ──
 
-def _port_owner(port):
-	"""(pid, comm, is_proxy) либо (None, причина) — владелец LISTEN-порта."""
+def _port_owner(port) -> dict:
+	"""Владелец LISTEN-порта одной формой.
+
+	`{"note": …}` — владельца не назвать (свободен в видимых LISTEN,
+	ss недоступен, чужой пользователь); `{"pid", "comm", "is_proxy",
+	"note"}` — владелец виден, `is_proxy`: True/False/None (cmdline не
+	прочитан).
+	"""
 	if not shutil.which("ss"):
-		return None, "ss недоступен — владелец не определён"
+		return {"note": "ss недоступен — владелец не определён"}
 	try:
 		done = subprocess.run(["ss", "-tlnp"], capture_output=True,
 		                      text=True, timeout=10)
 	except (OSError, subprocess.TimeoutExpired) as error:
-		return None, f"ss не отработал ({type(error).__name__})"
+		return {"note": f"ss не отработал ({type(error).__name__})"}
 	lines = [line for line in done.stdout.splitlines()
 	         if line.startswith("LISTEN") and re.search(rf":{port}\s", line)]
 	if not lines:
-		return None, "свободен"
+		return {"note": "свободен (в видимых LISTEN)"}
 	pids = []
 	for line in lines:
 		for pid in re.findall(r"pid=(\d+)", line):
@@ -269,16 +283,16 @@ def _port_owner(port):
 	if not pids:
 		# сокет чужого пользователя: ss показывает LISTEN без pid — занятый
 		# порт «свободным» не объявляется
-		return None, "занят, владелец не виден (ss без pid — чужой пользователь)"
+		return {"note": "занят, владелец не виден (ss без pid — чужой пользователь)"}
 	pid = pids[0]
 	others = f" (+{len(pids) - 1})" if len(pids) > 1 else ""
-	is_proxy = False
+	is_proxy = None
 	try:
 		raw = Path(f"/proc/{pid}/cmdline").read_bytes()
 		is_proxy = b"onec_mcp_toolkit_proxy" in raw
 	except OSError:
-		is_proxy = None
-	return pid, _comm(pid) + others, is_proxy
+		pass
+	return {"pid": pid, "comm": _comm(pid) + others, "is_proxy": is_proxy}
 
 
 # ── отчёт ──
@@ -297,14 +311,14 @@ def _report(root: Path, instance: str) -> int:
 		print("порт: в url нет номера — владелец не определён")
 	else:
 		owner = _port_owner(split.port)
-		if owner[0] is None:
-			print(f"порт {split.port}: {owner[1]}")
+		if "pid" not in owner:
+			print(f"порт {split.port}: {owner['note']}")
 		else:
-			pid, comm, is_proxy = owner
-			mark = ("прокси тулкита" if is_proxy is True
-			        else "не прокси тулкита" if is_proxy is False
+			mark = ("прокси тулкита" if owner["is_proxy"] is True
+			        else "не прокси тулкита" if owner["is_proxy"] is False
 			        else "род процесса не читается")
-			print(f"порт {split.port}: слушает pid {pid} ({comm}) — {mark}")
+			print(f"порт {split.port}: слушает pid {owner['pid']} "
+			      f"({owner['comm']}) — {mark}")
 
 	base = _file_base(conn, root)
 	processes = _processes(base)
@@ -334,6 +348,9 @@ def _report(root: Path, instance: str) -> int:
 
 	if not conn:
 		print("stand-замок: не проверен (привязка базы не резолвится)")
+	elif base is None:
+		print("stand-замок: не применим (серверная база — гард ставится "
+		      "только файловым)")
 	else:
 		lock = ib_lock.stand_lock_status(str(root), conn)
 		if lock:
