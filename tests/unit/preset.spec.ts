@@ -186,6 +186,10 @@ describe('раскладка и скиллы', () => {
   })
 })
 
+/**
+ * spec: team-profiles «Готово» 4; тикет team-profiles/05 (ntin) и спека
+ * team-delivery-preset-ids «Готово» 1–2 — фильтр доставки как набор id.
+ */
 describe('presetIdSet', () => {
   /** Собрать предупреждения набора. */
   const collect = () => {

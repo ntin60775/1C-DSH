@@ -1,0 +1,4 @@
+# Проверка имён 1C-DSH (поставляемый слой), команда из AGENTS.md
+# cwd: /home/prog7/home/dev/personal/1C-DSH
+$ PAT=$(cat .forbidden-names.txt); grep -rnE "$PAT" --include='*.md' ... --exclude-dir=plans --exclude-dir=ops
+ИТОГ: чисто
