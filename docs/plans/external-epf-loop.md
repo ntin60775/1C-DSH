@@ -2,7 +2,7 @@
 node_type: plan
 title: Цикл внешних epf — открытие в тест-клиенте, окна платформы, канон сборки
 status: approved
-updated: 2026-11-08
+updated: 2026-11-13
 issue: https://github.com/ntin60775/1c-zcode/issues/62
 ---
 
@@ -26,12 +26,13 @@ issue: https://github.com/ntin60775/1c-zcode/issues/62
    - открытие внешнего epf в тест-клиенте — `launch_client` с
      `extra_args: ["/Execute", "<путь.epf>"]`; через `e1cib/…` внешние
      не адресуются; файловый диалог — fallback с оговоркой про клавиатуру;
-   - каталог окон платформы: ErrorWindow (текст по декорациям;
-     `tc_app get_current_error` — канон чтения, **не проверено** живьём),
-     вендорское модальное «Отчет об ошибке» (close-only,
-     `unsupported_receiver` на `get_context`), «Предупреждение»/вопрос =
-     `form_name="MessageBox"` с заголовком окна «1С:Предприятие»,
-     гасится `answer_dialog`, оракул — смена активного окна;
+   - каталог окон платформы (раздел «Навигация и окна»): ErrorWindow
+     (текст по декорациям; `tc_app get_current_error` — канон чтения,
+     **не проверено** живьём), вендорское модальное «Отчет об ошибке»
+     (close-only, `unsupported_receiver` на `get_context`),
+     «Предупреждение»/вопрос = `form_name="MessageBox"` с заголовком
+     окна «1С:Предприятие», гасится `answer_dialog`, оракул — смена
+     активного окна;
    - строка «Сочетание клавиш»: граница по среде — при клиенте в
      отдельном Xvfb проба MCP-клавиатуры дала
      `keyboard_window_not_foreground`, подтверждения через
@@ -62,8 +63,8 @@ issue: https://github.com/ntin60775/1c-zcode/issues/62
    файлов вместо 8+, «Ошибка формата потока» на `ВнешниеОбработки.
    Создать`, dump обрывается без «Выгрузка завершена»); ссылка из
    `skills/1c-project-layout/SKILL.md` (конвенция references/).
-4. `skills/1c-db-data/SKILL.md` (раздел «Обновление обработки (epf)»,
-   строки 290–308): семантика доверия уточнена — диалог поднимается на
+4. `skills/1c-db-data/SKILL.md` (раздел «Обновление обработки (epf)»):
+   семантика доверия уточнена — диалог поднимается на
    каждый новый бинарник (контент), не только на смену пути; симптом
    недоставленного подтверждения — execute-каналы висят до 180 с
    (выглядит как флап стенда); кросс-ссылка на 1c-testpilot.
@@ -124,13 +125,15 @@ issue: https://github.com/ntin60775/1c-zcode/issues/62
   форма (`<Items>` вместо `<ChildItems>`), XDTO-отказ на колонках
   `cfg:CatalogRef.*`, открытие epf через `/Execute`, окна платформы,
   «Предупреждение безопасности» на каждый бинарник.
-- Факты: `SOURCE_PREFIXES` — `hooks/contour_common.py:20–28`;
-  epf-init («Сформируй… файловыми средствами», сборка `unica.run make`)
-  — `epf-init/SKILL.md:13–19`; erf-init — то же (`erf-init/SKILL.md:10`);
-  скрипты и roundtrip — `skills/1c-ibcmd-delivery/SKILL.md:406–436`;
-  спека юники — ChildItems (§6.3), отказ ссылочных колонок (примечание
-  к таблице типов); раскладка — `scaffold.py:90` (`src/epf` → шаблон
-  src_epf).
+- Факты (носители DSH; в ZCode-эпоху — `hooks/contour_common.py`):
+  `SOURCE_PREFIXES` — `src/paths.ts`; epf-init («Сформируй… файловыми
+  средствами», сборка `unica.run make`) и erf-init — скиллы юники
+  установленной копии 0.15.0-rc.5 (`~/.local/share/unica/skills`);
+  скрипты и roundtrip — раздел «Внешние обработки и отчёты» скилла
+  `1c-ibcmd-delivery`; спека юники — `references/specs/1c-epf-spec.md`,
+  ChildItems (§6.3), отказ ссылочных колонок (примечание к таблице
+  типов); раскладка — `skills/1c-project-layout/scripts/scaffold.py`
+  (`src/epf` → шаблон src_epf).
 - Решения оператора 08.11: маршрут epf — сборка/разбор по
   регламентированному пути скриптов, код — юника, дизайнер отдельным
   путём не канонизируется; носитель разбора v8-контейнера — src_epf.md +
