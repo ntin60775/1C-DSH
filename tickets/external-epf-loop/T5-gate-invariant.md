@@ -74,3 +74,33 @@ roundtrip скриптов и разбор v8-контейнера (Т3). Спе
    перечень носителей соответствует списку `SOURCE_PREFIXES`.
 7. Инвариант: полный набор тестов хуков зелёный на worktree и на
    слитом main.
+
+## Прогон ship (13.11)
+
+- Адаптация под DSH (запись в `docs/ops/continue.md`): тикет написан в
+  ZCode-носителях (`hooks/contour_common.py`,
+  `tests/test_unica_source_gate.py`, docstring `unica_source_gate.py`);
+  гейт контура — нативный TS (`src/paths.ts`,
+  `src/gates/unica-source.ts`), регрессия — векторы
+  `tests/vectors/unica-source.json` + юнит-тесты (правило AGENTS.md).
+  Состав изменений по тикету сохранён: сужение списка, новые кейсы
+  «пропуск» для epf/erf (write/edit/apply_patch/bash), инварианты
+  cf/cfe/tests-epf, согласование носителей-описаний. Эскалации —
+  `.dsh/1c/unica-gate-escalations.txt` (раскладка DSH, не `.zcode`).
+- Worktree `epf-gate-t5` от базового `752fa45`; работа `3fc40ff`.
+- Краснота на базе: `pnpm test` в worktree до правки гейта — exit 1,
+  18 FAIL новых ожиданий «пропуск» (базовый гейт отвечает deny),
+  307 OK прежних; инварианты cf/cfe/tests-epf зелёные на базе
+  (`/tmp/t5-red.log`).
+- Расхождения (разбор прогона): не было; краснота на базе — ожидаемая.
+- Зелёный прогон после сужения: vitest 325/325 (19 файлов), typecheck
+  зелёный (`/tmp/t5-green.log`, `/tmp/t5-typecheck.log`). Демо-путь —
+  verbose-прогон векторов и юнитов Т5: 72/72 (`/tmp/t5-demo.log`):
+  write в `src/epf` — allow на новом дереве (deny на базовом), write в
+  `src/cf` — deny на обоих.
+- Линт 18/18 контурных и 9/9 процессных без замечаний, KB 0 ERR /
+  7 WARN (I2 approved — решение Т9); гигиена текстов чистая.
+- Критерий 4 в DSH доказывается составом `SOURCE_PREFIXES` (юнит-тест
+  «остаток: src/cf, src/cfe, tests/epf») и корпусом векторов:
+  буквальный греп `src/epf/` в `src/paths.ts` задевает поясняющий
+  комментарий, не список.
