@@ -144,3 +144,13 @@ roundtrip скриптов и разбор v8-контейнера (Т3). Спе
   frontmatter в `docs/UNICA-GATE-BASH-WRITE-SPEC.md`, python-имя в
   `src/contour.ts:5`, наследственное совпадение гигиены
   `tests/test_doctor.py:535`.
+
+## Приёмка
+
+Принят оператором 13.11 (ask-вопрос в сессии ship). Слияние `4f30078`;
+запись состояния — `docs/ops/continue.md`. Решение оператора по
+развилке P2 — разделение перечислений (охранный `SOURCE_PREFIXES` и
+сканирующий `BSL_SCAN_PREFIXES`). Критерий 7 закрыт пост-merge-прогоном
+на main: vitest 332/332 (19 файлов), python 20/20 rc=0, typecheck и
+build зелёные, `lib/` пересобран. Следующее по юниту — Т4; Т6 —
+контроль после Т1–Т5.
