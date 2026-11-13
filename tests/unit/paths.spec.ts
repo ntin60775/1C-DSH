@@ -65,8 +65,6 @@ describe('normalizeSourcePath', () => {
   const cases = [
     ['src/cf/CommonModules/Модуль.bsl', 'src/cf/CommonModules/Модуль.bsl'],
     ['src/cfe/Расширение/Module.bsl', 'src/cfe/Расширение/Module.bsl'],
-    ['src/epf/Обработка.epf', 'src/epf/Обработка.epf'],
-    ['src/erf/Отчёт.erf', 'src/erf/Отчёт.erf'],
     ['tests/epf/Тест.epf', 'tests/epf/Тест.epf'],
   ] as const
 
@@ -78,6 +76,15 @@ describe('normalizeSourcePath', () => {
       rmSync(fixture.root, { recursive: true, force: true })
     })
   }
+
+  // spec: docs/plans/external-epf-loop.md, «Готово» п. 5 — внешние epf/erf
+  // выпали из SOURCE_PREFIXES: каркас файлами по epf-init/erf-init.
+  it('внешние epf/erf вне списка исходников гейта', () => {
+    const fixture = createFixture()
+    expect(normalizeSourcePath('src/epf/Обработка.epf', fixture.tree)).toBeNull()
+    expect(normalizeSourcePath('src/erf/Отчёт.erf', fixture.tree)).toBeNull()
+    rmSync(fixture.root, { recursive: true, force: true })
+  })
 
   it('файл вне исходников не трогает', () => {
     const fixture = createFixture()

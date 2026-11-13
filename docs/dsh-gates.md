@@ -34,7 +34,7 @@ MCP-имена нормализованы под контракт function-name
 
 | Гейт | События | Решение и класс причины |
 |---|---|---|
-| `unica_source_gate` | pre + post | правка исходников 1С только через Unica: прямая запись — deny `source-edit`, bash-запись — deny `source-bash`; ворктри без инициализации — deny `worktree-uninit`; правило пересборки из `contour.json` — deny `rebuild-rule`; инфобаза занята другим деревом — deny `ib-lock`; путь-разрешение строкой allowlist'а эскалаций (действует, пока строка не убрана) — allow `escalation-granted` |
+| `unica_source_gate` | pre + post | правка исходников 1С (`src/{cf,cfe}`, `tests/epf`) только через Unica; внешние `src/epf`/`src/erf` вне гейта (каркас — файлами по `epf-init`/`erf-init`, спека `external-epf-loop`): прямая запись — deny `source-edit`, bash-запись — deny `source-bash`; ворктри без инициализации — deny `worktree-uninit`; правило пересборки из `contour.json` — deny `rebuild-rule`; инфобаза занята другим деревом — deny `ib-lock`; путь-разрешение строкой allowlist'а эскалаций (действует, пока строка не убрана) — allow `escalation-granted` |
 | `doc_gate` | pre + post | мутация метаданных/кода без сверки с документацией платформы — deny `docs-unverified`; сверка (`unica.docs`) ведёт флаг сессии, мутация метаданных флаг сбрасывает |
 | `mcp_gate` | pre | изменяющий вызов тест-контура в прод-контуре — deny `mcp-unsafe` (fail-closed: нечитаемый маркер контура = прод); тест-контур — allow; stand-замок базы — deny `stand-lock`; REST-вызовы через bash распознаются |
 | `bsl_style_gate` | post | чекер пака `1c-bsl-code-style`: нарушения в изменённых строках — block `bsl-style` («исправь и повтори»); фоновые нарушения вне правки — заметка (не блокируют); пред-чек плана `unica.apply` до записи — advisory; приоритет пака над стандартами и стат-анализом |
@@ -45,6 +45,13 @@ MCP-имена нормализованы под контракт function-name
 | `session_clean` | created | выметание просроченных замков инфобаз и файлов состояния старше 7 дней |
 | `session_context` | created | контекст старта: проект, раскладка, ворктри — сообщением в сессию |
 | `kd_session_start` | created | станция `1c-kd`: станции нет — подъём; станция есть — pid не меняется |
+
+Граница списков исходников (Т5, решение оператора): охранный
+`SOURCE_PREFIXES` (`src/{cf,cfe}`, `tests/epf`) читают гейт исходников и
+файловая ветка doc-гейта — каркас внешних epf/erf файлами свободен,
+мутации `unica.apply` остаются под сверкой. Сканирующий `BSL_SCAN_PREFIXES`
+(плюс `src/epf`, `src/erf`) читают style/module-гейты: BSL-правки узлов
+внешних через `unica.apply` остаются под проверкой стиля и носителя.
 
 ## Входы
 

@@ -1,6 +1,6 @@
 ---
 name: 1c-contour
-description: "Карта контура 1С-разработки под DSH поверх Unica 0.15 (unica.view/search/apply/check/docs/diff/run): исходники правятся только через unica.apply (план→запись), мутации требуют сверки с unica.docs (гейт), прод-контур fail-closed, стиль BSL — пак 1c-bsl-code-style. Применяй при любой работе с исходниками 1С (src/cf, src/cfe, src/epf, src/erf)."
+description: "Карта контура 1С-разработки под DSH поверх Unica 0.15 (unica.view/search/apply/check/docs/diff/run): исходники src/cf, src/cfe и tests/epf правятся только через unica.apply (план→запись), внешние epf/erf — каркас файлами по epf-init/erf-init, правка узлов unica.apply; мутации требуют сверки с unica.docs (гейт), прод-контур fail-closed, стиль BSL — пак 1c-bsl-code-style. Применяй при любой работе с исходниками 1С (src/cf, src/cfe, src/epf, src/erf)."
 whenToUse: "Любая работа в проекте 1С с Unica: чтение/правка метаданных и кода, сборка и загрузка, работа с базой, e2e-тесты, вопросы стиля/стандартов БСП/проектирования API."
 ---
 
@@ -31,11 +31,14 @@ view/check/diff (перепроверка)`. План `apply` не меняет 
 
 ## Инварианты (исполняются гейтами)
 
-1. **Исходники 1С правятся только через Unica** (`mcp__unica__*`). Прямая
-   правка `write`/`edit`/`sed -i`/перенаправления блокируется гейтом
-   `unica-source-gate`. Разовая прямая правка, которую поверхность не
-   выражает, — через `.dsh/1c/unica-gate-escalations.txt` (одна строка =
-   путь относительно корня дерева; после правки строку убрать).
+1. **Исходники 1С (`src/{cf,cfe}`, `tests/epf`) правятся только через
+   Unica** (`mcp__unica__*`). Прямая правка `write`/`edit`/`sed -i`/
+   перенаправления блокируется гейтом `unica-source-gate`. Внешние
+   epf/erf вне гейта: каркас — файлами по `epf-init`/`erf-init`, правка
+   узлов — `unica.apply` (канон — AGENTS каталогов `src/epf` и `src/erf`).
+   Разовая прямая правка, которую поверхность не выражает, — через
+   `.dsh/1c/unica-gate-escalations.txt` (одна строка = путь относительно
+   корня дерева; после правки строку убрать).
 2. **Мутация — только после сверки с документацией** (гейт
    `docs-before-design`): перед `unica.apply`/`unica.run {op: push|upload|
    apply|reset}` в сессии нужен непустой вызов `unica.docs` (или

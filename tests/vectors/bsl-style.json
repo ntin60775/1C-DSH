@@ -210,5 +210,60 @@
         }
       }
     ]
+  },
+  {
+    "id": "style-execute-epf-blocks",
+    "describe": "исполнение плана по внешней обработке проверяет src/epf: скан BSL шире охранного списка",
+    "gate": "bsl-style",
+    "fixture": {
+      "write": {
+        "tree/src/epf/Обработка/Ext/ObjectModule.bsl": "Процедура А()\n\tПлохо();\nКонецПроцедуры\n"
+      }
+    },
+    "steps": [
+      {
+        "phase": "post",
+        "call": {
+          "tool": "mcp__unica__apply",
+          "args": {
+            "args": {
+              "ops": [
+                {
+                  "op": "code.replace",
+                  "args": {
+                    "at": "ExternalDataProcessor.Обработка.ObjectModule.Body",
+                    "text": "\tПлохо();"
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "result": {
+          "isError": false
+        },
+        "expect": {
+          "decision": "accept"
+        }
+      },
+      {
+        "phase": "post",
+        "call": {
+          "tool": "mcp__unica__apply",
+          "args": {
+            "args": {
+              "executionToken": "tok"
+            }
+          }
+        },
+        "result": {
+          "isError": false
+        },
+        "expect": {
+          "decision": "block",
+          "code": "bsl-style"
+        }
+      }
+    ]
   }
 ]

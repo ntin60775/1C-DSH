@@ -545,5 +545,46 @@
         }
       }
     ]
+  },
+  {
+    "id": "doc-file-epf-allowed",
+    "describe": "файловая правка внешней обработки без сверки проходит: каркас файлами, src/epf вне файловой ветки doc-гейта",
+    "gate": "doc",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "write",
+          "args": {
+            "file_path": "src/epf/Обработка/Ext/ObjectModule.bsl",
+            "content": ""
+          }
+        },
+        "expect": {
+          "decision": "allow"
+        }
+      }
+    ]
+  },
+  {
+    "id": "doc-file-erf-allowed",
+    "describe": "файловая правка внешнего отчёта без сверки проходит: src/erf вне файловой ветки doc-гейта",
+    "gate": "doc",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": {
+          "tool": "edit",
+          "args": {
+            "file_path": "src/erf/Отчёт/Ext/ObjectModule.bsl",
+            "old_string": "a",
+            "new_string": "b"
+          }
+        },
+        "expect": {
+          "decision": "allow"
+        }
+      }
+    ]
   }
 ]

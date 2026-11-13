@@ -45,6 +45,14 @@ describe('bashWritesToSource', () => {
     "sed -i 's/a/b/ /tmp/w.bsl",
     'sed -i \'s/a/b/\' src/docs/readme.md',
     'cat src/cf/CommonModules/Модуль.bsl',
+    // spec: docs/plans/external-epf-loop.md, «Готово» п. 5 — bash-ветка
+    // читает тот же SOURCE_PREFIXES: внешние epf/erf вне гейта.
+    'sed -i \'s/a/b/\' src/epf/Обработка/epf.epf',
+    'echo x > src/erf/Отчёт/erf.erf',
+    // Неразбираемый вызов (незакрытая кавычка) с упоминанием src/epf:
+    // fail-closed legacyHit читает суженный список — упоминание внешнего
+    // дерева больше не блокирует (пара к bash-unbalanced-with-src).
+    "sed -i 's/a/b/ /tmp/w.bsl # src/epf/",
   ]
 
   for (const command of passing) {

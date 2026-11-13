@@ -830,7 +830,7 @@
   },
   {
     "id": "write-epf-source",
-    "describe": "write обработки src/epf блокируется",
+    "describe": "write в src/epf проходит: каркас внешних обработок — файлами (сужение гейта)",
     "call": {
       "tool": "write",
       "args": {
@@ -839,16 +839,12 @@
       }
     },
     "expect": {
-      "decision": "deny",
-      "code": "source-edit",
-      "reasonIncludes": [
-        "Файл: src/epf/"
-      ]
+      "decision": "allow"
     }
   },
   {
-    "id": "write-erf-source",
-    "describe": "write отчёта src/erf блокируется",
+    "id": "edit-erf-source",
+    "describe": "edit в src/erf проходит: правка узлов внешних отчётов вне гейта",
     "call": {
       "tool": "edit",
       "args": {
@@ -858,10 +854,95 @@
       }
     },
     "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "edit-epf-module",
+    "describe": "edit модуля внешней обработки проходит: src/epf вне гейта",
+    "call": {
+      "tool": "edit",
+      "args": {
+        "file_path": "src/epf/Обработка/Ext/ObjectModule.bsl",
+        "old_string": "a",
+        "new_string": "b"
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "write-erf-descriptor",
+    "describe": "write дескриптора внешнего отчёта проходит: src/erf вне гейта",
+    "call": {
+      "tool": "write",
+      "args": {
+        "file_path": "src/erf/Отчёт/Отчёт.xml",
+        "content": ""
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "apply-patch-epf",
+    "describe": "apply_patch в src/epf проходит: каркас внешних файлами",
+    "call": {
+      "tool": "apply_patch",
+      "args": {
+        "input": "*** Begin Patch\n*** Add File: src/epf/Новая/Ext/ObjectModule.bsl\n+// модуль\n*** End Patch\n"
+      }
+    },
+    "paths": [
+      "src/epf/Новая/Ext/ObjectModule.bsl"
+    ],
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "bash-sed-epf-source",
+    "describe": "sed -i по внешней обработке проходит: src/epf вне гейта",
+    "call": {
+      "tool": "bash",
+      "args": {
+        "command": "sed -i 's/a/b/' src/epf/Обработка/epf.epf"
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "bash-redirect-erf",
+    "describe": "перенаправление в src/erf проходит: src/erf вне гейта",
+    "call": {
+      "tool": "bash",
+      "args": {
+        "command": "echo x > src/erf/Отчёт/erf.erf"
+      }
+    },
+    "expect": {
+      "decision": "allow"
+    }
+  },
+  {
+    "id": "write-cfe-source",
+    "describe": "write в src/cfe блокируется: сужение не ослабляет защиту расширений",
+    "call": {
+      "tool": "write",
+      "args": {
+        "file_path": "src/cfe/Расширение/Module.bsl",
+        "content": ""
+      }
+    },
+    "expect": {
       "decision": "deny",
       "code": "source-edit",
       "reasonIncludes": [
-        "Файл: src/erf/"
+        "Файл: src/cfe/"
       ]
     }
   },
@@ -884,12 +965,12 @@
     }
   },
   {
-    "id": "bash-sed-epf-source",
-    "describe": "sed -i по внешней обработке блокируется",
+    "id": "bash-sed-tests-epf",
+    "describe": "sed -i в tests/epf блокируется: сужение касается только src",
     "call": {
       "tool": "bash",
       "args": {
-        "command": "sed -i 's/a/b/' src/epf/Обработка/epf.epf"
+        "command": "sed -i 's/a/b/' tests/epf/Тест.epf"
       }
     },
     "expect": {
