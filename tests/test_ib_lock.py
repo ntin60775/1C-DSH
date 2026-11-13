@@ -52,10 +52,27 @@ def main() -> int:
 		      == "48b716fbf05cbc86e9c66e66017f0bfe9f9c8c2c",
 		      ib_lock.stand_lock_key("Srvr=host;Ref=erp;Usr=u;Pwd=p;", "/tree/a"))
 
+		# ── маскирование: один носитель, кавычки с `;` не печатают хвост ──
+		check("маскирование: Usr/Pwd срезаны целиком",
+		      ib_lock.without_credentials(conn) == "Srvr=host;Ref=erp;",
+		      ib_lock.without_credentials(conn))
+		quoted = 'File=/tmp/ib;Usr="demo";Pwd="p1;p2"'
+		check("маскирование: `;` в кавычках не печатает хвост пароля",
+		      ib_lock.without_credentials(quoted) == "File=/tmp/ib",
+		      ib_lock.without_credentials(quoted))
+		check("маскирование: незакрытая кавычка — остаток тоже срезан",
+		      ib_lock.without_credentials('File=/tmp/ib;Pwd="half') == "File=/tmp/ib",
+		      ib_lock.without_credentials('File=/tmp/ib;Pwd="half'))
+
 		# ── stand: ключ не зависит от учёток ──
 		k1 = ib_lock.stand_lock_key(conn, "/tree/a")
 		k2 = ib_lock.stand_lock_key("Srvr=host;Ref=erp;Usr=other;Pwd=x;", "/tree/a")
 		check("stand: смена пароля не создаёт второй ключ", k1 == k2, f"{k1} != {k2}")
+
+		check("stand: `;` в кавычках пароля не меняет ключ",
+		      ib_lock.stand_lock_key('Srvr=host;Ref=erp;Pwd="p1;p2"', "/tree/a")
+		      == ib_lock.stand_lock_key("Srvr=host;Ref=erp;", "/tree/a"),
+		      ib_lock.stand_lock_key('Srvr=host;Ref=erp;Pwd="p1;p2"', "/tree/a"))
 
 		# ── stand: захват, формат записи, busy, мёртвый владелец ──
 		owner = subprocess.Popen(["sleep", "30"])
