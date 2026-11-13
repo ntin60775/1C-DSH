@@ -1,0 +1,9 @@
+[33mWARN[0m [90mI2[0m docs/plans/1c-db-multistand-stage1.md — status='approved' вне словаря
+[33mWARN[0m [90mI2[0m docs/plans/build-out-canon.md — status='approved' вне словаря
+[33mWARN[0m [90mI2[0m docs/plans/dsh-contour.md — status='approved' вне словаря
+[33mWARN[0m [90mI2[0m docs/plans/e2e-client-lifecycle.md — status='approved' вне словаря
+[33mWARN[0m [90mI2[0m docs/plans/execute-fragment-limits.md — status='approved' вне словаря
+[33mWARN[0m [90mI2[0m docs/plans/external-epf-loop.md — status='approved' вне словаря
+[33mWARN[0m [90mI2[0m docs/plans/ibcmd-delivery-supply.md — status='approved' вне словаря
+
+[31m0 ERR[0m · [33m7 WARN[0m  (145 файлов · I2×7)

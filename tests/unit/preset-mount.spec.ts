@@ -22,7 +22,7 @@ interface Mount {
 }
 
 /** Стенд: фальшивые ctx/agent/services, настоящий apply. */
-function harness(options: { preset: string; cwd: string }) {
+function harness(options: { preset: string; cwd: string; config?: Record<string, unknown> }) {
   const mounts: Mount[] = []
   const registered: unknown[] = []
   const listeners = new Map<string, ((...args: never[]) => unknown)[]>()
@@ -41,7 +41,7 @@ function harness(options: { preset: string; cwd: string }) {
     get(key: string) { return services[key] },
     logger: { warn() {} },
   }
-  apply(ctx as never)
+  apply(ctx as never, options.config as never)
   const emit = async (name: string, ...args: unknown[]): Promise<void> => {
     for (const listener of listeners.get(name) ?? []) {
       await (listener as (...values: unknown[]) => Promise<unknown>)(...args, async () => ({ kind: 'continue' }))
@@ -157,6 +157,89 @@ describe('доставка пресета', () => {
       await stand.emit('agent-preset/selected', 's1', '1c')
       await settle(() => stand.mounts.length === 5)
       expect(stand.mounts).toHaveLength(5)
+    } finally {
+      tree.cleanup()
+    }
+  })
+})
+
+/**
+ * Стековые id: доставка — конфигурируемый набор пресетов (тикет 05
+ * team-profiles). Конфиг строки пресета задаёт набор; дефолт `1c` цел.
+ */
+describe('набор id доставки из конфига пресета', () => {
+  /** Набор трёх стековых id — как в строке `contour-preset` стек-бандла. */
+  const STACK_IDS = ['1c-architect', '1c-orchestrator', '1c-executor'] as const
+
+  it('каждый стековый id получает скиллы и MCP проекта', async () => {
+    const tree = projectTree()
+    try {
+      for (const preset of STACK_IDS) {
+        const stand = harness({ preset, cwd: tree.root, config: { presetIds: [...STACK_IDS] } })
+        await stand.emit('agent/created', { agent: stand.agent(`s-${preset}`) })
+        await settle(() => stand.mounts.length === 5)
+        expect(stand.mounts.map((mount) => mount.spec)).toEqual([
+          '@deepseek-ai/dsh-skill-filesystem',
+          '@deepseek-ai/dsh-mcp-client',
+          '@deepseek-ai/dsh-mcp-client',
+          '@deepseek-ai/dsh-mcp-client',
+          '@deepseek-ai/dsh-mcp-client',
+        ])
+        expect(stand.mounts[0]?.config['providerName']).toBe('1c-contour')
+      }
+    } finally {
+      tree.cleanup()
+    }
+  })
+
+  it('чужой роли (team-architect) набор id доставку не даёт', async () => {
+    const tree = projectTree()
+    try {
+      const stand = harness({ preset: 'architect', cwd: tree.root, config: { presetIds: [...STACK_IDS] } })
+      await stand.emit('agent/created', { agent: stand.agent('s-team') })
+      expect(stand.mounts).toEqual([])
+    } finally {
+      tree.cleanup()
+    }
+  })
+
+  it('без конфига дефолт 1c цел', async () => {
+    const tree = projectTree()
+    try {
+      const stand = harness({ preset: '1c', cwd: tree.root })
+      await stand.emit('agent/created', { agent: stand.agent('s1c') })
+      await settle(() => stand.mounts.length === 5)
+      expect(stand.mounts).toHaveLength(5)
+    } finally {
+      tree.cleanup()
+    }
+  })
+
+  it('выбор стекового пресета в пустой сессии догоняет доставку', async () => {
+    const tree = projectTree()
+    try {
+      const stand = harness({ preset: 'standard', cwd: tree.root, config: { presetIds: [...STACK_IDS] } })
+      const agent = stand.agent('s1')
+      await stand.emit('agent/created', { agent })
+      expect(stand.mounts).toHaveLength(0)
+      ;(stand.services['agentPresets'] as { presetForSession: () => string }).presetForSession = () => '1c-executor'
+      await stand.emit('agent-preset/selected', 's1', '1c-executor')
+      await settle(() => stand.mounts.length === 5)
+      expect(stand.mounts).toHaveLength(5)
+    } finally {
+      tree.cleanup()
+    }
+  })
+
+  it('невалидный набор откатывается к дефолту 1c', async () => {
+    const tree = projectTree()
+    try {
+      for (const presetIds of [[], ['']] as const) {
+        const stand = harness({ preset: '1c', cwd: tree.root, config: { presetIds: [...presetIds] } })
+        await stand.emit('agent/created', { agent: stand.agent('s1c') })
+        await settle(() => stand.mounts.length === 5)
+        expect(stand.mounts).toHaveLength(5)
+      }
     } finally {
       tree.cleanup()
     }

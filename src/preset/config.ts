@@ -19,8 +19,35 @@ import type { ContourProject } from '../contract.js'
 /** Идентификатор пресета: сессия без него доставки не получает. */
 export const PRESET_ID = '1c'
 
-/** Пресет, который владеет проектом, — только `1c`; прочие не трогаются. */
+/** Строка пресета `1c` в патче контура: её id и адрес доставки по умолчанию. */
 export const PRESET_ROW = `preset-${PRESET_ID}`
+
+/**
+ * Набор пресетов, которым доставка разрешена.
+ *
+ * Конфиг строки `contour-preset` расширяет набор: стековый бандл
+ * (`ontoship-team-1c`) объявляет свои пресеты и передаёт их id. Дефолт —
+ * ровно `1c`; невалидный или пустой набор не отключает доставку, а
+ * откатывается к дефолту с громким логом.
+ * @param configured - значение ключа `presetIds` из конфига строки.
+ * @param warn - получатель предупреждения о невалидном наборе.
+ * @returns набор id пресетов; всегда непустой.
+ */
+export function presetIdSet(
+  configured: readonly unknown[] | undefined,
+  warn: (message: string) => void,
+): ReadonlySet<string> {
+  const fallback = (reason: string): ReadonlySet<string> => {
+    warn(`набор presetIds ${reason}; доставка по дефолту ${PRESET_ID}`)
+    return new Set([PRESET_ID])
+  }
+  if (configured === undefined) return new Set([PRESET_ID])
+  if (!Array.isArray(configured)) return fallback('не массив')
+  const ids = configured.map((value) => typeof value === 'string' ? value.trim() : '')
+  if (ids.length === 0) return fallback('пуст')
+  if (ids.some((id) => id === '')) return fallback('содержит пустой или нестроковый id')
+  return new Set(ids)
+}
 
 /** Адрес 1c-db по умолчанию: локальный прокси тулкита. */
 export const DEFAULT_DB_URL = 'http://127.0.0.1:6003/mcp'

@@ -21,6 +21,7 @@ import {
   mcpRows,
   parseDbInstances,
   PRESET_ID,
+  presetIdSet,
   readProject,
   skillDirs,
 } from '../../src/preset/config.js'
@@ -182,6 +183,44 @@ describe('раскладка и скиллы', () => {
     } finally {
       tree.cleanup()
     }
+  })
+})
+
+describe('presetIdSet', () => {
+  /** Собрать предупреждения набора. */
+  const collect = () => {
+    const warnings: string[] = []
+    return { warnings, warn: (message: string) => { warnings.push(message) } }
+  }
+
+  it('без ключа — ровно дефолт 1c', () => {
+    const seen = collect()
+    const ids = presetIdSet(undefined, seen.warn)
+    expect([...ids]).toEqual([PRESET_ID])
+    expect(seen.warnings).toEqual([])
+  })
+
+  it('стековый набор читается, обрезается и дедуплицируется', () => {
+    const seen = collect()
+    const ids = presetIdSet([' 1c-architect ', '1c-orchestrator', '1c-executor', '1c-architect'], seen.warn)
+    expect([...ids]).toEqual(['1c-architect', '1c-orchestrator', '1c-executor'])
+    expect(seen.warnings).toEqual([])
+  })
+
+  it('пустой, нестроковый и не-массивный набор откатываются к дефолту с логом', () => {
+    for (const value of [[], [''], [42], '1c-executor'] as const) {
+      const seen = collect()
+      const ids = presetIdSet(value as never, seen.warn)
+      expect([...ids]).toEqual([PRESET_ID])
+      expect(seen.warnings).toHaveLength(1)
+      expect(seen.warnings[0]).toMatch(/presetIds/)
+    }
+  })
+
+  it('набор без 1c и без стековых id доставку никому из них не даёт', () => {
+    const ids = presetIdSet(['1c-architect'], () => {})
+    expect(ids.has('1c-executor')).toBe(false)
+    expect(ids.has(PRESET_ID)).toBe(false)
   })
 })
 

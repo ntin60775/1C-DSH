@@ -1,0 +1,36 @@
+✓ Lockfile passes supply-chain policies (verified 3d ago)
+Lockfile is up to date, resolution step is skipped
+Already up to date
+Done in 75ms using pnpm v12.4.2
+$ vitest run
+
+ RUN  v3.2.7 /home/prog7/home/dev/personal/1C-DSH-wt-tp05
+
+ ✓ tests/unit/no-legacy.spec.ts (1 test) 31ms
+ ✓ tests/unit/gate.spec.ts (17 tests) 26ms
+ ✓ tests/unit/gates-t5.spec.ts (16 tests) 24ms
+ ✓ tests/unit/layout-t6.spec.ts (24 tests) 44ms
+ ✓ tests/parity/unica-source.spec.ts (59 tests) 57ms
+ ✓ tests/unit/preset-mount.spec.ts (10 tests) 119ms
+ ✓ tests/unit/plugin.spec.ts (14 tests) 139ms
+ ✓ tests/unit/gates-t3.spec.ts (20 tests) 218ms
+ ✓ tests/unit/gates-t4.spec.ts (25 tests) 223ms
+ ✓ tests/unit/paths.spec.ts (13 tests) 18ms
+ ✓ tests/parity/corpus.spec.ts (4 tests) 11ms
+ ✓ tests/unit/preset-corpus.spec.ts (8 tests) 26ms
+ ✓ tests/unit/unica-name.spec.ts (4 tests) 5ms
+ ✓ tests/unit/lock.spec.ts (9 tests) 19ms
+ ✓ tests/unit/bash-writes.spec.ts (20 tests) 16ms
+ ✓ tests/unit/outcomes.spec.ts (3 tests) 4ms
+ ✓ tests/unit/preset.spec.ts (19 tests) 14ms
+ ✓ tests/parity/gates.spec.ts (38 tests) 500ms
+ ✓ tests/parity/rest-gates.spec.ts (37 tests) 3269ms
+   ✓ kd-session-start/kd-no-station > станции нет на машине — молчим  1002ms
+   ✓ kd-session-start/kd-no-url > 1c-kd не разведён — будить нечего  1003ms
+   ✓ kd-session-start/kd-no-script > стартовый скрипт недоступен — молчим  1008ms
+
+ Test Files  19 passed (19)
+      Tests  341 passed (341)
+   Start at  20:06:01
+   Duration  3.83s (transform 977ms, setup 0ms, collect 2.55s, tests 4.76s, environment 4ms, prepare 1.79s)
+

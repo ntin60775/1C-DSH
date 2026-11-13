@@ -1,0 +1,69 @@
+
+ RUN  v3.2.7 /home/prog7/home/dev/personal/1C-DSH-wt-tp05
+
+ ❯ tests/unit/preset-mount.spec.ts (10 tests | 2 failed) 1148ms
+   ✓ доставка пресета > без пресета 1c не монтирует ничего 3ms
+   ✓ доставка пресета > в 1С-проекте монтирует провайдер скиллов и четыре MCP-сервера 15ms
+   ✓ доставка пресета > повторное событие не дублирует доставку 14ms
+   ✓ доставка пресета > вне 1С-проекта не монтирует ни скиллов, ни MCP 3ms
+   ✓ доставка пресета > выбор пресета в пустой сессии догоняет доставку до первого шага 14ms
+   × набор id доставки из конфига пресета > каждый стековый id получает скиллы и MCP проекта 540ms
+     → expected [] to deeply equal [ …(5) ]
+   ✓ набор id доставки из конфига пресета > чужой роли (team-architect) набор id доставку не даёт 1ms
+   ✓ набор id доставки из конфига пресета > без конфига дефолт 1c цел 11ms
+   × набор id доставки из конфига пресета > выбор стекового пресета в пустой сессии догоняет доставку 520ms
+     → expected [] to have a length of 5 but got +0
+   ✓ набор id доставки из конфига пресета > невалидный набор откатывается к дефолту 1c 25ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/unit/preset-mount.spec.ts > набор id доставки из конфига пресета > каждый стековый id получает скиллы и MCP проекта
+AssertionError: expected [] to deeply equal [ …(5) ]
+
+- Expected
++ Received
+
+- [
+-   "@deepseek-ai/dsh-skill-filesystem",
+-   "@deepseek-ai/dsh-mcp-client",
+-   "@deepseek-ai/dsh-mcp-client",
+-   "@deepseek-ai/dsh-mcp-client",
+-   "@deepseek-ai/dsh-mcp-client",
+- ]
++ []
+
+ ❯ tests/unit/preset-mount.spec.ts:181:57
+    179|         await stand.emit('agent/created', { agent: stand.agent(`s-${pr…
+    180|         await settle(() => stand.mounts.length === 5)
+    181|         expect(stand.mounts.map((mount) => mount.spec)).toEqual([
+       |                                                         ^
+    182|           '@deepseek-ai/dsh-skill-filesystem',
+    183|           '@deepseek-ai/dsh-mcp-client',
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/unit/preset-mount.spec.ts > набор id доставки из конфига пресета > выбор стекового пресета в пустой сессии догоняет доставку
+AssertionError: expected [] to have a length of 5 but got +0
+
+- Expected
++ Received
+
+- 5
++ 0
+
+ ❯ tests/unit/preset-mount.spec.ts:228:28
+    226|       await stand.emit('agent-preset/selected', 's1', '1c-executor')
+    227|       await settle(() => stand.mounts.length === 5)
+    228|       expect(stand.mounts).toHaveLength(5)
+       |                            ^
+    229|     } finally {
+    230|       tree.cleanup()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 8 passed (10)
+   Start at  20:02:13
+   Duration  1.49s (transform 63ms, setup 0ms, collect 63ms, tests 1.15s, environment 0ms, prepare 70ms)
+

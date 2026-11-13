@@ -140,3 +140,5 @@
             disabled: true
           - id: contour-preset
             name: 'dsh-1c-contour/preset'
+            # Стековый бандл в своей декларации передаёт свои id:
+            # config.presetIds. Без ключа доставка остаётся у пресета `1c`.

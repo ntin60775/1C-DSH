@@ -2,8 +2,9 @@
  * Пресет `1c` в доставке: скиллы, команды и MCP только в 1С-сессии.
  *
  * Плагин монтируется строкой пресета (`preset-1c`), поэтому действует только
- * на сессии этого пресета. На старте агента он резолвит проект от каталога
- * сессии и, если это проект 1С:
+ * на сессии своего пресета. Набор id задаёт конфиг строки `presetIds`:
+ * без него — ровно `1c`; стековый бандл передаёт свои id. На старте агента
+ * он резолвит проект от каталога сессии и, если это проект 1С:
  *
  * - поднимает провайдер скиллов в области агента — 15 контурных скиллов,
  *   3 команды (`/1c-*`) и скиллы Юники с машины; вне проекта 1С их нет;
@@ -30,7 +31,7 @@ import { resolveProject } from '../paths.js'
 import {
   dataDirOf,
   mcpRows,
-  PRESET_ID,
+  presetIdSet,
   readProject,
   skillDirs,
   type DeliveryEnv,
@@ -39,6 +40,17 @@ import {
 
 /** Имя плагина в профиле: строка пресета `preset-1c`. */
 export const name = 'dsh-1c-contour/preset'
+
+/**
+ * Конфигурация строки `contour-preset`.
+ *
+ * Стековый бандл объявляет свои пресеты и передаёт их id; без ключа
+ * доставка остаётся у пресета `1c` (дефолт).
+ */
+export interface Config {
+  /** id пресетов, которым разрешена доставка контура. */
+  readonly presetIds?: readonly string[]
+}
 
 /** Минимальные формы сервисов, которые нужны доставке. */
 interface Services {
@@ -144,9 +156,16 @@ async function mount(
   }
 }
 
-/** Подключить доставку пресета к хосту. */
-export function apply(ctx: Context): void {
+/**
+ * Подключить доставку пресета к хосту.
+ * @param ctx - контекст плагина.
+ * @param config - набор пресетов из строки `contour-preset`.
+ */
+export function apply(ctx: Context, config: Config = {}): void {
   const root = packageRoot()
+  const presetIds = presetIdSet(config.presetIds, (message) => {
+    ctx.logger.warn(`${name}: ${message}`)
+  })
   // Службы читаются через `ctx.get`: у пресета их может не быть (SDK, тесты),
   // а Cordis запрещает трогать незаявленную службу как свойство.
   const service = (key: keyof Services): Services[keyof Services] =>
@@ -184,7 +203,7 @@ export function apply(ctx: Context): void {
   const deliver = async (agent: Agent): Promise<void> => {
     if (delivered.has(agent)) return
     const preset = presetOf(agent, services)
-    if (preset !== PRESET_ID) return
+    if (preset === null || !presetIds.has(preset)) return
     const directory = services.workingDirectory
     if (directory === undefined) return
     let cwd: string
@@ -229,7 +248,7 @@ export function apply(ctx: Context): void {
     on: (name: string, listener: (id: string, preset: string) => void, options: { global: boolean }) => void
   }
   ;(ctx as unknown as PresetSelection).on('agent-preset/selected', (sessionId, preset) => {
-    if (preset !== PRESET_ID) return
+    if (!presetIds.has(preset)) return
     const agent = agents.get(sessionId)
     if (agent !== undefined) void ensure(agent)
   }, { global: true })
