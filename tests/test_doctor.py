@@ -532,7 +532,7 @@ def main() -> int:
 		      and bad["data"]["project"]["code"] == "project.registry-unreadable",
 		      json.dumps(bad["data"]["project"])[:400])
 
-		# spec: Т10 — контур не развёрнут (ut-10): запись none подтверждается.
+		# spec: Т10 — контур не развёрнут: запись реестра none подтверждается.
 		fx_none = Fixture(Path(tmp) / "registry-none")
 		make_launcher(fx_none)
 		make_testpilot(fx_none)

@@ -1,9 +1,8 @@
 /**
  * Контур проекта: поверхность Unica, правила пересборки, allowlist эскалаций.
  *
- * Перенос ZCode-модуля `contour_common` и частей
- * `unica_source_gate.py`. Инварианты пересборки остаются ДАННЫМИ
- * (`contour.json` → `unica.rebuild_rules`), а не кодом.
+ * Инварианты пересборки остаются ДАННЫМИ (`contour.json` →
+ * `unica.rebuild_rules`), а не кодом. История порта — docs/migration-map.md.
  * @module dsh-1c-contour/contour
  */
 
