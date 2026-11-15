@@ -444,6 +444,8 @@ def cmd_e2e_baseline(args: argparse.Namespace) -> int:
 	log(f"e2e-baseline: {statuses.count('exists')} skip, "
 	    f"{len(statuses) - statuses.count('exists')} файлов")
 	log('прогон: bash "$DSH_1C_ROOT/scripts/run_e2e.sh" [профиль] tests/e2e')
+	log("GUI-соло — отдельным модулем на фикстуре solo_base (плагин 1c_onec_db); "
+	    "пример — в шапке набора, маркер e2e_solo делит сеансы в run_e2e")
 	log("снятие после приёмки (кроме полигона): scaffold.py e2e-baseline --remove")
 	return 0
 
