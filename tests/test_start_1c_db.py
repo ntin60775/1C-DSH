@@ -131,6 +131,30 @@ wait_client тест2 && echo "ok=$n"
         f"rc={r.returncode}, stdout={r.stdout!r}",
     )
 
+    # 5b. Т12: провал ожидания ведёт к --status (носитель Т6/Т11), вопрос о
+    #     новой базе остаётся порядком причин; функция извлекается из скрипта.
+    harness = f"""set -u
+SELF_DIR={REPO / "scripts"}
+ROOT={tmp}
+eval "$(sed -n '/^client_wait_failed() {{/,/^}}/p' {SCRIPT})"
+rc=0
+( client_wait_failed ) || rc=$?
+echo "rc=$rc"
+"""
+    r = subprocess.run(["bash", "-c", harness], capture_output=True, text=True)
+    _lib.check(
+        "провал ожидания: сообщение ведёт к --status с путём скрипта",
+        r.stdout.strip().endswith("rc=1")
+        and "--status" in r.stderr
+        and "start_1c_db.sh" in r.stderr,
+        f"stdout={r.stdout!r}, stderr={r.stderr!r}",
+    )
+    _lib.check(
+        "провал ожидания: вопрос о новой базе сохранён",
+        "НОВАЯ или перезалитая" in r.stderr,
+        f"stderr={r.stderr!r}",
+    )
+
     # 6. Т3 гард stand-замка: второй старт отказан, владение клиенту, release-on-stop.
     #    Функция гарда извлекается из скрипта и гоняется с реальными процессами;
     #    release проверяется полным --stop'ом скрипта (без подъёма стенда).

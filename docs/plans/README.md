@@ -3,7 +3,7 @@ node_type: index
 title: Спеки юнитов контура
 service: _platform
 status: active
-updated: 2026-11-13
+updated: 2026-11-16
 ---
 
 # Спеки юнитов
@@ -15,19 +15,20 @@ updated: 2026-11-13
 
 ## Открытые
 
-- [dsh-contour.md](dsh-contour.md) — переезд контура с ZCode на DSH:
-  нативный плагин, гейты, пресет, раскладка, doctor, пилот, парк.
-  Т1–Т9 приняты; Т10 — парк и реестр.
-- [external-epf-loop.md](external-epf-loop.md) — цикл внешних epf
-  (ишью #62): Т1, Т3 приняты; дальше Т2, Т4, Т5, Т6.
 - [e2e-client-lifecycle.md](e2e-client-lifecycle.md) — жизненный цикл
-  тест-клиентов e2e (ишью #56): Т1–Т5 приняты; дальше Т6–Т10.
+  тест-клиентов e2e (ишью #56): Т1–Т9 и Т11 приняты; Т10 — живая приёмка,
+  закрывает юнит.
 - [team-delivery-preset-ids.md](team-delivery-preset-ids.md) — шов
   доставки контура для стековых пресетов 1С (юнит `team-profiles`
-  ntin, тикет 05): T1 слит 13.11, приёмка у оператора.
+  ntin, тикет 05): T1 принят 14.11; юнит ведётся вне этого репозитория.
 
 ## Завершённые
 
+- [dsh-contour.md](dsh-contour.md) — переезд контура с ZCode на DSH:
+  нативный плагин, гейты, пресет, раскладка, doctor, пилот, парк.
+  Т1–Т10 приняты, юнит закрыт 13.11.
+- [external-epf-loop.md](external-epf-loop.md) — цикл внешних epf
+  (ишью #62): Т1–Т6 приняты, юнит закрыт 13.11.
 - [build-out-canon.md](build-out-canon.md) — канон раскладки `build/out`:
   закрыт 08.11.
 - [1c-db-multistand-stage1.md](1c-db-multistand-stage1.md) — мультистенд
