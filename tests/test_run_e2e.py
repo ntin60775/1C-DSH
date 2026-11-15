@@ -16,7 +16,6 @@ url из contour.local.json (drift Т6).
 Запуск: python3 tests/test_run_e2e.py
 """
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -24,7 +23,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _lib import check, summary  # noqa: E402
+from _lib import check, script_env, summary  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 RUN = REPO / "scripts" / "run_e2e.sh"
@@ -94,7 +93,7 @@ def run(root: Path, py: Path, *args: str, env_extra=None):
 	return subprocess.run(
 		["bash", str(root / ".pkg" / "scripts" / "run_e2e.sh"), *args],
 		capture_output=True, text=True, cwd=str(root),
-		env=dict(os.environ, TESTPILOT_PYTHON=str(py), **(env_extra or {})),
+		env=script_env(TESTPILOT_PYTHON=str(py), **(env_extra or {})),
 		timeout=120)
 
 

@@ -1,12 +1,20 @@
 #!/usr/bin/env bash
 # run_e2e.sh — автономный e2e-прогон 1С: pytest + Python API 1c-testpilot.
 #
-# Использование: run_e2e.sh [--instance ИМЯ] [профиль] [каталог-тестов]
+# Использование: run_e2e.sh [--instance ИМЯ] [профиль] [TESTS...]
 #   --instance — инстанс мультистенда из .dsh/1c/db-instances.yaml
 #                (мультистенд #37); без флага берётся из env E2E_INSTANCE
 #                или поля instance профиля; нет нигде — main;
 #   профиль    — имя из .dsh/1c/testpilot/profiles.yaml (по умолчанию main);
-#   каталог    — по умолчанию tests/e2e.
+#   TESTS      — выборка: пути и/или глобы через пробел, по умолчанию
+#                tests/e2e (`tests/unit tests/e2e/test_gui.py`,
+#                `"tests/e2e/*.py"`); глоб разворачивает обвязка.
+#
+# Сеансы. Маркер e2e_solo вешает плагин onec_db на модуль с фикстурой
+# solo_base: GUI-соло и сессионные наборы в одном pytest-сеансе ломают
+# сессионную фикстуру. Обвязка делит выборку по файлам — сессионные одним
+# сеансом, соло-файлы другим; junit всех сеансов сводятся в одну строку
+# E2E_SUMMARY_JSON, пост-свип идёт один раз по итогу.
 #
 # Инстанс адресует постпроверку и ЖР-сверку в его канал: свип получает
 # --url с ?channel=<канал> (фактический url из contour.local.json — drift
@@ -41,7 +49,8 @@ while [ $# -gt 0 ]; do
 	esac
 done
 PROFILE="${ARGS[0]:-${E2E_PROFILE:-main}}"
-TESTS="${ARGS[1]:-tests/e2e}"
+TESTS=("${ARGS[@]:1}")
+[ ${#TESTS[@]} -gt 0 ] || TESTS=(tests/e2e)
 
 # ── окружение testpilot ──
 PY="${TESTPILOT_PYTHON:-}"
@@ -57,11 +66,36 @@ fi
 
 PROFILES="$ROOT/.dsh/1c/testpilot/profiles.yaml"
 [ -f "$PROFILES" ] || { echo "✗ нет $PROFILES — прогони bootstrap контура" >&2; exit 2; }
-[ -d "$ROOT/$TESTS" ] || [ -f "$ROOT/$TESTS" ] || {
-	echo "✗ нет e2e-тестов: $TESTS" >&2
-	echo "  напиши их workflow 1c-e2e-author или по скиллу 1c-test-contour" >&2
-	exit 2
-}
+
+# ── выборка: пути и/или глобы. Глоб разворачивает обвязка, а не шелл:
+# из workflow маска приходит одной строкой. Каталог уходит в pytest как
+# есть — правила сбора pytest не дублируются.
+SELECTION=()
+for pat in "${TESTS[@]}"; do
+	case "$pat" in
+	*"*"* | *"?"* | *"["*)
+		hits="$(cd "$ROOT" && compgen -G "$pat" || true)"
+		if [ -z "$hits" ]; then
+			echo "✗ выборка пуста: $pat — ни одного файла" >&2
+			exit 2
+		fi
+		while IFS= read -r hit; do
+			if [ -n "$hit" ]; then SELECTION+=("$hit"); fi
+		done <<< "$hits"
+		;;
+	*) SELECTION+=("$pat") ;;
+	esac
+done
+
+for p in "${SELECTION[@]}"; do
+	probe="$p"
+	case "$p" in /*) ;; *) probe="$ROOT/$p" ;; esac
+	if [ ! -d "$probe" ] && [ ! -f "$probe" ]; then
+		echo "✗ нет e2e-тестов: $p" >&2
+		echo "  напиши их workflow 1c-e2e-author или по скиллу 1c-test-contour" >&2
+		exit 2
+	fi
+done
 
 # ── пароль: канон контура — поле password в профиле (файл вне git), его
 # читает testpilot сам. Легаси: password_env профиля (имя env-переменной) —
@@ -176,39 +210,161 @@ unset WAYLAND_DISPLAY 2>/dev/null || true
 mkdir -p "$ROOT/test-results"
 cd "$ROOT"
 
+# ── деление выборки на сеансы по маркеру e2e_solo (юнит #56 Т2/Т8).
+# Сбор, не запуск: пробник пишет файлы и соло-файлы из уже отобранных
+# pytest items — раскладка та же, что увидит прогон, включая addopts
+# проекта. Сбор упал — не гадаем: прогон идёт одним сеансом, причина и
+# вывод сбора остаются в stderr и test-results/e2e-collect.log.
+PROBE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dsh-e2e-probe.XXXXXX")"
+trap 'rm -rf "$PROBE_DIR"' EXIT
+cat > "$PROBE_DIR/dsh_e2e_probe.py" <<'PY'
+"""Пробник раскладки выборки run_e2e: файлы сеанса и соло-файлы."""
+import json
+import os
+
+
+def pytest_collection_finish(session):
+    target = os.environ.get("E2E_COLLECT_OUT")
+    if not target:
+        return
+    root = os.getcwd()
+    files, solo = set(), set()
+    for item in session.items:
+        rel = os.path.relpath(str(item.path), root)
+        files.add(rel)
+        if item.get_closest_marker("e2e_solo"):
+            solo.add(rel)
+    with open(target, "w", encoding="utf-8") as fh:
+        json.dump({"files": sorted(files), "solo": sorted(solo)}, fh)
+PY
+PROBE_JSON="$PROBE_DIR/selection.json"
+COLLECT_LOG="$ROOT/test-results/e2e-collect.log"
 set +e
-"$PY" -m pytest "$TESTS" \
-	--tc-profile "$PROFILE" \
-	--tc-artifacts test-results \
-	--junitxml=test-results/e2e-junit.xml \
-	-v
-RC=$?
+E2E_COLLECT_OUT="$PROBE_JSON" \
+	PYTHONPATH="$PROBE_DIR${PYTHONPATH:+:$PYTHONPATH}" \
+	"$PY" -m pytest "${SELECTION[@]}" --collect-only -q \
+	--tc-profile "$PROFILE" --tc-artifacts test-results \
+	-p dsh_e2e_probe >"$COLLECT_LOG" 2>&1
+COLLECT_RC=$?
 set -e
 
-"$PY" - "$ROOT/test-results/e2e-junit.xml" "$RC" <<'PY'
-import json, sys, pathlib
-junit, rc = pathlib.Path(sys.argv[1]), sys.argv[2]
+SPLIT=no
+COLLECTED_FILES=()
+MARKED_SOLO=()
+SESSION_SEL=()
+SOLO_SEL=()
+if [ "$COLLECT_RC" != "0" ] && [ "$COLLECT_RC" != "5" ]; then
+	echo "WARN: сбор выборки (pytest --collect-only) упал, rc $COLLECT_RC —" \
+		"см. test-results/e2e-collect.log; прогон одним сеансом" >&2
+elif [ ! -f "$PROBE_JSON" ]; then
+	echo "WARN: пробник раскладки не отдал файл, rc $COLLECT_RC —" \
+		"прогон одним сеансом" >&2
+else
+	eval "$(python3 - "$PROBE_JSON" <<'PY'
+import json, shlex, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+for name, key in (("COLLECTED_FILES", "files"), ("MARKED_SOLO", "solo")):
+    print(name + "=(" + " ".join(shlex.quote(p) for p in data.get(key, [])) + ")")
+PY
+)"
+	if [ "${#MARKED_SOLO[@]}" -gt 0 ] && [ "${#COLLECTED_FILES[@]}" -gt 0 ]; then
+		for f in "${COLLECTED_FILES[@]}"; do
+			solo=no
+			for s in "${MARKED_SOLO[@]}"; do
+				if [ "$s" = "$f" ]; then
+					solo=yes
+					break
+				fi
+			done
+			if [ "$solo" = "yes" ]; then
+				SOLO_SEL+=("$f")
+			else
+				SESSION_SEL+=("$f")
+			fi
+		done
+		if [ "${#SESSION_SEL[@]}" -gt 0 ]; then
+			SPLIT=yes
+		fi
+	fi
+fi
+
+RC=0
+JUNIT_FILES=()
+rm -f "$ROOT"/test-results/e2e-junit*.xml
+
+run_pytest() {  # $1 — метка сеанса, дальше — пути выборки
+	local tag="$1"; shift
+	local junit="$ROOT/test-results/e2e-junit.xml"
+	local title="общий"
+	case "$tag" in
+		session)
+			junit="$ROOT/test-results/e2e-junit-session.xml"
+			title="сессионный"
+			;;
+		solo)
+			junit="$ROOT/test-results/e2e-junit-solo.xml"
+			title="соло"
+			;;
+	esac
+	echo "→ сеанс $title: $*" >&2
+	local rc
+	set +e
+	"$PY" -m pytest "$@" \
+		--tc-profile "$PROFILE" \
+		--tc-artifacts test-results \
+		--junitxml="$junit" \
+		-v
+	rc=$?
+	set -e
+	JUNIT_FILES+=("$junit")
+	if [ "$rc" != "0" ] && [ "$RC" = "0" ]; then
+		RC="$rc"
+	fi
+}
+
+if [ "$SPLIT" = "yes" ]; then
+	echo "→ выборка: ${#SESSION_SEL[@]} сессионных файлов и ${#SOLO_SEL[@]} соло (e2e_solo) — два сеанса" >&2
+	run_pytest session "${SESSION_SEL[@]}"
+	run_pytest solo "${SOLO_SEL[@]}"
+elif [ "${#SOLO_SEL[@]}" -gt 0 ]; then
+	echo "→ выборка: только соло-файлы (e2e_solo) — один сеанс" >&2
+	run_pytest solo "${SOLO_SEL[@]}"
+else
+	run_pytest single "${SELECTION[@]}"
+fi
+
+"$PY" - "${JUNIT_FILES[@]}" "$RC" <<'PY'
+import json, pathlib, sys
+import xml.etree.ElementTree as ET
+paths, rc = sys.argv[1:-1], sys.argv[-1]
 summary = {"collected": 0, "passed": 0, "failed": 0, "errors": 0, "skipped": 0,
-           "exit_code": int(rc), "junit": False}
-if junit.is_file():
-    text = junit.read_text(encoding="utf-8")
-    root = None
-    import xml.etree.ElementTree as ET
+           "exit_code": int(rc), "junit": False, "sessions": len(paths)}
+parsed = 0
+for raw in paths:
+    junit = pathlib.Path(raw)
+    if not junit.is_file():
+        continue
     try:
-        root = ET.fromstring(text)
-    except ET.ParseError:
-        pass
-    if root is not None:
-        suite = root if root.tag == "testsuite" else (root.find("testsuite") or root)
-        def num(attr):
+        root = ET.fromstring(junit.read_text(encoding="utf-8"))
+    except (ET.ParseError, OSError):
+        continue
+    suites = [root] if root.tag == "testsuite" else root.findall(".//testsuite")
+    if not suites:
+        continue
+    parsed += 1
+    for suite in suites:
+        def num(attr, suite=suite):
             try: return int(float(suite.get(attr, "0")))
             except ValueError: return 0
-        summary.update(collected=num("tests"),
-                       passed=num("tests") - num("failures") - num("errors") - num("skipped"),
-                       failed=num("failures"),
-                       errors=num("errors"),
-                       skipped=num("skipped"), junit=True)
+        tests, failures = num("tests"), num("failures")
+        errors, skipped = num("errors"), num("skipped")
+        summary["collected"] += tests
+        summary["failed"] += failures
+        summary["errors"] += errors
+        summary["skipped"] += skipped
+        summary["passed"] += tests - failures - errors - skipped
 summary["passed"] = max(summary["passed"], 0)
+summary["junit"] = parsed == len(paths) and parsed > 0
 print("E2E_SUMMARY_JSON " + json.dumps(summary, ensure_ascii=False))
 PY
 
