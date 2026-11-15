@@ -14,9 +14,7 @@
 # solo_base: GUI-соло и сессионные наборы в одном pytest-сеансе ломают
 # сессионную фикстуру. Обвязка делит выборку по файлам — сессионные одним
 # сеансом, соло-файлы другим; junit всех сеансов сводятся в одну строку
-# E2E_SUMMARY_JSON, пост-свип идёт один раз по итогу. Состав берётся
-# сбором pytest --collect-only в venv проекта (литерала маркера в файле
-# может не быть), не грепом по тексту.
+# E2E_SUMMARY_JSON, пост-свип идёт один раз по итогу.
 #
 # Инстанс адресует постпроверку и ЖР-сверку в его канал: свип получает
 # --url с ?channel=<канал> (фактический url из contour.local.json — drift
@@ -213,12 +211,10 @@ mkdir -p "$ROOT/test-results"
 cd "$ROOT"
 
 # ── деление выборки на сеансы по маркеру e2e_solo (юнит #56 Т2/Т8).
-# Маркер вешает плагин onec_db на модуль с solo_base: литерала в файле
-# может не быть, поэтому состав берётся сбором pytest --collect-only в venv
-# проекта (сбор, не запуск). Пробник пишет файлы и соло-файлы из уже
-# отобранных pytest items — раскладка та же, что увидит прогон, включая
-# addopts проекта. Сбор упал — не гадаем: прогон идёт одним сеансом, ошибку
-# сбора покажет сам pytest (поведение по умолчанию не меняется).
+# Сбор, не запуск: пробник пишет файлы и соло-файлы из уже отобранных
+# pytest items — раскладка та же, что увидит прогон, включая addopts
+# проекта. Сбор упал — не гадаем: прогон идёт одним сеансом, причина и
+# вывод сбора остаются в stderr и test-results/e2e-collect.log.
 PROBE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dsh-e2e-probe.XXXXXX")"
 trap 'rm -rf "$PROBE_DIR"' EXIT
 cat > "$PROBE_DIR/dsh_e2e_probe.py" <<'PY'
@@ -242,33 +238,39 @@ def pytest_collection_finish(session):
         json.dump({"files": sorted(files), "solo": sorted(solo)}, fh)
 PY
 PROBE_JSON="$PROBE_DIR/selection.json"
+COLLECT_LOG="$ROOT/test-results/e2e-collect.log"
 set +e
 E2E_COLLECT_OUT="$PROBE_JSON" \
 	PYTHONPATH="$PROBE_DIR${PYTHONPATH:+:$PYTHONPATH}" \
-	"$PY" -m pytest "${SELECTION[@]}" --collect-only -q -p dsh_e2e_probe \
-	>/dev/null 2>&1
+	"$PY" -m pytest "${SELECTION[@]}" --collect-only -q \
+	--tc-profile "$PROFILE" --tc-artifacts test-results \
+	-p dsh_e2e_probe >"$COLLECT_LOG" 2>&1
 COLLECT_RC=$?
 set -e
 
 SPLIT=no
-ALL_FILES=()
-SOLO_FILES=()
-SESSION_FILES=()
+COLLECTED_FILES=()
+MARKED_SOLO=()
+SESSION_SEL=()
 SOLO_SEL=()
 if [ "$COLLECT_RC" != "0" ] && [ "$COLLECT_RC" != "5" ]; then
-	echo "WARN: сбор выборки (pytest --collect-only) упал, rc $COLLECT_RC — прогон одним сеансом" >&2
-elif [ -f "$PROBE_JSON" ]; then
+	echo "WARN: сбор выборки (pytest --collect-only) упал, rc $COLLECT_RC —" \
+		"см. test-results/e2e-collect.log; прогон одним сеансом" >&2
+elif [ ! -f "$PROBE_JSON" ]; then
+	echo "WARN: пробник раскладки не отдал файл, rc $COLLECT_RC —" \
+		"прогон одним сеансом" >&2
+else
 	eval "$(python3 - "$PROBE_JSON" <<'PY'
 import json, shlex, sys
 data = json.load(open(sys.argv[1], encoding="utf-8"))
-for name, key in (("ALL_FILES", "files"), ("SOLO_FILES", "solo")):
+for name, key in (("COLLECTED_FILES", "files"), ("MARKED_SOLO", "solo")):
     print(name + "=(" + " ".join(shlex.quote(p) for p in data.get(key, [])) + ")")
 PY
 )"
-	if [ "${#SOLO_FILES[@]}" -gt 0 ] && [ "${#ALL_FILES[@]}" -gt 0 ]; then
-		for f in "${ALL_FILES[@]}"; do
+	if [ "${#MARKED_SOLO[@]}" -gt 0 ] && [ "${#COLLECTED_FILES[@]}" -gt 0 ]; then
+		for f in "${COLLECTED_FILES[@]}"; do
 			solo=no
-			for s in "${SOLO_FILES[@]}"; do
+			for s in "${MARKED_SOLO[@]}"; do
 				if [ "$s" = "$f" ]; then
 					solo=yes
 					break
@@ -277,10 +279,10 @@ PY
 			if [ "$solo" = "yes" ]; then
 				SOLO_SEL+=("$f")
 			else
-				SESSION_FILES+=("$f")
+				SESSION_SEL+=("$f")
 			fi
 		done
-		if [ "${#SESSION_FILES[@]}" -gt 0 ]; then
+		if [ "${#SESSION_SEL[@]}" -gt 0 ]; then
 			SPLIT=yes
 		fi
 	fi
@@ -293,11 +295,18 @@ rm -f "$ROOT"/test-results/e2e-junit*.xml
 run_pytest() {  # $1 — метка сеанса, дальше — пути выборки
 	local tag="$1"; shift
 	local junit="$ROOT/test-results/e2e-junit.xml"
+	local title="общий"
 	case "$tag" in
-		session) junit="$ROOT/test-results/e2e-junit-session.xml" ;;
-		solo) junit="$ROOT/test-results/e2e-junit-solo.xml" ;;
+		session)
+			junit="$ROOT/test-results/e2e-junit-session.xml"
+			title="сессионный"
+			;;
+		solo)
+			junit="$ROOT/test-results/e2e-junit-solo.xml"
+			title="соло"
+			;;
 	esac
-	echo "→ сеанс $tag: $*" >&2
+	echo "→ сеанс $title: $*" >&2
 	local rc
 	set +e
 	"$PY" -m pytest "$@" \
@@ -314,8 +323,8 @@ run_pytest() {  # $1 — метка сеанса, дальше — пути вы
 }
 
 if [ "$SPLIT" = "yes" ]; then
-	echo "→ выборка: ${#SESSION_FILES[@]} сессионных файлов и ${#SOLO_SEL[@]} соло (e2e_solo) — два сеанса" >&2
-	run_pytest session "${SESSION_FILES[@]}"
+	echo "→ выборка: ${#SESSION_SEL[@]} сессионных файлов и ${#SOLO_SEL[@]} соло (e2e_solo) — два сеанса" >&2
+	run_pytest session "${SESSION_SEL[@]}"
 	run_pytest solo "${SOLO_SEL[@]}"
 elif [ "${#SOLO_SEL[@]}" -gt 0 ]; then
 	echo "→ выборка: только соло-файлы (e2e_solo) — один сеанс" >&2

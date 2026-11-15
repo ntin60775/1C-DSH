@@ -1,24 +1,39 @@
 #!/usr/bin/env python3
-"""Тесты run_e2e.sh: TESTS-список и автосведение сеансов (юнит #56 Т8).
+"""Т8 «run_e2e: автосведение сеансов и TESTS-список» (юнит #56).
 
-target: выборка «сессионные наборы + GUI-соло» идёт одной командой —
-файлы с маркером e2e_solo уходят отдельным pytest-сеансом, junit всех
-сеансов сводятся в одну E2E_SUMMARY_JSON, пост-свип зовётся один раз,
-глоб разворачивается в выборку (тикет Т8, критерии 1–4); без соло-файлов
-поведение прежнее — один сеанс (граница тикета).
+Цели:
+  spec: tickets/e2e-client-lifecycle/T8-run-e2e-sessions.md — критерий 1
+        (выборка «сессионный файл + соло-файл»: ровно два pytest-сеанса,
+        состав каждого по маркерам), критерий 2 (одна E2E_SUMMARY_JSON из
+        junit обоих сеансов — в сводке все тесты), критерий 3 (пост-свип
+        зовётся один раз при двух сеансах), критерий 4 (глоб
+        tests/e2e/*.py разворачивается в выборку, деление по маркерам
+        сохраняется); «Что делается»: junit сеансов, свип по итогу, тест
+        обвязки на фейковых наборах.
+  invariant: границы тикета — выборка без соло-файлов идёт прежним одним
+        сеансом с прежним именем junit; сбор упал — прогон не теряется, а
+        идёт одним сеансом с причиной в stderr и логом сбора; старый junit
+        не подмешивается в сводку; глоб без совпадений — exit 2; соло-
+        выборка целиком — один сеанс с соло-junit.
+  target: базовое дерево 88fca8d (main, Т7 юнита #56 принят) — TESTS
+        один путь, автосведения нет: краснота снята прогоном на базе —
+        18 провалов из 26 (лог прогона — в тикете).
 
-Стенды не поднимаются: тесты — обычные pytest-файлы временного проекта,
-маркер `pytestmark = pytest.mark.e2e_solo` стоит литералом. Автоповеска
-маркера плагином onec_db по фикстуре solo_base — контракт Т2 (тесты
-плагина `test_solo_base.py`, критерий 3); обвязке важен только состав
-items с маркером, поэтому литерал — тот же вход. Флаги testpilot
-`--tc-profile`/`--tc-artifacts` принимает conftest-заглушка, канала к 1С
-нет. Модель DSH: скрипт зовётся из пакета (run_e2e.sh + contour_paths.py +
-свип-заглушка рядом), корень проекта — каталог вызова.
-Запуск: python3 tests/test_run_e2e_sessions.py
+Стенды не поднимаются: тесты — обычные pytest-файлы временного проекта.
+Маркер e2e_solo в них не литерал: его вешает conftest-заглушка хуком
+сбора по флагу SOLO — как плагин onec_db по фикстуре solo_base (контракт
+Т2). Поэтому реализация «статический греп по файлам вместо сбора» этот
+тест не пройдёт: соло-файл литерала не содержит, а сессионный файл несёт
+слово e2e_solo в комментарии и обязан остаться в сессионном сеансе.
+Флаги testpilot `--tc-profile`/`--tc-artifacts` принимает заглушка в
+conftest; канала к 1С нет. Окружение сеансов — без E2E_* и
+PYTEST_ADDOPTS (`tests/_lib.script_env`).
+Запуск: python3 tests/test_run_e2e_sessions.py — нужен pytest в python3
+(стенды не нужны); нет pytest — SKIP с названной причиной, тихой
+доустановки нет.
 """
+import importlib.util
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -27,12 +42,15 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _lib import check, summary  # noqa: E402
+from _lib import check, script_env, summary  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 RUN = REPO / "scripts" / "run_e2e.sh"
 
 CONFTEST = '''\
+import pytest
+
+
 def pytest_addoption(parser):
     group = parser.getgroup("onec_db")
     group.addoption("--tc-profile", default="main")
@@ -42,6 +60,14 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     config.addinivalue_line(
         "markers", "e2e_solo: соло-модуль (заглушка плагина onec_db)")
+
+
+def pytest_collection_modifyitems(config, items):
+    """Маркер соло-модуля — как плагин onec_db вешает его по solo_base."""
+    for item in items:
+        module = getattr(item, "module", None)
+        if getattr(module, "SOLO", False):
+            item.add_marker(pytest.mark.e2e_solo)
 '''
 
 SESSION_TESTS = '''\
@@ -54,14 +80,23 @@ def test_badge_visible():
 '''
 
 CATALOG_TESTS = '''\
+"""Сессионный модуль: e2e_solo ниже — только текст комментария.
+
+Греп по файлу нашёл бы здесь маркер и увёл модуль в соло-сеанс; сбор
+маркер не видит — модуль обязан остаться в сессионном сеансе.
+"""
+
+# e2e_solo — не маркер: литерал в комментарии pytest не читает
+
+
 def test_catalog_filters():
     assert True
 '''
 
 SOLO_TESTS = '''\
-import pytest
+"""GUI-соло модуль: маркер вешает conftest по флагу SOLO, литерала нет."""
 
-pytestmark = pytest.mark.e2e_solo
+SOLO = True
 
 
 def test_gui_smoke():
@@ -76,6 +111,10 @@ HELPER = '''\
 """Помощник набора: pytest его не собирает (не test_*.py)."""
 
 MARKER = "Е2Е-помощник"
+'''
+
+BROKEN_TESTS = '''\
+import module_that_does_not_exist_1c_dsh  # noqa: F401
 '''
 
 SWEEP_STUB = '''\
@@ -117,14 +156,18 @@ def run(root: Path, *args: str):
 	return subprocess.run(
 		["bash", str(root / ".pkg" / "scripts" / "run_e2e.sh"), *args],
 		capture_output=True, text=True, cwd=str(root), timeout=180,
-		env=dict(os.environ, TESTPILOT_PYTHON=sys.executable,
-		         PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
-		         PYTHONDONTWRITEBYTECODE="1"))
+		env=script_env(TESTPILOT_PYTHON=sys.executable,
+		               PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
+		               PYTHONDONTWRITEBYTECODE="1"))
 
 
 def junit_classnames(path: Path):
 	root = ET.parse(path).getroot()
 	return sorted({tc.get("classname") for tc in root.iter("testcase")})
+
+
+def junit_files(root: Path):
+	return sorted(p.name for p in (root / "test-results").glob("e2e-junit*.xml"))
 
 
 def summary_of(stdout: str):
@@ -144,19 +187,29 @@ def session_count(r) -> int:
 
 
 def main() -> int:
+	if importlib.util.find_spec("pytest") is None:
+		print("SKIP: pytest не установлен в python3 — тест обвязки не выполнен "
+		      "(пробел окружения; стенды для него не нужны)")
+		return 0
+
 	with tempfile.TemporaryDirectory() as tmp:
 		base = Path(tmp)
 
 		# ── критерий 1: сессионный файл + соло-файл → два сеанса по маркерам
 		proj = base / "list"
 		make_proj(proj)
+		results = proj / "test-results"
+		results.mkdir()
+		(results / "e2e-junit.xml").write_text(
+			'<testsuites><testsuite name="stale" tests="99" failures="0" '
+			'errors="0" skipped="0"/></testsuites>', encoding="utf-8")
 		r = run(proj, "main", "tests/e2e/test_session.py", "tests/e2e/test_gui_solo.py")
 		out = r.stdout + r.stderr
-		session_junit = proj / "test-results" / "e2e-junit-session.xml"
-		solo_junit = proj / "test-results" / "e2e-junit-solo.xml"
+		session_junit = results / "e2e-junit-session.xml"
+		solo_junit = results / "e2e-junit-solo.xml"
 		check("1: ровно два сеанса pytest", session_count(r) == 2, out[-500:])
-		check("1: сеансовый junit есть", session_junit.is_file(), out[-500:])
-		check("1: соло-junit есть", solo_junit.is_file(), out[-500:])
+		check("1: junit сессионного сеанса есть", session_junit.is_file(), out[-500:])
+		check("1: junit соло-сеанса есть", solo_junit.is_file(), out[-500:])
 		check("1: в сессионном сеансе только сессионный файл",
 		      session_junit.is_file()
 		      and junit_classnames(session_junit) == ["tests.e2e.test_session"],
@@ -169,15 +222,20 @@ def main() -> int:
 		# ── критерий 2: одна сводка из junit обоих сеансов
 		s = summary_of(r.stdout) or {}
 		check("2: сводка собрана", bool(s), r.stdout[-300:])
-		check("2: в сводке все тесты обеих сессий",
+		check("2: в сводке все тесты обеих сеансов",
 		      (s.get("collected"), s.get("passed"), s.get("failed"), s.get("errors")) == (4, 3, 1, 0),
 		      str(s))
-		check("2: сводка называет два сеанса и оба junit", (s.get("sessions"), s.get("junit")) == (2, True),
-		      str(s))
+		check("2: сводка называет два сеанса и оба junit",
+		      (s.get("sessions"), s.get("junit")) == (2, True), str(s))
 		check("2: код выхода — провал сеанса", r.returncode == 1, str(r.returncode))
+		check("2: старый junit снят и не подмешан",
+		      "e2e-junit.xml" not in junit_files(proj) and s.get("collected") == 4,
+		      str(junit_files(proj)))
 
-		# ── критерий 3: пост-свип — один вызов на прогон
-		check("3: пост-свип вызван один раз", sweep_calls(proj) == 1, str(sweep_calls(proj)))
+		# ── критерий 3: пост-свип — один вызов при двух сеансах
+		check("3: свип один раз при двух сеансах",
+		      session_junit.is_file() and solo_junit.is_file()
+		      and sweep_calls(proj) == 1, str(sweep_calls(proj)))
 
 		# ── критерий 4: глоб разворачивается, деление по маркерам сохраняется
 		proj = base / "glob"
@@ -187,7 +245,8 @@ def main() -> int:
 		s = summary_of(r.stdout) or {}
 		session_junit = proj / "test-results" / "e2e-junit-session.xml"
 		solo_junit = proj / "test-results" / "e2e-junit-solo.xml"
-		check("4: глоб развернулся (не «выборка пуста»)", "выборка пуста" not in out, out[-300:])
+		check("4: глоб развернулся без отказа выбора",
+		      "нет e2e-тестов" not in out and "выборка пуста" not in out, out[-300:])
 		check("4: два сеанса", session_count(r) == 2, out[-500:])
 		check("4: сессионный сеанс — оба сессионных файла",
 		      session_junit.is_file()
@@ -215,26 +274,32 @@ def main() -> int:
 		make_proj(proj)
 		r = run(proj, "main", "tests/e2e/test_gui_solo.py")
 		s = summary_of(r.stdout) or {}
-		check("соло-выборка: один сеанс с соло-junit",
-		      session_count(r) == 1
-		      and (proj / "test-results" / "e2e-junit-solo.xml").is_file(),
-		      (r.stdout + r.stderr)[-400:])
+		check("соло-выборка: один junit и он соло",
+		      junit_files(proj) == ["e2e-junit-solo.xml"], str(junit_files(proj)))
 		check("соло-выборка: сводка двух тестов",
 		      (s.get("collected"), s.get("passed"), s.get("failed")) == (2, 2, 0), str(s))
-		check("соло-выборка: код выхода 0", r.returncode == 0, str(r.returncode))
 
 		# ── граница: соло-файлов нет — прежний один сеанс и прежний junit
 		proj = base / "no-solo"
 		make_proj(proj, solo=False)
 		r = run(proj, "main", "tests/e2e")
-		out = r.stdout + r.stderr
 		s = summary_of(r.stdout) or {}
-		check("граница: без соло-файлов один сеанс", session_count(r) == 1, out[-500:])
-		check("граница: junit прежнего имени",
-		      (proj / "test-results" / "e2e-junit.xml").is_file(), out[-300:])
+		check("граница: без соло-файлов один junit прежнего имени",
+		      junit_files(proj) == ["e2e-junit.xml"], str(junit_files(proj)))
 		check("граница: сводка из одного junit",
 		      (s.get("collected"), s.get("passed"), s.get("failed")) == (3, 2, 1), str(s))
 		check("граница: свип тоже один раз", sweep_calls(proj) == 1, str(sweep_calls(proj)))
+
+		# ── инвариант: сбой сбора не теряет прогон, причина и лог названы
+		proj = base / "collect-fail"
+		make_proj(proj)
+		(proj / "tests" / "e2e" / "test_broken.py").write_text(BROKEN_TESTS, encoding="utf-8")
+		r = run(proj, "main", "tests/e2e")
+		out = r.stdout + r.stderr
+		check("сбой сбора: причина и лог названы",
+		      "одним сеансом" in out
+		      and (proj / "test-results" / "e2e-collect.log").is_file(), out[-400:])
+		check("сбой сбора: прогон не потерян — exit не 0", r.returncode != 0, str(r.returncode))
 
 		# ── fail-loud: глоб без совпадений не превращается в пустой прогон
 		proj = base / "empty-glob"
