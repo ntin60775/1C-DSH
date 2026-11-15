@@ -9,11 +9,13 @@
         словарь — инвариант, зелёный до и после); «Что делается»: какой
         исход состоялся — фиксируется в тикете.
   invariant: усыновлённый, но ХОЛОДНЫЙ прокси (поднят `--proxy-only`,
-        прогрева не было) греется; смена pid прокси (старый умер) греется —
-        тёплость не путается с фактом усыновления.
-  target: базовое дерево 4643d2f (main после Т6) — секция прогрева
-        исполняется на каждом старте, счётчик на рестарте растёт (краснота
-        снята прогоном на базе).
+        прогрева не было) греется; смена pid прокси (старый умер) греется;
+        смена канала на том же прокси греет новый канал (пер-канальный
+        реестр анонимайзера) — зелены до и после, краснят неверный фикс.
+  target: базовое дерево ae41393 (main, Т6 юнита #56 принят) — секция
+        прогрева исполняется на каждом старте (счётчик на рестарте растёт),
+        а провал прогрева объявляется состоявшимся («прогрет») — краснота
+        снята прогоном на базе.
 
 Мок-прокси считает execute_query — единственный потребитель секции прогрева;
 `execute_code` отвечает по живости клиента: `6 * 7` → 42 только при живом
@@ -25,6 +27,7 @@ fake HOME (venv/bin/python → мок). Паттерн — tests/test_zombie_pro
 """
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -106,8 +109,25 @@ MOCK.write_text(
     "        if method == 'tools/call':\n"
     "            name = (req.get('params') or {}).get('name') or ''\n"
     "            if name == 'execute_query':\n"
+    "                mode = ''\n"
+    "                fail_file = os.environ.get('MOCK_FAIL_WARM_FILE', '')\n"
+    "                if fail_file:\n"
+    "                    try:\n"
+    "                        mode = open(fail_file).read().strip()\n"
+    "                    except Exception:\n"
+    "                        mode = ''\n"
+    "                if mode == 'http':\n"
+    "                    self.send_response(500)\n"
+    "                    self.send_header('Content-Length', '0')\n"
+    "                    self.end_headers()\n"
+    "                    return\n"
     "                with open(COUNTS, 'a') as f:\n"
     "                    f.write('warm\\n')\n"
+    "                if mode == 'json':\n"
+    "                    self._reply(json.dumps({'jsonrpc': '2.0', 'id': 2,\n"
+    "                        'error': {'code': -32603, 'message':\n"
+    "                                  'Timeout waiting for the 1C consumer'}}).encode())\n"
+    "                    return\n"
     "                body = {'structuredContent': {'result': {'success': True,\n"
     "                                              'data': 'ok'}}}\n"
     "            elif name == 'execute_code':\n"
@@ -147,7 +167,16 @@ procs = []
 roots = []
 
 
-def make_project(name: str):
+def write_contour(root: Path, port: int, channel: str = ""):
+    data = {"1c_db": {"epf_path": "tools/mcp/Mock.epf",
+                      "url": f"http://127.0.0.1:{port}/mcp"}}
+    if channel:
+        data["1c_db"]["channel"] = channel
+    (root / ".dsh" / "1c" / "contour.json").write_text(
+        json.dumps(data), encoding="utf-8")
+
+
+def make_project(name: str, channel: str = ""):
     """Проект контура: url, обработка, привязка; счётчик прогрева — свой."""
     root = tmp / name
     port = free_port()
@@ -155,15 +184,16 @@ def make_project(name: str):
     (root / ".dsh" / "1c").mkdir(parents=True)
     (root / "tools" / "mcp").mkdir(parents=True)
     (root / "build" / "ib").mkdir(parents=True)
-    (root / ".dsh" / "1c" / "contour.json").write_text(
-        f'{{"1c_db": {{"epf_path": "tools/mcp/Mock.epf",'
-        f' "url": "http://127.0.0.1:{port}/mcp"}}}}', encoding="utf-8")
+    write_contour(root, port, channel)
     (root / "tools" / "mcp" / "Mock.epf").write_text("mock", encoding="utf-8")
     (root / "v8project.local.yaml").write_text(
         f"infobases:\n  origin:\n"
         f"    connection: 'File={root / 'build' / 'ib'}'\n", encoding="utf-8")
     roots.append(root.resolve())
     return root.resolve(), port
+
+
+FAIL_WARM_FILE = tmp / "fail_warm.mode"
 
 
 def env_for(root: Path, counts: Path):
@@ -173,12 +203,16 @@ def env_for(root: Path, counts: Path):
                 WAIT_DEADLINE="2",
                 ONEC_PLATFORM=str(fake_client),
                 MOCK_COUNTS=str(counts),
+                MOCK_FAIL_WARM_FILE=str(FAIL_WARM_FILE),
                 MOCK_CLIENT_PIDFILE=f"/tmp/1c-db-{root_hash(root)}.pid")
 
 
-def run(root: Path, counts: Path, *args: str):
+def run(root: Path, counts: Path, *args: str, fail_warm: str = ""):
     env = env_for(root, counts)
     env["FAKE_ARGS_FILE"] = str(counts.with_suffix(".args"))
+    # режим сбоя прогрева — файлом: прокси переживает старты, env у него
+    # зафиксирован на первом подъёме
+    FAIL_WARM_FILE.write_text(fail_warm, encoding="utf-8")
     return subprocess.run(["bash", str(SCRIPT), str(root), *args],
                           capture_output=True, text=True, env=env,
                           timeout=TEST_LIMIT)
@@ -228,6 +262,7 @@ def cleanup():
             f.unlink(missing_ok=True)
         for f in Path("/tmp").glob(f"1c-db-*-{h}*"):
             f.unlink(missing_ok=True)
+    shutil.rmtree(tmp, ignore_errors=True)
 
 
 try:
@@ -327,6 +362,51 @@ try:
         f"rc1={rp1.returncode}, rc2={rp2.returncode}, "
         f"pid={pid_before}->{pid_after}, "
         f"прогрев={c_before}->{warm_calls(counts_pid)}")
+    # ── инвариант (P1 панели): словарь тулкита пер-канальный — каждый канал
+    #    греется своей записью маркера; инстанс берёт канал из записи тем же
+    #    CHANNEL, что и contour.json здесь ──
+    root_ch, port_ch = make_project("channels", channel="alpha")
+    counts_ch = tmp / "channels.counts"
+    rch1 = run(root_ch, counts_ch)
+    c_ch1 = warm_calls(counts_ch)
+    proxy_ch = pidfile_pid(proxy_pidfile(root_ch))
+    client_ch = pidfile_pid(client_pidfile(root_ch))
+    run(root_ch, counts_ch, "--stop", "--base", bind(root_ch))
+    wait_dead(client_ch)
+    write_contour(root_ch, port_ch, "beta")
+    rch2 = run(root_ch, counts_ch)
+    c_ch2 = warm_calls(counts_ch)
+    _lib.check(
+        "фикс (P1 панели): смена канала на том же прокси — прогрев нового канала",
+        rch1.returncode == 0 and rch2.returncode == 0
+        and pidfile_pid(proxy_pidfile(root_ch)) == proxy_ch
+        and c_ch2 == c_ch1 + 2 and "channel=beta" in rch2.stdout
+        and "не грею" not in rch2.stdout,
+        f"rc={rch1.returncode}/{rch2.returncode}, прогрев={c_ch1}->{c_ch2}, "
+        f"прокси={proxy_ch}->{pidfile_pid(proxy_pidfile(root_ch))}, "
+        f"out={rch2.stdout[-300:]!r}")
+
+    # ── инвариант (P2 панели): прогрев с ошибкой MCP не объявляет прокси
+    #    тёплым — следующая итерация греет заново ──
+    root_bad, _ = make_project("failwarm")
+    counts_bad = tmp / "failwarm.counts"
+    rf1 = run(root_bad, counts_bad, fail_warm="json")
+    client_bad = pidfile_pid(client_pidfile(root_bad))
+    _lib.check(
+        "фикс (P2 панели): ошибка прогрева — статья «не подтверждён» и предупреждение",
+        rf1.returncode == 0 and "прогрев словаря не подтверждён" in rf1.stdout
+        and "не подтверждён" in rf1.stderr,
+        f"rc={rf1.returncode}, out={rf1.stdout[-300:]!r}, "
+        f"err={rf1.stderr[-300:]!r}")
+    run(root_bad, counts_bad, "--stop", "--base", bind(root_bad))
+    wait_dead(client_bad)
+    rf2 = run(root_bad, counts_bad)
+    _lib.check(
+        "фикс (P2 панели): после сбойного прогрева следующий старт греет заново",
+        rf2.returncode == 0 and warm_calls(counts_bad) == 4
+        and "прогрев словаря не подтверждён" not in rf2.stdout,
+        f"rc={rf2.returncode}, прогрев={warm_calls(counts_bad)}, "
+        f"out={rf2.stdout[-300:]!r}")
 finally:
     cleanup()
 

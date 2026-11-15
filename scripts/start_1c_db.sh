@@ -98,13 +98,13 @@
 # 2×WAIT_DEADLINE. Пересозданный прокси начинается с пустого словаря
 # анонимизации — первый прогон после него идёт с прогревом.
 #
-# Прогрев словаря (юнит #56 Т7): греется только холодный прокси — маркер
-# /tmp/1c-mcp-proxy-<h>.warm хранит pid прокси, построившего словарь.
-# Рестарт клиента на тёплом прокси прогрева не повторяет (итерация отладки
-# была минутами из-за прогрева на каждом старте — F8); прокси после
-# --proxy-only, нового подъёма и автопочинки Т4 холоден — маркера нет или
-# pid чужой, прогрев идёт. embedded (Windows) — словарь в сессии клиента,
-# прогрев всегда.
+# Прогрев словаря (юнит #56 Т7): греется только холодный канал — маркер
+# /tmp/1c-mcp-proxy-<h>.warm.<канал> хранит pid прокси, построившего словарь
+# этого канала (реестр анонимайзера тулкита пер-канальный). Рестарт клиента
+# на тёплом канале прогрева не повторяет (итерация отладки была минутами
+# из-за прогрева на каждом старте — F8); прокси после --proxy-only, нового
+# подъёма и автопочинки Т4 холоден — маркеров нет, прогрев идёт. embedded
+# (Windows) — словарь в сессии клиента, прогрев всегда.
 #
 # Гигиена старта (юнит #56 Т5): авария (kill -9 pytest — финализация сеанса
 # юнита #56 Т3 не выполнена) оставляла сироту-клиента с открытым диалогом и
@@ -226,9 +226,11 @@ HASH="$(printf '%s' "$ROOT" | sha1sum | cut -c1-8)"
 PROXY_LOG="/tmp/1c-mcp-proxy-$HASH.log"
 PROXY_PIDFILE="/tmp/1c-mcp-proxy-$HASH.pid"
 # Маркер тёплого словаря анонимизации (юнит #56 Т7): pid прокси, который
-# словарь построил. Живёт рядом с pid-файлом (тот же /tmp-ряд), снимается
-# вместе с прокси; новый прокси — новый pid, маркер не совпадёт.
-WARM_MARK="/tmp/1c-mcp-proxy-$HASH.warm"
+# словарь построил, — по каналу (<base>.<канал>): анонимайзер тулкита держит
+# реестр пер-канальный, прогрев одного канала другой не греет. Живёт рядом с
+# pid-файлом (тот же /tmp-ряд), снимается вместе с прокси; новый прокси —
+# новый pid, маркер не совпадёт.
+WARM_MARK_BASE="/tmp/1c-mcp-proxy-$HASH.warm"
 VENV="$HOME/.local/venvs/1c-mcp-proxy"
 TOOLKIT="${ONEC_MCP_TOOLKIT_DIR:-$HOME/home/dev/contrib/clones/1c-mcp-toolkit}"
 
@@ -858,9 +860,9 @@ stop_proxy() {
 	if [[ -f "$PROXY_PIDFILE" ]] && ! kill -0 "$(cat "$PROXY_PIDFILE" 2>/dev/null)" 2>/dev/null; then
 		rm -f "$PROXY_PIDFILE"
 	fi
-	# маркер прогрева (Т7) живёт ровно столько, сколько прокси: без прокси
-	# словаря нет
-	rm -f "$WARM_MARK"
+	# маркеры прогрева (Т7) живут ровно столько, сколько прокси: без прокси
+	# словарей нет ни у одного канала
+	rm -f "$WARM_MARK_BASE".*
 	[[ $KILLED -eq 0 ]] && echo "• прокси не поднимался этим скриптом"
 	return 0
 }
@@ -960,7 +962,7 @@ launch_proxy() {
 		"$VENV/bin/python" -m onec_mcp_toolkit_proxy \
 		>"$PROXY_LOG" 2>&1 </dev/null &
 	echo $! > "$PROXY_PIDFILE"
-	rm -f "$WARM_MARK"  # свежий прокси холоден: словарь ещё не построен
+	rm -f "$WARM_MARK_BASE".*  # свежий прокси холоден: словарей каналов нет
 	disown 2>/dev/null || true
 	for _ in $(seq 1 20); do
 		if alive; then
@@ -1864,11 +1866,19 @@ fi
 # Т4) — маркера нет или он чужой, греем. embedded (Windows) — словарь в
 # сессии клиента, греем всегда.
 _WARM=1
+_WARMED=0
 _PROXY_PID_NOW="$(cat "$PROXY_PIDFILE" 2>/dev/null || true)"
+# Канал — ключ словаря: реестр анонимайзера тулкита пер-канальный, прогрев
+# одного канала другой не греет (инстанс несёт канал записи, mono —
+# 1c_db.channel или default). Имя канала — в путь маркера, потому только
+# [A-Za-z0-9_-] (значения вне набора заменяются, маркер не уводит из /tmp).
+_WARM_KEY="${CHANNEL:-default}"
+_WARM_KEY="${_WARM_KEY//[^A-Za-z0-9_-]/_}"
+WARM_MARK="$WARM_MARK_BASE.$_WARM_KEY"
 if [[ $DBMODE == proxy && -n "$_PROXY_PID_NOW" ]] \
 		&& [[ "$(cat "$WARM_MARK" 2>/dev/null || true)" == "$_PROXY_PID_NOW" ]]; then
 	_WARM=0
-	echo "• словарь анонимизации не грею: прокси $_PROXY_PID_NOW уже тёплый (рестарт клиента)"
+	echo "• словарь анонимизации не грею: прокси $_PROXY_PID_NOW, канал $_WARM_KEY — уже тёплый"
 fi
 # Прогрев — best-effort: сбой запроса старт не валит, но и тёплым прокси не
 # объявляет (маркер пишется только по состоявшемуся запросу).
@@ -1897,26 +1907,37 @@ try:
                              "clientInfo": {"name": "dict-warmup", "version": "0"}}})
     if sid:
         rpc({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid)
-    rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+    _, res = rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
          "params": {"name": "execute_query",
                     "arguments": {"query": "ВЫБРАТЬ ПЕРВЫЕ 5 Наименование, ИНН ИЗ Справочник.Контрагенты"}}}, sid)
+    if res.get("error") or (res.get("result") or {}).get("isError"):
+        sys.exit(1)  # ответ с ошибкой MCP прогревом не считается
 except Exception:
     sys.exit(1)
 PY
 }
 if [[ $_WARM -eq 1 ]]; then
-	_WARMED=0
 	for _ in 1 2; do
 		anon_warm_once && _WARMED=1
 		sleep 3
 	done
-	if [[ $_WARMED -eq 1 && -n "$_PROXY_PID_NOW" ]]; then
-		printf '%s\n' "$_PROXY_PID_NOW" > "$WARM_MARK" 2>/dev/null || true
+	if [[ $_WARMED -eq 1 ]]; then
+		# маркер — только за живой и тот же прокси: за ~70 с прогрева он мог
+		# умереть, и маркер на мёртвый pid объявил бы тёплым чужой прокси
+		_PROXY_PID_AFTER="$(cat "$PROXY_PIDFILE" 2>/dev/null || true)"
+		if [[ -n "$_PROXY_PID_AFTER" && "$_PROXY_PID_AFTER" == "$_PROXY_PID_NOW" ]] \
+				&& kill -0 "$_PROXY_PID_AFTER" 2>/dev/null; then
+			printf '%s\n' "$_PROXY_PID_NOW" > "$WARM_MARK" 2>/dev/null || true
+		fi
+	else
+		echo "⚠ прогрев словаря канала $_WARM_KEY не подтверждён: запросы прогрева не прошли — смотри $PROXY_LOG; первый ответ может быть сырым" >&2
 	fi
 fi
 
-if [[ $_WARM -eq 1 ]]; then
+if [[ $_WARM -eq 0 ]]; then
+	echo "✓ 1c-db готов: клиент с danger-флагами, словарь канала $_WARM_KEY тёплый (прокси переиспользован), MCP на $PROBE_URL"
+elif [[ $_WARMED -eq 1 ]]; then
 	echo "✓ 1c-db готов: клиент с danger-флагами, словарь прогрет, MCP на $PROBE_URL"
 else
-	echo "✓ 1c-db готов: клиент с danger-флагами, словарь тёплый (прокси переиспользован), MCP на $PROBE_URL"
+	echo "✓ 1c-db готов: клиент с danger-флагами, прогрев словаря не подтверждён (best-effort), MCP на $PROBE_URL"
 fi
