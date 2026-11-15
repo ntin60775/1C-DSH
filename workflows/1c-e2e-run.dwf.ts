@@ -2,7 +2,7 @@
 args:
   tests:
     type: string
-    description: "Каталог или файл e2e-тестов pytest относительно корня проекта; пусто — tests/e2e"
+    description: "Пути и/или глобы e2e-тестов pytest относительно корня проекта через пробел; пусто — tests/e2e. Файлы с маркером e2e_solo идут отдельным pytest-сеансом"
   profile:
     type: string
     description: "Имя профиля тестовой базы из .dsh/1c/testpilot/profiles.yaml"
