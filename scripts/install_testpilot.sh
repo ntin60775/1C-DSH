@@ -9,7 +9,7 @@ set -euo pipefail
 # PyPI пуст (404) — только git-теги апстрима; v-префикс обязателен (голый тег есть лишь у 1.8.1)
 PIN="${TESTPILOT_PIN:-1c-testpilot[allure] @ git+https://github.com/ROCTUP/1c-testpilot.git@v1.9.2}"
 # wheel из релиза — ставится голым pip по https, без git; fallback — git+https
-ONEDB_PIN="${ONEC_DB_PIN:-https://github.com/ntin60775/1c-onec-db/releases/download/v0.1.6/1c_onec_db-0.1.6-py3-none-any.whl}"
+ONEDB_PIN="${ONEC_DB_PIN:-https://github.com/ntin60775/1c-onec-db/releases/download/v0.1.7/1c_onec_db-0.1.7-py3-none-any.whl}"
 VENV="$HOME/.local/venvs/1c-testpilot"
 BIN="$HOME/.local/bin"
 
@@ -25,11 +25,23 @@ echo "→ ставлю $ONEDB_PIN"
 "$VENV/bin/python" -m pip install -q "$ONEDB_PIN"
 
 "$VENV/bin/python" - <<'PY'
-import pytest, testpilot, onec_db
-print("✓ testpilot ok, pytest", pytest.__version__, "| onec_db ok")
+import subprocess
+import sys
+
+import pytest, testpilot
+from onec_db.plugin import solo_base
+
+# Маркер регистрирует плагин (pytest11 entry-point) на старте сеанса:
+# проверяем, что wheel несёт фикстуру и маркер, а не только пакет.
+markers = subprocess.run([sys.executable, "-m", "pytest", "--markers"],
+                         capture_output=True, text=True).stdout
+assert callable(solo_base), "фикстура solo_base не импортируется из onec_db.plugin"
+assert "e2e_solo" in markers, "маркер e2e_solo не зарегистрирован плагином onec_db"
+print("✓ testpilot ok, pytest", pytest.__version__,
+      "| onec_db ok: solo_base, e2e_solo")
 PY
 
 mkdir -p "$BIN"
 ln -sfn "$VENV/bin/1c-testpilot" "$BIN/1c-testpilot"
 echo "✓ готово: $BIN/1c-testpilot → $VENV"
-echo "  e2e-прогоны: scripts/run_e2e.sh [профиль] [tests/e2e]"
+echo "  e2e-прогоны: scripts/run_e2e.sh [профиль] [TESTS…]"

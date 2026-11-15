@@ -296,6 +296,8 @@ def main() -> None:
 		_lib.check("набор: пробы канона на месте",
 		           "ПроверкаAnon" in body and "Справочник.Контрагенты" in body,
 		           body[:120])
+		_lib.check("набор: пример соло-фикстуры на месте",
+		           "solo_base" in body and "e2e_solo" in body, body[:200])
 		_lib.check("набор: самодостаточен — импорт conftest отсутствует",
 		           "from conftest" not in body and "import conftest" not in body)
 		# Канарейка расщеплена соседними литералами (python склеивает их

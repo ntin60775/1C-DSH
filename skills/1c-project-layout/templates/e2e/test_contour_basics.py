@@ -10,6 +10,17 @@ get_object_by_link по реальному объекту) остаётся в �
 UUID недоступен языку запросов, добыча его тянет execute_code. Здесь
 проверяется детерминированная часть контракта ссылок: e1cib-формат и отказ
 на некорректный ввод.
+
+Соло-режим GUI: GUI-тест и клиент 1c-db на файловой базе не уживаются —
+модуль с фикстурой `solo_base` (плагин `1c_onec_db`) идёт соло и несёт
+маркер `e2e_solo`, поэтому GUI-тесты живут отдельным файлом набора, а этот
+API-набор остаётся сессионным. Пример `tests/e2e/test_gui_solo.py`:
+
+    def test_gui_opens_list(testpilot, solo_base):
+        testpilot.execute_command(command="e1cib/list/Справочник.Контрагенты")
+        форма = testpilot.find_object(cls="ManagedForm", timeout=30)
+        # «открылось» = наблюдаемая реакция, а не код возврата
+        assert форма.get_context(result_mode="full"), "форма списка пуста на контекст"
 """
 from urllib.parse import quote
 
