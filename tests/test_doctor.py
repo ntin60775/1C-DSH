@@ -623,6 +623,61 @@ def main() -> int:
 		      none_reg["data"]["project"]["registry"] == "ok",
 		      json.dumps(none_reg["data"]["project"])[:400])
 
+		# spec: обновление Юники — живая версия лаунчера и версия скиллов
+		# сверяются с unica.yaml; рассинхрон называется кодом, не молчит.
+		sys.path.insert(0, str(REPO / "scripts"))
+		from unica_versions import load as load_unica_versions
+		expected_version = load_unica_versions()["unica"]
+		verbs = ["run", "apply", "docs", "view", "check", "search", "resolve", "diff"]
+		tools = ",".join(json.dumps({"name": f"unica.{verb}"}) for verb in verbs)
+
+		def handshake_launcher(fx: Fixture, version: str) -> None:
+			# PATH фикстуры изолирован: только builtin printf, не cat.
+			line1 = ('{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"version":"'
+			         + version + '"}}}')
+			line2 = f'{{"jsonrpc":"2.0","id":2,"result":{{"tools":[{tools}]}}}}'
+			path = fx.home / ".local" / "bin" / "unica"
+			path.parent.mkdir(parents=True, exist_ok=True)
+			path.write_text(f"#!/bin/sh\nprintf '%s\\n' '{line1}' '{line2}'\n",
+			                encoding="utf-8")
+			path.chmod(0o755)
+
+		fx_stale = Fixture(Path(tmp) / "stale-unica")
+		make_testpilot(fx_stale)
+		write_install(fx_stale, make_package(Path(tmp) / "stale-unica" / "pkgsrc"))
+		write_project(fx_stale)
+		handshake_launcher(fx_stale, "0.0.1")
+		stale = fx_stale.run_argv(str(fx_stale.project), "--json")
+		stale_data = json.loads(stale.stdout or "{}")
+		check("лаунчер на прежней версии — FAIL mcp.unica-version",
+		      stale.returncode == 1
+		      and stale_data.get("mcp", {}).get("code") == "mcp.unica-version",
+		      stale.stdout[-400:])
+		check("лаунчер на прежней версии — причина называет unica.yaml и --prune",
+		      "unica.yaml" in str(stale_data.get("mcp", {}).get("message"))
+		      and "--prune" in str(stale_data.get("mcp", {}).get("message")),
+		      str(stale_data.get("mcp", {}).get("message"))[:300])
+
+		fx_live = Fixture(Path(tmp) / "live-unica")
+		make_testpilot(fx_live)
+		write_install(fx_live, make_package(Path(tmp) / "live-unica" / "pkgsrc"))
+		write_project(fx_live)
+		handshake_launcher(fx_live, expected_version)
+		unica_skills = fx_live.home / ".local" / "share" / "unica" / "skills"
+		(unica_skills / "skill-0").mkdir(parents=True)
+		(unica_skills / "skill-0" / "SKILL.md").write_text("---\nname: x\n---\n",
+		                                                   encoding="utf-8")
+		(unica_skills / "SOURCE.json").write_text(
+			json.dumps({"version": "0.0.1", "skills": 1}), encoding="utf-8")
+		live = fx_live.run_argv(str(fx_live.project), "--json")
+		live_data = json.loads(live.stdout or "{}")
+		check("живая версия из yaml — mcp не fail",
+		      live.returncode == 0 and live_data.get("mcp", {}).get("status") != "fail",
+		      live.stdout[-400:])
+		check("скиллы Юники прежней версии — WARN skills.unica-version",
+		      live_data.get("skills", {}).get("code") == "skills.unica-version",
+		      json.dumps(live_data.get("skills", {}))[:400])
+
 		return summary()
 
 

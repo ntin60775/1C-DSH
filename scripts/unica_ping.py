@@ -77,11 +77,11 @@ def parse_tools(text: str):
 
 
 def ping(timeout_s: int, project: str = ""):
-	"""(код, сообщение, verbs) — код: 0 ок, 1 упал, 2 таймаут."""
+	"""(код, сообщение, verbs, версия) — код: 0 ок, 1 упал, 2 таймаут."""
 	command = launcher()
 	if not command:
 		return 1, ("лаунчер Юники не найден (UNICA_LAUNCHER, ~/.local/bin/unica, "
-		           "PATH) — MCP unica не поднимется"), set()
+		           "PATH) — MCP unica не поднимется"), set(), ""
 	env = dict(os.environ, UNICA_RUNTIME_CACHE_DIR=runtime_cache_dir())
 	cwd = str(Path(project).expanduser()) if project else None
 	try:
@@ -90,20 +90,20 @@ def ping(timeout_s: int, project: str = ""):
 			timeout=timeout_s, env=env, cwd=cwd)
 	except subprocess.TimeoutExpired:
 		return 2, ("таймаут: вероятно, первый старт качает рантаймы (минуты); "
-		           "повтори позже или проверь сеть до github.com"), set()
+		           "повтори позже или проверь сеть до github.com"), set(), ""
 	except OSError as error:
-		return 1, f"лаунчер не запустился: {command}: {error}", set()
+		return 1, f"лаунчер не запустился: {command}: {error}", set(), ""
 	if done.returncode != 0 and not done.stdout.strip():
 		return 1, (f"unica mcp exit {done.returncode}: "
-		           f"{(done.stderr or '').strip()[:200] or 'без вывода'}"), set()
+		           f"{(done.stderr or '').strip()[:200] or 'без вывода'}"), set(), ""
 	version, verbs = parse_tools(done.stdout)
 	if not verbs:
 		return 1, (f"сервер не ответил на tools/list (exit {done.returncode}): "
-		           f"{(done.stderr or '').strip()[:200]}"), set()
+		           f"{(done.stderr or '').strip()[:200]}"), set(), version
 	missing = REQUIRED_VERBS - verbs
 	if missing:
-		return 1, f"сервер {version or '?'} без обязательных глаголов: {sorted(missing)}", verbs
-	return 0, f"unica {version or '?'} жив: {len(verbs)} глаголов", verbs
+		return 1, f"сервер {version or '?'} без обязательных глаголов: {sorted(missing)}", verbs, version
+	return 0, f"unica {version or '?'} жив: {len(verbs)} глаголов", verbs, version
 
 
 def main() -> int:
@@ -120,9 +120,9 @@ def main() -> int:
 		elif argument.startswith("--project="):
 			project = argument.split("=", 1)[1]
 	as_json = "--json" in sys.argv
-	code, message, verbs = ping(timeout_s, project)
+	code, message, verbs, version = ping(timeout_s, project)
 	if as_json:
-		print(json.dumps({"code": code, "message": message,
+		print(json.dumps({"code": code, "message": message, "version": version,
 		                  "verbs": sorted(verbs)}, ensure_ascii=False))
 	else:
 		print(message)

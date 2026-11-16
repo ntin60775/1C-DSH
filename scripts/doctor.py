@@ -451,7 +451,23 @@ def check_skills(report: Report, dsh_home: Path, bundle: dict, root: Path):
 	         if (path / "SKILL.md").is_file()} if unica_dir.is_dir() else set()
 	report.sections["skills"]["unica"] = len(unica)
 	if unica:
-		report.ok("skills", f"скиллы Юники на машине: {len(unica)}")
+		# Версия скиллов — из SOURCE.json поставки, ожидание — unica.yaml.
+		try:
+			want = load_unica_versions()["tag"].removeprefix("v")
+			marker = json.loads((unica_dir / "SOURCE.json").read_text(encoding="utf-8"))
+			got = str(marker.get("version") or "")
+			if got != want:
+				report.warn("skills", f"скиллы Юники {got or '?'}, контур ожидает {want} "
+				            "(unica.yaml) — ставит scripts/install_unica_skills.py",
+				            code="skills.unica-version")
+			else:
+				report.ok("skills", f"скиллы Юники на машине: {len(unica)} (версия {got})")
+		except (OSError, json.JSONDecodeError) as error:
+			report.warn("skills", f"скиллы Юники на машине: {len(unica)}, SOURCE.json не "
+			            f"читается ({error}) — сверка версии пропущена; ставит "
+			            "scripts/install_unica_skills.py", code="skills.unica-marker")
+		except RuntimeError as error:
+			report.warn("skills", str(error), code="skills.unica-version")
 	else:
 		report.warn("skills", f"скиллов Юники нет ({unica_dir}) — сессия без знания "
 		            "Юники; ставит scripts/install_unica_skills.py",
@@ -668,8 +684,23 @@ def check_unica_liveness(report: Report, root: Path, no_ping: bool) -> dict:
 	code = result.get("code")
 	message = str(result.get("message") or (done.stdout or "")[:160])
 	if code == 0:
-		report.ok("mcp", f"MCP unica жив: {message}")
-		server["detail"] = message
+		# Живая версия ядра — из serverInfo handshake: лаунчер мог остаться
+		# на прежней версии (sort -V ставит rc выше финала той же версии).
+		try:
+			expected = load_unica_versions()
+		except RuntimeError as error:
+			report.fail("mcp", str(error), code="mcp.unica-config")
+			expected = None
+		live_version = str(result.get("version") or "")
+		if expected is not None and live_version != expected["unica"]:
+			report.fail("mcp", f"лаунчер отдаёт {live_version or '?'} вместо "
+			            f"{expected['unica']} (unica.yaml): прежняя версия не снесена — "
+			            "scripts/install_unica_runtime.py --prune или UNICA_GLOBAL_VERSION",
+			            code="mcp.unica-version")
+			server.update({"state": "stale", "detail": message})
+		else:
+			report.ok("mcp", f"MCP unica жив: {message}")
+			server["detail"] = message
 	elif code == 2:
 		report.warn("mcp", f"unica ping: {message}", code="mcp.unica-ping")
 		server["state"] = "unknown"

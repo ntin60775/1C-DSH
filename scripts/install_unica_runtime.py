@@ -295,6 +295,17 @@ def main(argv: list[str]) -> int:
 			print(summary[-1] if summary else "prefetch: артефакты на месте")
 			if args.prune:
 				prune(share, version)
+			# контроль факта: лаунчер обязан отдавать установленную версию,
+			# иначе обновление молча не действует (sort -V: rc выше финала)
+			launcher = Path(os.environ.get("UNICA_LAUNCHER")
+			                or Path.home() / ".local" / "bin" / "unica")
+			out = subprocess.run([str(launcher), "--help"],
+			                     capture_output=True, text=True)
+			first = (out.stdout or "").splitlines()[0] if out.stdout.strip() else ""
+			if out.returncode != 0 or first != f"unica {version}":
+				raise RuntimeError(
+					f"лаунчер отдаёт «{first or 'ничего'}» вместо unica {version}: "
+					"прежняя версия не снесена — повтор с --prune или UNICA_GLOBAL_VERSION")
 		finally:
 			if temp is not None:
 				temp.cleanup()

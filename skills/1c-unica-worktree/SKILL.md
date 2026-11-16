@@ -92,6 +92,7 @@ local-слоя (`File=` / `Srvr+Ref`); не совпало — прогон не
    CLAUDE_PROJECT_DIR=<ворктри> \
    UNICA_HOST_CONTEXT_REQUIRED=1 \
    UNICA_RUNTIME_CACHE_DIR="$ROOT/runtimes" \
+   UNICA_PROVIDER_STATE_DIR="$ROOT/provider-state" \
    UNICA_RUNTIME_MANIFEST="$ROOT/$VER/runtime-manifest.json" \
      "$ROOT/$VER/bootstrap/launch.sh" "$ROOT/$VER"
    ```

@@ -102,9 +102,10 @@ def main() -> int:
 			check("handshake 0.15: старый протокол не используется",
 			      "2024-11-05" not in unica_ping.HANDSHAKE, unica_ping.HANDSHAKE)
 
-			code, message, verbs = unica_ping.ping(60, str(project))
+			code, message, verbs, version = unica_ping.ping(60, str(project))
 			check("живой handshake — код 0", code == 0, message)
 			check("версия из serverInfo", "0.15.0" in message, message)
+			check("версия — машинное поле", version == "0.15.0", version)
 			check("обязательные глаголы контура на месте",
 			      unica_ping.REQUIRED_VERBS <= verbs, sorted(verbs))
 			check("в запросе назван протокол 2025-11-25",
@@ -118,19 +119,19 @@ def main() -> int:
 			      (home / "cache.txt").read_text(encoding="utf-8"))
 
 			os.environ.pop("UNICA_RUNTIME_CACHE_DIR", None)
-			code, message, verbs = unica_ping.ping(60, str(project))
+			code, message, verbs, version = unica_ping.ping(60, str(project))
 			check("без env кэш рантаймов — умолчание",
 			      (home / "cache.txt").read_text(encoding="utf-8")
 			      == str(home / ".local" / "share" / "unica" / "runtimes"),
 			      (home / "cache.txt").read_text(encoding="utf-8"))
 
 			write_launcher(home, NO_DIFF)
-			code, message, _verbs = unica_ping.ping(60, str(project))
+			code, message, _verbs, _version = unica_ping.ping(60, str(project))
 			check("без глагола diff — код 1 и причина",
 			      code == 1 and "обязательных глаголов" in message, message)
 
 			write_launcher(home, "#!/bin/sh\nexit 1\n")
-			code, message, _verbs = unica_ping.ping(60, str(project))
+			code, message, _verbs, _version = unica_ping.ping(60, str(project))
 			check("лаунчер упал без вывода — код 1 с кодом выхода",
 			      code == 1 and "exit 1" in message, message)
 
@@ -142,7 +143,7 @@ def main() -> int:
 			      bad.returncode == 2 and "секунды" in bad.stderr, bad.stderr[:200])
 
 			(home / ".local" / "bin" / "unica").unlink()
-			code, message, _verbs = unica_ping.ping(60, str(project))
+			code, message, _verbs, _version = unica_ping.ping(60, str(project))
 			check("лаунчера нет — код 1 и причина",
 			      code == 1 and "лаунчер Юники не найден" in message, message)
 		finally:
