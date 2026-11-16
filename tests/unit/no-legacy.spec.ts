@@ -9,16 +9,20 @@
  * слой `.agents/` не поставляется и не проверяется (правило AGENTS.md):
  * его тексты описывают харнесс ZCode как историю метода.
  *
- * Единственное именованное исключение приёмного grep — этот файл: гард
- * называет запрещённые маркеры, чтобы их искать. Приёмный grep запускается
- * с `--exclude=no-legacy.spec.ts`; все прочие носители обязаны быть чисты.
+ * Единственные именованные исключения — этот файл (называет маркеры, чтобы
+ * их искать) и носители флоу уборки: навык деплоя обязан назвать legacy-слой
+ * целью удаления. Живой путь `.zcode/...` в этих носителях запрещён отдельной
+ * проверкой ниже, поэтому исключение не ослабляет критерий: слой снят, а не
+ * «упомянут».
  *
  * invariant: tickets/dsh-contour/T10-park-registry.md#критерии-приёмки —
- * legacy-раскладки, переменная состояния и путь станции ZCode сняты.
+ * legacy-раскладки, переменная состояния и путь станции ZCode сняты;
+ * tickets/dsh-contour/T11-legacy-cleanup-flow.md — флоу уборки называет слой
+ * только целью удаления.
  * @module tests/unit/no-legacy.spec
  */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -36,6 +40,20 @@ const SKIP_DIRS = new Set(['node_modules', '__pycache__', '.git', 'lib', 'vendor
 
 /** Этот файл называет маркеры — единственное именованное исключение. */
 const SELF = 'tests/unit/no-legacy.spec.ts'
+
+/** Носители флоу уборки: называют legacy-слой целью удаления. */
+const FLOW = new Set([
+  'skills/1c-project-bootstrap/SKILL.md',
+  'commands/1c-bootstrap.md',
+  'docs/dsh-install.md',
+  'tests/test_bootstrap_legacy_cleanup.py',
+])
+
+/** Живой путь слоя: `.zcode/<имя>` или `.omp/<имя>` — использование, не снятие. */
+const LIVE = /\.(?:zcode|omp)\/[\w.-]/
+
+/** Строка говорит о снятии/проверке слоя, а не о работе с ним. */
+const REMOVAL = /(?:git rm|rm -rf|git ls-files|git grep|diff |удал|снят|не остаётся|прежн)/i
 
 /** Расширения поставляемого слоя и доков. */
 const EXT = /\.(md|py|json|ts|sh|yaml|yml|template|txt|mjs)$/
@@ -60,7 +78,8 @@ function files(dir: string, rel: string): string[] {
       // с путями — это их назначение, они вне критерия Т10.
       if (relative === 'docs/plans' || relative === 'docs/ops' || relative === 'tickets') continue
       result.push(...files(path, relative))
-    } else if (EXT.test(name) && !DOC_EXCLUDE.has(name) && relative !== SELF) {
+    } else if (EXT.test(name) && !DOC_EXCLUDE.has(name) && relative !== SELF
+      && !FLOW.has(relative)) {
       result.push(relative)
     }
   }
@@ -82,5 +101,18 @@ describe('инвариант Т10: поставляемый слой без на
       }
     }
     expect(hits).toEqual([])
+  })
+
+  it('носители флоу называют legacy-слой только целью удаления', () => {
+    for (const relative of FLOW) {
+      // На базовом коммите носителя флоу может не быть — исключение не
+      // прикрывает пустоту: проверяется то, что существует.
+      if (!existsSync(join(ROOT, relative))) continue
+      const text = readFileSync(join(ROOT, relative), 'utf8')
+      expect(text.length).toBeGreaterThan(0)
+      const hits = text.split('\n').filter((line) => LIVE.test(line)
+        && !REMOVAL.test(line))
+      expect(hits).toEqual([])
+    }
   })
 })

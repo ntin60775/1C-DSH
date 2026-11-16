@@ -3,7 +3,7 @@ node_type: guide
 title: Установка контура 1С на DSH
 service: _platform
 status: active
-updated: 2026-11-13
+updated: 2026-11-16
 links:
   relates_to: [dsh-gates.md, UNICA.md, README.md]
 ---
@@ -97,6 +97,14 @@ pnpm build        # tsc → lib/
 путь чекера стиля. Порядок чтения: `.dsh/1c` → `.dsh` (одна таблица
 `LAYOUT_DIRS` в `src/paths.ts`); legacy-раскладки ZCode сняты в Т10
 после перевода парка.
+
+Перевод проекта с прежнего канала (ZCode/omp) включает уборку legacy-слоя:
+`.zcode/` и `.omp/` удаляются, проектные runbook'и, обёртки и `.gitignore`
+переводятся на `.dsh/1c` и `$DSH_1C_ROOT/scripts`, проектный
+`registry.local.json` получает append-запись о переводе. Порядок — навык `1c-project-bootstrap`,
+раздел «Перевод с legacy-каналов»; проверка — doctor, пустой
+`git ls-files .zcode .omp` и collect-only набора. Удаление tracked-файлов
+уходит в коммит проекта, который делает владелец.
 
 Реестр проектов парка —
 `${DSH_1C_STATE_DIR:-~/.dsh/state/1c}/projects.json` (путь, раскладка,
