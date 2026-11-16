@@ -4,6 +4,8 @@
  * spec: Т5 — «MCP-записи: unica, 1c-testpilot, 1c-db (+ инстансы), 1c-kd;
  * `unica` получает `UNICA_RUNTIME_CACHE_DIR` и привязку к проекту»;
  * «вне 1С-проекта скиллы Юники и `mcp__unica__*` не видны».
+ * Инвариант финала 0.15: лаунчер несёт `UNICA_RUNTIME_MANIFEST`, ядро
+ * требует хост-контекст — пресет подаёт `CLAUDE_PROJECT_DIR` корня.
  * @module tests/unit/preset.spec
  */
 
@@ -112,6 +114,7 @@ describe('readProject и mcpRows', () => {
         args: ['mcp'],
         env: {
           UNICA_RUNTIME_CACHE_DIR: '/home/tester/.local/share/unica/runtimes',
+          CLAUDE_PROJECT_DIR: tree.root,
         },
       })
       expect(rows[1]?.config.env?.['TC1C_PROFILES_FILE']).toBe(join(tree.root, '.dsh', '1c', 'testpilot', 'profiles.yaml'))

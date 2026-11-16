@@ -329,6 +329,10 @@ export function mcpRows(
         cwd: project.root,
         env: {
           UNICA_RUNTIME_CACHE_DIR: unicaRuntimeCache(home),
+          // Лаунчер передаёт ядру UNICA_RUNTIME_MANIFEST, а тот включает
+          // строгий хост-контекст: cwd-канал больше не фолбэк. Привязку
+          // воркспейса подаёт пресет (канал startupEnvironment).
+          CLAUDE_PROJECT_DIR: project.root,
         },
         startupTimeoutMs: 30_000,
       },

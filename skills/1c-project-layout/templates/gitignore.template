@@ -31,3 +31,6 @@ v8project.local.yaml
 # Артефакты e2e-прогонов и байткод pytest (run_e2e.sh, junit/сводки).
 test-results/
 __pycache__/
+
+# Память раннера 0.17 (localPath): хеши, поколения, данные стендов
+.local/

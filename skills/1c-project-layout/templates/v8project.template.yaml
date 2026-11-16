@@ -3,9 +3,11 @@
 # в v8project.local.yaml.
 #
 # Не использовать: builder, basePath, execution_timeout,
-# push.partialLoadThreshold, верхнеуровневый connection. v8-runner 0.15
+# push.partialLoadThreshold, верхнеуровневый connection. Раннер 0.17
 # отвергает их как invalid_source. Полная загрузка — push full:true.
 # Привязка инфобазы — только в local-слое: infobases.origin.
+# workPath — пересчитываемое (умолчание .build/v8-runner, явный build
+# раннер не меняет); память о базе — localPath (умолчание .local), вне git.
 workPath: 'build'
 format: DESIGNER
 source-set:

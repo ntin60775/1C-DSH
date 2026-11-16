@@ -107,10 +107,13 @@ GeneratedTypes заимствованного объекта остаются р
   «Неверный формат» — диагноз по аргументу, не по строке ошибки.
 - `config extension create --name=<имя> --name-prefix=<префикс>` ставит
   `safe-mode=yes` по умолчанию — менять через `config extension update`.
-- Состав расширений **файловой** базы через ibcmd не доступен (extensions —
-  dbms-only, апстрим unica#1103): platform-сессия unica (`extensions.list`)
-  или execute_code; подсистемы основной конфигурации — execute_code
-  (Метаданные.Подсистемы).
+- Состав расширений **файловой** базы: `ibcmd extension list --db-path=<ИБ>`
+  (проверено на 8.3.27.1859: rc=0, пустой список на базе без расширений;
+  раннер 0.17 этой командой читает полные поля, при живом агенте список
+  берёт у агента). Прежняя граница «dbms-only» (unica#1103) относилась к
+  серверной базе без `dbms` и к старому `config extension`-пути. Альтернативы:
+  platform-сессия unica (`extensions.list`) или execute_code; подсистемы
+  основной конфигурации — execute_code (Метаданные.Подсистемы).
 - Сборка `.cfe` из базы — `config save <файл>.cfe --extension=<имя>
   --db-path=<ИБ>` (проверено на файловой базе 8.3.27: rc=0, файл валиден);
   цель — `build/out/cfe/<Имя>_<ГГГГ-ММ-ДД>.cfe` (раскладка артефактов —
@@ -348,7 +351,7 @@ ibcmd`; пусто — поиск по живым контейнерам (`distr
 | Загрузить XML | `config import <каталог> --db-path=<ИБ>` → `config apply --force --db-path=<ИБ>` | то же + координаты |
 | Загрузить расширение | `config import <каталог> --extension=<имя> …` → `config apply --extension=<имя> --force …` | то же + координаты |
 | .cf | `config load <файл.cf> …`; выгрузка — `config save <файл.cf> --db …` | то же + координаты |
-| Перечень расширений | **нет** (dbms-only, #1103) | unica `extensions.list` или execute_code |
+| Перечень расширений | `extension list --db-path=<ИБ>` (файловая, 8.3.27+); серверная без `dbms` — нет (#1103) | unica `extensions.list` или execute_code |
 | Создать базу из XML | `infobase create --import=<каталог> --apply --db-path=<ИБ>` | `… --create-database --import=<каталог> --apply` + координаты |
 
 Практика для серверной базы на Linux:
@@ -401,6 +404,13 @@ import/export` на PG не доведены: `infobase create --create-database
   с 128k файлов; «resource classification count exceeds 65536»,
   `readinessState=incomplete`). Режим «unica недоступна» и эскалационный
   канал — docs/UNICA.md плагина; поставка ibcmd от отказа unica не зависит.
+- Раннер 0.17 рядом с поставкой: `diff --against db|vendor:<имя>|<пакет.cf>`
+  даёт TXT-отчёт сравнения (путь в `data.report`) — сверка заимствований и
+  поставщика без выгрузки; `upload` обновления поставщика требует
+  подтверждения; `push delete:<имя>` удаляет расширение вместе с данными
+  (вопрос человеку). Живой агент Конфигуратора держит сеанс базы: чужой
+  исполнитель получает `infobase_busy`, выход — `agent release`/`agent stop`;
+  уборка рабочей копии начинается с `agent stop`.
 
 ## Внешние обработки и отчёты: разбор и сборка на пустой файловой базе
 

@@ -1,10 +1,11 @@
 # v8project 0.15: поля, назначение, миграция
 
-Справочник для агента: что схема v8-runner 0.15 поставляет в `v8project.yaml`
-и `v8project.local.yaml`, зачем поле нужно и что с ним делать при переходе со
-старого конфига. Источник истины — словарь `unica.run {}` и публичная
-`argsSchema` операции; этот файл объясняет раскладку файлов, а не заменяет
-контракт вызова.
+Справочник для агента: что схема v8-runner (поверхность контура 0.15,
+раннер 0.17) поставляет в `v8project.yaml` и `v8project.local.yaml`,
+зачем поле нужно и что с ним делать при переходе со старого конфига.
+Источник истины — словарь `unica.run {}` и публичная `argsSchema`
+операции; этот файл объясняет раскладку файлов, а не заменяет контракт
+вызова.
 
 ## Два файла, один корень
 
@@ -41,7 +42,8 @@ infobases:
 
 | Поле | Тип | Назначение | Что делать |
 |---|---|---|---|
-| `workPath` | string, обязательное | Рабочий каталог сгенерированного состояния: логи, временные файлы, hash-хранилища. Относительный путь считается от каталога основного конфига. | Оставить `build`; машинный override — в local. |
+| `workPath` | string, умолчание `.build/v8-runner` | Пересчитываемое состояние: логи, временные файлы, hash-хранилища, дом живого агента. Можно удалить — раннер пересоберёт. Относительный путь считается от каталога основного конфига. | Явный `build` прежних проектов раннер не меняет; машинный override — в local. |
+| `localPath` | string, умолчание `.local` | Личное состояние копии, которое нельзя пересобрать без базы: хеши наборов, копия файла версий, журнал поколений, память владельца, данные управляемых стендов. Удаление `workPath` его не задевает. | Не коммитить (`.gitignore` пишет сам раннер); машинный override — в local. |
 | `format` | `DESIGNER` \| `EDT` | Формат исходников по умолчанию для source-set. Это не доказательство формата каждого набора: `unica.view {}` показывает `sourceFormat` и `formatEvidence` по каждому. | Выбрать фактический формат проекта. Для `epf-init`/`erf-init` нужен ровно `DESIGNER` или отсутствие поля. |
 | `source-set` | массив объектов | Наборы, которые собираются, тестируются, выгружаются и материализуются. | Описать каждый каталог отдельно; имя — стабильный идентификатор для фильтров и диагностик. |
 | `infobase` | объект, deprecated | Одноцикловый синоним `infobases.origin`; финал 0.15 принимает его только в local-слое. | Перенести в `v8project.local.yaml` как `infobases.origin`. |
@@ -79,16 +81,29 @@ XML и EDT делает набор неоднозначным. Автодете�
 
 ## `providers`
 
-Исполнители: `designer`, `agent`, `ibcmd`, `ibcmd-rs`, `webinst`. Имена
-операций — ключи секции: `apply`, `build`, `convert`, `download`, `dump`,
-`extensions`, `infobase.configuration.export`, `infobase.create`,
-`infobase.dump`, `infobase.restore`, `init`, `load`, `make`, `publish`,
-`pull`, `push`, `reset`, `syntax`, `upload`.
+Исполнители: `designer`, `agent`, `ibcmd`, `ibcmd-rs`, `webinst`. Ключи —
+имена операций из словаря команд: `infobase.create`, `push`, `apply`,
+`reset`, `diff`, `upload`, `pull`, `extensions`, `download`,
+`infobase.dump`, `infobase.restore`, `make`, `convert`. Ключ разрешён и
+в local-слое (машинный эксперимент); квитанция называет файл-источник.
 
-Прежние имена, принимаются один цикл: `build` → `push`, `dump` → `pull`,
-`init` → `infobase.create`, `load` → `upload`,
-`infobase.configuration.export` → `download`. `convert` и `publish` схема
-принимает, чтобы валидация сказала: выбора исполнителя у операции нет.
+Загрузчик отвергает `providers.syntax`, `providers.publish`,
+`providers.check`, `providers.sessions` как неизвестные поля. Ключ
+принимается только для операции, у которой на этой базе есть выбор
+исполнителя; единственный исполнитель — ошибка конфигурации. Прежние
+имена команд (`build` → `push`, `dump` → `pull`, `load` → `upload`,
+`syntax` → `check`, `infobase configuration export` → `download`)
+принимаются один цикл выпуска; `init` — подготовка проекта, создание
+базы — `infobase create` без синонима.
+
+Умолчания 0.17: `push`/`pull`/`download` — агент → Конфигуратор, у
+файловой базы затем `ibcmd`; у кластера `ibcmd` в цепочке нет; у
+автономного сервера — Конфигуратор по прямому шлюзу → агент через
+SSH-шлюз. У файловой базы полные операции (каждый набор целиком:
+`--force`, `--full`, нет памяти исходников) идут `ibcmd` первыми —
+вдвое быстрее; по изменившемуся — агент первый. Квитанция называет
+причину: `reason: whole|by_changes`. Переопределение строгое: назначенный
+ключом исполнитель не готов — отказ, на умолчание раннер не откатывается.
 
 Серверная ИБ тоже идёт через ibcmd: исполнителю `ibcmd` соответствует
 `infobases.origin.dbms` в local-слое — прямое подключение к СУБД мимо
@@ -105,9 +120,9 @@ XML и EDT делает набор неоднозначным. Автодете�
 | Поле | Назначение |
 |---|---|
 | `platform.path` | Бинарь, каталог `bin` или корень установки. Если задан, поиск идёт только внутри и не откатывается на PATH и стандартные корни. |
-| `platform.version` | Требование версии. Без `path` фильтрует обычный поиск; с `path` игнорируется, пока `strict` не true. |
+| `platform.version` | Маска `major.minor[.patch[.build]]` или `sources`. Без `path` фильтрует обычный поиск; с `path` игнорируется, пока `strict` не true. `sources` — строгий выбор выпуска по формату исходников основного набора (2.17 → 8.3.24 … 2.22 → 8.5.4), без отката на новейшую: нет выпуска — отказ `platform_release_missing` до запуска. Минимум платформы — 8.3.24. |
 | `platform.strict` | С `path` включает fail-closed проверку версии. Без `path` границы не создаёт. |
-| `designer_agent` | `attach`, `base-dir`, `host-fingerprint`, `host-key`, `port`, `startup_timeout_ms`: запуск или подключение к агенту Designer. |
+| `designer_agent` | `attach`, `base-dir`, `host-fingerprint`, `host-key`, `port`, `startup_timeout_ms`, `live`, `live-max`. Управляемый агент по умолчанию живой (`live: true`): переживает команду, держит сеанс Конфигуратора и лицензию, уборка копии начинается с `agent stop`. `live-max` (умолчание 2) — предел живых агентов учётной записи; `live: false` — разовый агент. `attach` — подключение к чужому агенту. |
 | `edt_cli` | `path`, `version`, `auto-start`, `interactive-mode`, `command_timeout_ms`, `startup_timeout_ms`. |
 | `enterprise` | `additional-launch-keys` для клиента предприятия. |
 | `client_mcp` | `port`, `wait_ready_timeout_ms`, `extension` (source или artifact `.cfe`). |
@@ -162,6 +177,7 @@ format?}` (исходники расширения) либо `name` + `artifact 
 | `cluster` | Административный слой серверной базы: `ras`, `user`, `password`, `agent {address, user, password}`. |
 | `standalone` | Автономный сервер `ibsrv`: `gate` (`host:port` SSH-шлюза), `host-fingerprint`, `exchange` (`sftp` или `{dir: …}`). Нужен хотя бы один из `gate`/`connection`. |
 | `web` | Публикация и клиентский адрес: `server` (`iis`, `apache2`, `apache22`, `apache24`), `url`, `dir`, `wsdir`, `conf`, `os-auth`. |
+| `dbms.managed`, `standalone.managed`, `cluster.managed` | Управляемые стенды раннера — только Windows; контур на Linux их не использует (стенды — свои скрипты: `start_1c_db.sh`, `publish_ib.sh`). |
 
 `infobase` в local-слое — deprecated-синоним `infobases.origin`.
 
@@ -177,9 +193,13 @@ format?}` (исходники расширения) либо `name` + `artifact 
    `origin`; убрать лишние имена; не смешивать `infobase` и `infobases`.
 3. **Переименовать `build` → `push`.** Секция `push` сегодня без ключей;
    `partialLoadThreshold` удалить, полная загрузка — `push full: true`.
-4. **Переименовать прежние имена providers.** `build` → `push`, `dump` →
-   `pull`, `init` → `infobase.create`, `load` → `upload`,
-   `infobase.configuration.export` → `download`.
+4. **Привести ключи providers к словарю команд.** Действующие ключи:
+   `infobase.create`, `push`, `apply`, `reset`, `diff`, `upload`, `pull`,
+   `extensions`, `download`, `infobase.dump`, `infobase.restore`, `make`,
+   `convert`. Прежние имена команд принимаются один цикл (`build` →
+   `push`, `dump` → `pull`, `load` → `upload`, `syntax` → `check`,
+   `infobase configuration export` → `download`); `syntax`, `publish`,
+   `check`, `sessions` как ключи providers отвергаются.
 5. **Проверить `workPath` и пути.** Все относительные пути считаются от
    каталога основного конфига; `basePath` больше не участвует.
 6. **Не переносить общее в local.** `source-set` и `format` остаются в
@@ -192,6 +212,10 @@ format?}` (исходники расширения) либо `name` + `artifact 
 9. **Не переписывать чужой конфиг молча.** Переезд с omp-стека — явное
    решение владельца: пакетного мигратора нет, существующий проект получает
    WARN доктора.
+10. **Завести память раннера после обновления.** Память о базе переехала
+    в `localPath` (`.local`); прежняя память не переносится. Первый `push`
+    без `force` отказывает `untracked_base` — разовый `push force: true`
+    (перезапись базы, решение владельца) или `pull` заводит память.
 
 ## Что проверить перед правкой конфига
 
@@ -201,9 +225,11 @@ format?}` (исходники расширения) либо `name` + `artifact 
   именем.
 - `infobases.origin.connection` без встроенных кредов; `user`/`password` —
   отдельными полями в local-слое.
-- В `providers` нет прежних имён; выбранный исполнитель поддерживает
-  операцию (пару валидирует раннер).
+- В `providers` только ключи словаря команд; выбранный исполнитель
+  поддерживает операцию на этой базе (пару валидирует раннер, отказ
+  `invalid_argument` до запуска).
 - Нет `builder`, `basePath`, `execution_timeout`, `partialLoadThreshold`,
   верхнеуровневого `connection`.
+- `localPath` вне git; удаление `workPath` не трогает память о базе.
 - `unica.run {}` показывает операцию и её `argsSchema`; `support.state:
   limited` — использовать только `support.supportedArgs`.

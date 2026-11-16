@@ -51,7 +51,10 @@ whenToUse: "Создание или использование git-ворктр�
 спрашивает человека (`infobase.another_copy`: продолжить или завести свою
 базу); клиент без elicitation исполняет вызов как прежде, с предупреждением.
 Для изоляции заводите каждой копии свою базу
-(`unica.run {op: "infobase.create"}`).
+(`unica.run {op: "infobase.create"}`): файловая база создаётся с основной
+конфигурацией проекта из исходников (первый push грузит только изменённое),
+кластерная — пустой. Пустой каталог от `init_worktree.sh --empty-ib`
+материализуется первой сборкой.
 
 ## Канал 1c-db из ворктри: свой прокси и ONEC_DB_URL
 
@@ -92,6 +95,7 @@ local-слоя (`File=` / `Srvr+Ref`); не совпало — прогон не
    CLAUDE_PROJECT_DIR=<ворктри> \
    UNICA_HOST_CONTEXT_REQUIRED=1 \
    UNICA_RUNTIME_CACHE_DIR="$ROOT/runtimes" \
+   UNICA_ARTIFACT_CACHE="$ROOT/runtimes" \
    UNICA_PROVIDER_STATE_DIR="$ROOT/provider-state" \
    UNICA_RUNTIME_MANIFEST="$ROOT/$VER/runtime-manifest.json" \
      "$ROOT/$VER/bootstrap/launch.sh" "$ROOT/$VER"
@@ -150,4 +154,9 @@ cwd вызывающего.
 - Зачистка: чужие процессы `unica-bootstrap` (другие проекты и сессии)
   опознаются по `/proc/<pid>/environ` и `readlink /proc/<pid>/cwd`; артефакты
   в `/tmp` (`1c-db-<hash>.log`, `1c-mcp-proxy-<hash>.log`) именуются
-  sha1-префиксом пути дерева.
+  sha1-префиксом пути дерева. Живой агент раннера (умолчание 0.17) держит
+  сеанс Конфигуратора и лицензию базы копии: уборка копии начинается с
+  `v8-runner agent stop` (на Windows иначе не удалить и дерево); чужой
+  исполнитель на занятой агентом базе получает `infobase_busy` с выходом
+  `agent release`. Замок ИБ контура (`ib_lock.py`) и замок раннера —
+  разные пространства: замок контура агента не снимает.

@@ -64,6 +64,16 @@ def main() -> int:
 	check("установщик скиллов берёт версию из yaml",
 	      installer.skills_version() == values["tag"].removeprefix("v"), "")
 
+	# invariant: лаунчер несёт полный handoff ядра финала 0.15 — без
+	# UNICA_ARTIFACT_CACHE/UNICA_RUNTIME_MANIFEST движки не резолвятся
+	# (bundled_tool_missing), без provider-state состояние уезжает в ~/.unica.
+	runtime = load_module("runtime", ROOT / "scripts/install_unica_runtime.py")
+	missing_env = [name for name in ("UNICA_RUNTIME_CACHE_DIR", "UNICA_ARTIFACT_CACHE",
+	                                 "UNICA_RUNTIME_MANIFEST", "UNICA_PROVIDER_STATE_DIR")
+	               if name not in runtime.LAUNCHER]
+	check("лаунчер экспортирует полный handoff ядра", not missing_env,
+	      ", ".join(missing_env))
+
 	# Запрет литералов: текущие версии артефактов и любые пререлизные пины
 	# ядра вне unica.yaml. «0.15» как имя поверхности не литерал версии.
 	version_res = [

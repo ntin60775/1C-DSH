@@ -232,6 +232,82 @@ CLA и реестр участников (#2853), независимое рев�
 их не носит). Требования машины для установщика: git, cargo, сеть до
 github releases — названы в UNICA.md.
 
+## Ревизия обвязки раннера (16.11, запрос оператора)
+
+Ревизия правил использования раннера и политики runner vs ibcmd против
+факта 0.17.4 (словарь `unica.run {}` живьём из erp-demo, CAPABILITIES и
+CONFIGURATION тега v0.17.4, пробы платформы). Windows-контур не
+рассматривается: парк на Linux, на Windows только СУБД баз.
+
+### Критический дефект: handoff лаунчера (исправлен)
+
+Первый живой `push dryRun` из erp-demo ответил `bundled_tool_missing:
+v8-runner is not available for linux-x64`. Причина: ядро финала резолвит
+движки через `UNICA_ARTIFACT_CACHE` + `UNICA_RUNTIME_MANIFEST` (handoff,
+который bootstrap передаёт при `run`); контурный лаунчер обходит
+bootstrap и экспортировал только `UNICA_RUNTIME_CACHE_DIR` (контракт
+rc.5). Дефект латентный: живые пробы Т5 не включали push/pull, а doctor
+сверял наличие файлов манифеста, не резолв ядра.
+
+Исправлено структурно:
+- лаунчер (`LAUNCHER` в `install_unica_runtime.py`) экспортирует полный
+  handoff: `UNICA_RUNTIME_CACHE_DIR`, `UNICA_ARTIFACT_CACHE`,
+  `UNICA_RUNTIME_MANIFEST`, `UNICA_PROVIDER_STATE_DIR`; охранник
+  `test_unica_versions.py` проверяет состав;
+- `UNICA_RUNTIME_MANIFEST` включает строгий хост-контекст ядра
+  (cwd-канал не фолбэк) — пресет подаёт `CLAUDE_PROJECT_DIR` корня
+  проекта (`src/preset/config.ts`, spec-тест обновлён); `lib/`
+  пересобран, живые сессии подхватят после перезапуска хоста;
+- пример `launch.sh` в скилле worktree дополнен `UNICA_ARTIFACT_CACHE`.
+
+После починки живой `push dryRun` доходит до раннера и отвечает
+типизированным отказом `untracked_base` (копия без памяти базы) —
+контракт 0.17 работает end-to-end.
+
+### Канон против факта 0.17.4 (правки внесены)
+
+- Справочник `v8project.md`: ключи providers — 13 имён словаря команд
+  (`syntax/publish/check/sessions` отвергаются), умолчания и порядок от
+  объёма (`reason: whole|by_changes`), строгий пин без отката;
+  `designer_agent.live/live-max` (живой агент — умолчание);
+  `platform.version: sources` и минимум 8.3.24; `localPath` (память
+  `.local`) против `workPath` (пересчитываемое); управляемые стенды —
+  одна строка-граница (Windows, контур не использует); регламент
+  обновления дополнен шагом «завести память раннера» (`untracked_base`
+  после обновления, разовый `push force` или `pull`).
+- Шаблоны v8project: обоснование пина `push: ibcmd`/`extensions: ibcmd`
+  под умолчания 0.17 (headless-детерминизм Linux-контура); `.local/` в
+  шаблон gitignore.
+- Скилл `1c-ibcmd-delivery`: утверждение «расширения файловой базы через
+  ibcmd недоступны (dbms-only)» опровергнуто живой пробой
+  (`ibcmd extension list --db-path` rc=0 на 8.3.27.1859) и матрицей
+  раннера; добавлены границы 0.17 (`diff --against`, подтверждение
+  поставщика при `upload`, `push delete`, живой агент и `infobase_busy`).
+- Скилл `1c-unica-worktree`: уборка копии с `agent stop`, замок контура
+  агента не снимает, семантика `infobase.create` (файловая — с основной
+  конфигурацией из исходников).
+- `docs/UNICA.md` и секция агента: `source.reexport` (форматы
+  2.20/2.21/2.22 ↔ линии 8.3.27/8.5.1/8.5.4), `push delete`, память
+  раннера и `untracked_base`, handoff лаунчера, живой агент.
+- Гейты сверены со словарём: `ib_mutating_ops` покрывает все
+  infobase-эффекты (`source.reexport` — workspaceFiles, замок не нужен);
+  правок кода гейтов не потребовалось. Предложение оператору (не
+  менялось молча): добавить `infobase.restore` в `verify_ops` doc-гейта
+  (замена базы целиком сейчас не требует сверки с документацией).
+
+### Обновление контура в erp-demo (выполнено)
+
+- Секция AGENTS.md заменена из `templates/agents-section.md` (правило
+  вопросов человеку, source.reexport, push delete).
+- `v8project.local.yaml`: providers `push: ibcmd` / `extensions: ibcmd`
+  по канону headless-контура (проект жил без пинов на умолчаниях).
+- modeline обоих v8project-файлов — на форк IngvarConsulting (schema
+  доступна, HTTP 200); `.local/` в `.gitignore` проекта.
+- Doctor: exit 0, артефакты 3/3, `unica 0.15.0 жив`, скиллы 50
+  (версия 0.15.0); WARN прежние проектные (стенд 1c-db, build/out).
+- Первый `push force: true` для заведения памяти базы — решение
+  оператора (перезапись базы); коммит файлов проекта — за оператором.
+
 ## Границы и остатки
 
 - **Выборы без elicitation** — граница канала DSH: отказ с вопросом,

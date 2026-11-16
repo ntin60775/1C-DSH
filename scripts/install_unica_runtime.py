@@ -40,8 +40,11 @@ REPOSITORY = "https://github.com/IngvarConsulting/unica"
 RAW = "https://raw.githubusercontent.com/IngvarConsulting/unica"
 TARGETS = ("darwin-arm64", "linux-x64", "win-x64")
 
-# Контурный лаунчер: версия — UNICA_GLOBAL_VERSION или максимум sort -V,
-# кэш артефактов и состояние провайдеров — внутри корня установки.
+# Контурный лаунчер: версия — UNICA_GLOBAL_VERSION или максимум sort -V.
+# Ядро финала 0.15 резолвит движки через UNICA_ARTIFACT_CACHE и
+# UNICA_RUNTIME_MANIFEST (handoff bootstrap при запуске через launch.sh);
+# лаунчер обходит bootstrap и обязан передать те же адреса сам, иначе
+# первый push/pull ответит bundled_tool_missing.
 LAUNCHER = """#!/bin/sh
 # Unica core launcher — глобальная установка контура 1C-DSH.
 # Бинарники лежат в ~/.local/share/unica/runtimes (общие для всех проектов),
@@ -72,6 +75,10 @@ fi
 
 : "${UNICA_RUNTIME_CACHE_DIR:=$root/runtimes}"
 export UNICA_RUNTIME_CACHE_DIR
+: "${UNICA_ARTIFACT_CACHE:=$root/runtimes}"
+export UNICA_ARTIFACT_CACHE
+: "${UNICA_RUNTIME_MANIFEST:=$root/$version/runtime-manifest.json}"
+export UNICA_RUNTIME_MANIFEST
 : "${UNICA_PROVIDER_STATE_DIR:=$root/provider-state}"
 export UNICA_PROVIDER_STATE_DIR
 exec "$entry" "$@"
