@@ -98,6 +98,13 @@ pnpm build        # tsc → lib/
 `LAYOUT_DIRS` в `src/paths.ts`); legacy-раскладки ZCode сняты в Т10
 после перевода парка.
 
+Перевод проекта с прежнего канала (ZCode/omp) включает уборку legacy-слоя:
+`.zcode/` и `.omp/` удаляются, проектные runbook'и, обёртки и `.gitignore`
+переводятся на `.dsh/1c` и `$DSH_1C_ROOT/scripts`, реестр потребителей
+получает append-запись о переводе. Порядок — навык `1c-project-bootstrap`,
+раздел «Перевод с legacy-каналов»; проверка — doctor, пустой
+`git ls-files .zcode .omp` и collect-only набора.
+
 Реестр проектов парка —
 `${DSH_1C_STATE_DIR:-~/.dsh/state/1c}/projects.json` (путь, раскладка,
 версия контура на момент перевода, дата, результат doctor); запись
