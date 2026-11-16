@@ -12,6 +12,9 @@
   invariant: `--json` печатает ровно JSON; doctor не зависит от живой машины
         (HOME, DSH_HOME и PATH указывают во временные каталоги, живой MCP не
         поднимается — `--no-ping`); неизвестный флаг не глотается;
+  spec: tickets/dsh-contour/T12-testpilot-profile-check.md — сверка `base`
+        профилей testpilot: битый — FAIL `mcp.testpilot-base` с резолвом,
+        серверные и профили без base — не FAIL, нечитаемый файл — WARN;
   target: bundle.rows не считает вложенные `- id:` внутри `config:`
         пресета — реальный дефект разбора патча (тикет, «Границы и
         расхождения»: 34 строки вместо двух).
@@ -265,6 +268,78 @@ def main() -> int:
 		      "FAIL" not in human.stdout and "итог: зелёный" in human.stdout,
 		      human.stdout[-800:])
 		guard = DOCTOR.read_text(encoding="utf-8")
+
+		# ── 1b. Профили testpilot: base резолвится от каталога файла ──
+		# spec: tickets/dsh-contour/T12-testpilot-profile-check.md — критерий 1
+		# invariant: T12 — критерий 2 (серверные и профили без base не FAIL)
+		profile_cases = (
+			("битый относительный",
+			 "profiles:\n  main:\n    base: ../../build/ib\n", "fail", ".dsh/build/ib"),
+			("битый с inline-комментарием",
+			 "profiles:\n  main:\n    base: ../../build/ib  # от каталога файла\n",
+			 "fail", ".dsh/build/ib"),
+			("два битых профиля",
+			 "profiles:\n  main:\n    base: ../../build/ib\n"
+			 "  visible:\n    base: ../../../missing\n", "fail", "missing"),
+			("правильный относительный",
+			 "profiles:\n  main:\n    base: ../../../build/ib\n", "ok", ""),
+			("правильный абсолютный", "__ABS__", "ok", ""),
+			("server: true",
+			 "profiles:\n  main:\n    base: my_ib\n    server: true\n", "ok", ""),
+			("серверная строка",
+			 "profiles:\n  main:\n    base: v56\\\\base\n", "ok", ""),
+			("без base", "profiles:\n  main:\n    user: Тестировщик\n", "ok", ""),
+		)
+		for index, (label, text, expect, suffix) in enumerate(profile_cases):
+			fx_prof = Fixture(Path(tmp) / f"profile-base-{index}")
+			make_launcher(fx_prof)
+			make_testpilot(fx_prof)
+			write_install(fx_prof, make_package(Path(tmp) / f"profile-base-{index}" / "pkgsrc"))
+			write_project(fx_prof)
+			(fx_prof.project / "build" / "ib").mkdir(parents=True, exist_ok=True)
+			if text == "__ABS__":
+				text = (f"profiles:\n  main:\n    base: "
+				        f"{fx_prof.project / 'build' / 'ib'}\n")
+			profiles = fx_prof.project / ".dsh/1c/testpilot/profiles.yaml"
+			profiles.write_text(text, encoding="utf-8")
+			rep = fx_prof.report()
+			mcp = rep["data"]["mcp"]
+			if expect == "fail":
+				check(f"профиль testpilot — {label}: FAIL mcp.testpilot-base",
+				      rep["result"].returncode == 1
+				      and ("mcp", "mcp.testpilot-base") in failing(rep["data"]),
+				      rep["result"].stdout[-500:])
+				listed = mcp["profiles"] or []
+				check(f"профиль testpilot — {label}: поля профиля согласованы",
+				      isinstance(listed, list) and len(listed) >= 1
+				      and all({"profile", "base", "resolved"} <= set(item) for item in listed)
+				      and str(listed[-1]["resolved"]).endswith(suffix),
+				      json.dumps(mcp, ensure_ascii=False)[:600])
+				check(f"профиль testpilot — {label}: имя и сырой base в тексте",
+				      all(item["profile"] in (mcp["message"] or "")
+				          and item["base"] in (mcp["message"] or "") for item in listed),
+				      (mcp["message"] or "")[:500])
+			else:
+				check(f"профиль testpilot — {label}: rc 0 и не FAIL",
+				      rep["result"].returncode == 0 and mcp["status"] != "fail",
+				      json.dumps(mcp, ensure_ascii=False)[:500])
+
+		# spec: T12 — критерий 1: нечитаемый профиль не роняет doctor
+		fx_raw = Fixture(Path(tmp) / "profile-base-raw")
+		make_launcher(fx_raw)
+		make_testpilot(fx_raw)
+		write_install(fx_raw, make_package(Path(tmp) / "profile-base-raw" / "pkgsrc"))
+		write_project(fx_raw)
+		(fx_raw.project / ".dsh/1c/testpilot/profiles.yaml").write_bytes(
+			b"profiles:\n  main:\n    base: \xff\n")
+		raw = fx_raw.report()
+		raw_mcp = raw["data"]["mcp"]
+		check("профиль testpilot — нечитаемый файл: WARN, не трейсбек",
+		      raw["result"].returncode == 0 and raw_mcp["status"] != "fail"
+		      and any("не прочитан" in item
+		              for item in (raw_mcp["messages"] or [])),
+		      raw["result"].stdout[-800:])
+
 		check("doctor не импортирует deploy_recon (критерий приёмки)",
 		      "import deploy_recon" not in guard and "from deploy_recon" not in guard,
 		      "импорт нашёлся")

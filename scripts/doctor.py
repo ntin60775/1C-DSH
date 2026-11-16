@@ -667,6 +667,84 @@ def check_unica_liveness(report: Report, root: Path, no_ping: bool) -> dict:
 	return server
 
 
+def _profile_entries(text: str) -> list:
+	"""Профили testpilot из profiles.yaml: `(имя, base, server)`.
+
+	Разбор минимальный и без PyYAML (doctor — stdlib): формат профилей —
+	`profiles:` → имя профиля (отступ 2) → `base`/`server` (отступ 4).
+	Комментарии снимаются только целым словом (` #`), чтобы `#` в пути
+	остался; неизвестные ключи и чужой YAML просто не дают записей —
+	doctor не чинит разбор и не падает на нём.
+	"""
+	entries, in_profiles, current = [], False, None
+	for raw in text.splitlines():
+		line = re.split(r"\s+#", raw, maxsplit=1)[0].rstrip()
+		if not line.strip():
+			continue
+		indent = len(line) - len(line.lstrip(" "))
+		key, sep, value = line.strip().partition(":")
+		if not sep:
+			continue
+		value = value.strip().strip("'\"")
+		if indent == 0:
+			in_profiles = key.strip() == "profiles"
+			current = None
+			continue
+		if not in_profiles:
+			continue
+		if indent == 2:
+			current = {"name": key.strip().strip("'\""), "base": "", "server": False}
+			entries.append(current)
+		elif indent == 4 and current is not None:
+			if key.strip() == "base":
+				current["base"] = value
+			elif key.strip() == "server":
+				current["server"] = value.lower() in ("true", "yes", "on", "1")
+	return [(item["name"], item["base"], item["server"]) for item in entries]
+
+
+def _check_profile_bases(report: Report, path: Path) -> None:
+	"""`base` профилей testpilot: относительный — от каталога файла.
+
+	Каталог базы обязан существовать: битый base виден только в GUI-прогоне
+	(`launch_client: no such infobase directory`), поэтому проверка здесь.
+	Серверные профили (`server: true`, `base` вида `Кластер\База`) и профили
+	без base не проверяются — файлового каталога у них нет.
+	Нечитаемый файл — WARN с причиной: base не проверен, но doctor не падает.
+	"""
+	path = Path(path).resolve()
+	try:
+		text = path.read_text(encoding="utf-8")
+	except (OSError, UnicodeDecodeError) as error:
+		report.warn(
+			"mcp",
+			f"profiles testpilot не прочитан ({type(error).__name__}): {path} — "
+			"base не проверен",
+			code="mcp.testpilot-profiles-unreadable", profiles=str(path))
+		return
+	bad = []
+	for name, base, server in _profile_entries(text):
+		if not base or server or "\\" in base:
+			continue
+		target = Path(base).expanduser()
+		if not target.is_absolute():
+			target = (path.parent / target).resolve()
+		if target.is_dir():
+			continue
+		bad.append({"profile": name, "base": base, "resolved": str(target)})
+	if not bad:
+		return
+	message = "; ".join(
+		f"«{item['profile']}»: «{item['base']}» → {item['resolved']}"
+		for item in bad)
+	report.fail(
+		"mcp",
+		f"профили testpilot: base не резолвится в каталог — {message}; "
+		"относительный base считается от каталога profiles.yaml "
+		"(образец — templates/profiles.example.yaml)",
+		code="mcp.testpilot-base", profiles=bad)
+
+
 def check_testpilot(report: Report, root: Path) -> dict:
 	"""Команда `1c-testpilot` и профили e2e для MCP-записи."""
 	configured = os.environ.get("DSH_1C_TESTPILOT") or "1c-testpilot"
@@ -687,6 +765,8 @@ def check_testpilot(report: Report, root: Path) -> dict:
 		server["state"] = "missing"
 	elif resolved:
 		report.ok("mcp", f"1c-testpilot: {resolved}, профили {hit[1]}")
+	if hit is not None:
+		_check_profile_bases(report, hit[0])
 	return server
 
 
