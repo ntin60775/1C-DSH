@@ -332,6 +332,10 @@ export function mcpRows(
           // Лаунчер передаёт ядру UNICA_RUNTIME_MANIFEST, а тот включает
           // строгий хост-контекст: cwd-канал больше не фолбэк. Привязку
           // воркспейса подаёт пресет (канал startupEnvironment).
+          // CLAUDE_PROJECT_DIR — имя env-канала юники (хост Claude Code),
+          // НЕ зависимость от Claude Code: DSH не входит в хосты юники,
+          // а из её каналов (per-call meta Codex, MCP roots, env) клиенту
+          // DSH доступен только env. Нейтрального ключа у юники нет.
           CLAUDE_PROJECT_DIR: project.root,
         },
         startupTimeoutMs: 30_000,
