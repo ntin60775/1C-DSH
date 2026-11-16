@@ -18,6 +18,12 @@ from _lib import check, summary  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "install_unica_skills.py"
 
+sys.path.insert(0, str(ROOT / "scripts"))
+from unica_versions import load as load_unica_versions  # noqa: E402
+
+# Ожидаемая версия — из unica.yaml, не литерал: тест сверяет связку, не пин.
+EXPECTED = load_unica_versions()["tag"].removeprefix("v")
+
 
 def load():
 	spec = importlib.util.spec_from_file_location("install_unica_skills", SCRIPT)
@@ -26,7 +32,7 @@ def load():
 	return module
 
 
-def make_target(root: Path, skills: int, version: str = "0.15.0-rc.5") -> Path:
+def make_target(root: Path, skills: int, version: str = EXPECTED) -> Path:
 	target = root / "skills"
 	target.mkdir(parents=True)
 	for index in range(skills):
@@ -44,7 +50,7 @@ def make_target(root: Path, skills: int, version: str = "0.15.0-rc.5") -> Path:
 
 def main() -> int:
 	module = load()
-	check("установщик читается как модуль", module.DEFAULT_VERSION == "0.15.0-rc.5", "")
+	check("установщик читается как модуль", module.skills_version() == EXPECTED, "")
 	with tempfile.TemporaryDirectory() as raw:
 		root = Path(raw)
 		check("нет каталога — не установлено",
@@ -53,8 +59,8 @@ def main() -> int:
 		ok, message = module.check(target, None)
 		check("здоровая поставка — 0", ok and "скиллов 3" in message, message)
 		check("версия сверяется, когда задана",
-		      module.check(target, "0.15.0-rc.5")[0] is True
-		      and module.check(target, "0.15.0-rc.6")[0] is False, "")
+		      module.check(target, EXPECTED)[0] is True
+		      and module.check(target, "0.0.1")[0] is False, "")
 		(target / "skill-0" / "SKILL.md").unlink()
 		(target / "skill-0").rmdir()
 		check("пропавший скилл ловится по маркеру",

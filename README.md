@@ -16,7 +16,8 @@ MCP 1С-проекта. Репозиторий создан копией `1c-zco
 
 1. **Требования.** DSH 0.2.2-rc.2+ (фикс `mcp-client`,
    ntin60775/deepseek-harness#1), Node.js и pnpm, python3 (stdlib),
-   Unica 0.15.0-rc.5 глобально на машину ([docs/UNICA.md](docs/UNICA.md)).
+   Unica глобально на машину (версии — `unica.yaml`,
+   [docs/UNICA.md](docs/UNICA.md)).
 2. **Сборка.** `pnpm install && pnpm build` — TypeScript собирается в
    `lib/`; в поставку идут `lib/`, скиллы, команды, патч, локаль и иконка.
 3. **Bundle.** Плагин-менеджер DSH ставит пакет `dsh-1c-contour` в профиль:

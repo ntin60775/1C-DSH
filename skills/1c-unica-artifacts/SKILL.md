@@ -11,12 +11,12 @@ whenToUse: "bsl_diagnostics/bsl_index не оживает или провайд�
 командой или перенос из копии кэша на той же машине. Разовый чек рассинхрона —
 `/1c-doctor` (сверка манифеста с кэшем артефактов).
 
-Контракт 0.15 (0.15.0-rc.5, манифест schema 2): `unica 0.15.0-rc.5`,
-`v8-runner 0.15.3`, `bsl-analyzer 0.2.86`. `rlm-tools-bsl` в манифесте rc.5
-нет — не требовать и не искать.
+Контракт 0.15 (манифест schema 2): три артефакта — `unica`, `v8-runner`,
+`bsl-analyzer`; ожидаемые версии — `unica.yaml` в корне контура, сверка —
+`/1c-doctor`. `rlm-tools-bsl` в манифесте 0.15 нет — не требовать и не искать.
 
 Установка одна на машину: каталог плагина — `~/.local/share/unica/<версия>/`
-(например `~/.local/share/unica/0.15.0-rc.5/`), кэш артефактов —
+(версия — ключ `unica` из `unica.yaml`), кэш артефактов —
 `~/.local/share/unica/runtimes`, лаунчер — `~/.local/bin/unica`
 (`UNICA_GLOBAL_ROOT`, `UNICA_GLOBAL_VERSION`). Корень кэша переопределяет
 `UNICA_RUNTIME_CACHE_DIR`.
@@ -51,7 +51,7 @@ whenToUse: "bsl_diagnostics/bsl_index не оживает или провайд�
 ## Диагноз по шагам
 
 1. Версия установки — `~/.local/bin/unica --help` (первая строка вида
-   `unica 0.15.0-rc.5`); каталог плагина — `ls ~/.local/share/unica/`.
+   `unica <версия>`); каталог плагина — `ls ~/.local/share/unica/`.
 2. Что требует манифест — `~/.local/share/unica/<версия>/runtime-manifest.json`:
    `artifacts.<имя>.version` и `targets.<платформа>.asset.sha256`.
 3. Что лежит в кэше — `ls ~/.local/share/unica/runtimes/<имя>/`.
@@ -67,9 +67,15 @@ whenToUse: "bsl_diagnostics/bsl_index не оживает или провайд�
 кэшем и докачивает недостающее.
 
 ```bash
-PLUGIN_ROOT="${UNICA_GLOBAL_ROOT:-$HOME/.local/share/unica}/0.15.0-rc.5"
+VER=$(sed -n 's/^unica:[[:space:]]*//p' "$DSH_1C_ROOT/unica.yaml")
+PLUGIN_ROOT="${UNICA_GLOBAL_ROOT:-$HOME/.local/share/unica}/$VER"
+export UNICA_RUNTIME_CACHE_DIR="${UNICA_RUNTIME_CACHE_DIR:-$HOME/.local/share/unica/runtimes}"
 "$PLUGIN_ROOT/bootstrap/bin/linux-x64/unica-bootstrap" prefetch --plugin-root "$PLUGIN_ROOT"
 ```
+
+`UNICA_RUNTIME_CACHE_DIR` обязателен: без него bootstrap 0.15 выбирает кэш
+по цепочке хостов (например `~/.codex/unica/runtimes`), и контурный лаунчер
+артефакты не найдёт.
 
 Каталог `bootstrap/bin/<платформа>/` — по хосту: `linux-x64`, `darwin-arm64`,
 `win-x64` (на Windows бинарь `unica-bootstrap.exe`).
@@ -85,7 +91,7 @@ v8-runner) сверка распакованного файла всегда д�
 с манифестом.
 
 ```bash
-VER=0.2.86                        # version из манифеста
+VER=<version артефакта из манифеста>
 SHA=<asset.sha256 целиком>        # из targets своей платформы (напр. linux-x64)
 SRC="<копия кэша>/bsl-analyzer/${VER}--${SHA}"
 #  raw-бинарь (bsl-analyzer): байт-сверка с манифестом возможна
@@ -100,10 +106,9 @@ test -x "$DST/${VER}--${SHA}/linux-x64/bsl-analyzer"
 
 `.ready.json` приезжает вместе с каталогом; его поля обязаны совпадать с
 манифестом — по ним unica признаёт артефакт завершённым. Рестарт сервера
-не нужен: резолв происходит на очередной вызов провайдера. Старые версии в
-кэше не мешают — не трогать. Повторный `prefetch` на машине с доступной
-сетью — равноправный путь: появившийся каталог сверь с манифестом тем же
-`sha256sum`.
+не нужен: резолв происходит на очередной вызов провайдера. Повторный
+`prefetch` на машине с доступной сетью — равноправный путь: появившийся
+каталог сверь с манифестом тем же `sha256sum`.
 
 ## Грабли
 
@@ -122,6 +127,10 @@ test -x "$DST/${VER}--${SHA}/linux-x64/bsl-analyzer"
   `asset.sha256` для tar.gz-артефактов — норма, не отбраковка (см. выше).
 - При удалении прежней версии плагина демон НЕ умирает сам: перед сносом
   каталогов проверять `ps`/`lsof`.
+- Лаунчер выбирает максимальную версию через `sort -V`, а rc-суффикс
+  сортируется выше финала той же версии (`<версия>-rc.N` > `<версия>`):
+  после обновления старые каталоги версий удалить, иначе лаунчер останется
+  на rc. Точечная фиксация — `UNICA_GLOBAL_VERSION`.
 - Артефакт-версии меняются вместе с плагином: после каждого обновления
   unica рассинхрон ожидаем. `/1c-doctor` назовёт недостающий артефакт и
   версию до первого `provider_unavailable`.

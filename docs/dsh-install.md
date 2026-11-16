@@ -22,7 +22,7 @@ links:
 | DSH | 0.2.2-rc.2+ — нужен фикс `mcp-client` (ntin60775/deepseek-harness#1): без него MCP-инструменты отдают пустой результат |
 | Node.js + pnpm | сборка плагина TS → `lib/` |
 | python3 | stdlib, без зависимостей: doctor, стартеры, замки |
-| Unica | 0.15.0-rc.5, бинарники глобально на машину — [UNICA.md](UNICA.md) |
+| Unica | версии — `unica.yaml` контура, бинарники глобально на машину — [UNICA.md](UNICA.md) |
 | Профиль DSH | `$DSH_HOME/profiles/<профиль>` (по умолчанию `~/.dsh`) |
 
 Одна версия контура на машину; пина версии на проект нет. Реестр проектов
@@ -84,10 +84,11 @@ pnpm build        # tsc → lib/
 ## 4. Юника
 
 Бинарники — одна глобальная установка на машину
-(`~/.local/share/unica/runtimes`, лаунчер `~/.local/bin/unica`); скиллы
-Юники ставит `scripts/install_unica_skills.py`, MCP-запись `unica`
-поднимает пресет на уровне проекта. Процедура и версии — [UNICA.md](UNICA.md).
-Проверка: `unica --help` печатает `unica 0.15.0-rc.5`.
+(`~/.local/share/unica/runtimes`, лаунчер `~/.local/bin/unica`); ставит и
+обновляет `scripts/install_unica_runtime.py` (версии — `unica.yaml`),
+скиллы Юники ставит `scripts/install_unica_skills.py`, MCP-запись `unica`
+поднимает пресет на уровне проекта. Процедура — [UNICA.md](UNICA.md).
+Проверка: `unica --help` печатает версию из `unica.yaml`.
 
 ## 5. Проект
 

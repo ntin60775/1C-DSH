@@ -23,6 +23,7 @@
   "files": [
     "lib/**/*.js",
     "lib/types/**/*.d.ts",
+    "unica.yaml",
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",

@@ -50,12 +50,13 @@ from contour_paths import (  # noqa: E402
 	state_root,
 	update_registry,
 )
+from unica_versions import load as load_unica_versions  # noqa: E402
 
 BUNDLE = "dsh-1c-contour"
 PLUGIN_ROW = "1c-contour"
 PRESET_ROW = "preset-1c"
 PRESET_ID = "1c"
-UNICA_MIN = "0.15.0-rc.1"
+# Версии поставки Юники — unica.yaml в корне пакета (scripts/unica_versions.py).
 
 # Контурные скиллы пакета: состав — доставка пресета (15 скиллов Т5).
 CONTOUR_SKILLS = {
@@ -547,6 +548,11 @@ def check_unica_artifacts(report: Report) -> None:
 	Лечение — скилл `1c-unica-artifacts`.
 	"""
 	share = Path.home() / ".local" / "share" / "unica"
+	try:
+		expected = load_unica_versions()
+	except RuntimeError as error:
+		report.fail("mcp", str(error), code="mcp.unica-config")
+		return
 	manifests = sorted(share.glob("*/runtime-manifest.json")) if share.is_dir() else []
 	if not manifests:
 		report.warn("mcp", f"runtime-manifest.json Юники не найден ({share}) — сверка "
@@ -554,15 +560,22 @@ def check_unica_artifacts(report: Report) -> None:
 		return
 	manifest_path = max(manifests, key=lambda path: parse_version(path.parent.name))
 	version = manifest_path.parent.name
-	if not version_ge(version, UNICA_MIN):
-		report.fail("mcp", f"Юника {version} < минимальной {UNICA_MIN} — пресет требует "
-		            "свежий рантайм", code="mcp.unica-version")
+	if not version_ge(version, expected["min"]):
+		report.fail("mcp", f"Юника {version} < минимальной {expected['min']} (unica.yaml) — "
+		            "пресет требует свежий рантайм", code="mcp.unica-version")
 	manifest = read_json_object(manifest_path)
 	artifacts = manifest.get("artifacts")
 	if not isinstance(artifacts, dict) or not artifacts:
 		report.warn("mcp", f"runtime-manifest.json Юники не читается ({manifest_path}) — "
 		            "сверка артефактов пропущена", code="mcp.unica-artifacts-unknown")
 		return
+	for name in ("unica", "bsl-analyzer", "v8-runner"):
+		spec = artifacts.get(name)
+		got = str(spec.get("version") or "") if isinstance(spec, dict) else ""
+		if got != expected[name]:
+			report.fail("mcp", f"артефакт {name}: контур ожидает {expected[name]} (unica.yaml), "
+			            f"в манифесте {got or 'нет'} — обновление не завершено; "
+			            "процедура: docs/UNICA.md", code="mcp.unica-version")
 	target = unica_target()
 	if not target:
 		report.warn("mcp", f"платформа {platform.machine()} не опознана — сверка "

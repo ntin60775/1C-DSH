@@ -34,7 +34,7 @@ printf '%s' "$UNICA_RUNTIME_CACHE_DIR" > "$HOME/cache.txt"
 while IFS= read -r line; do
   printf '%s\n' "$line" >> "$HOME/requests.txt"
   case "$line" in
-    *initialize*) echo '{{"jsonrpc":"2.0","id":1,"result":{{"serverInfo":{{"version":"0.15.0-rc.5"}}}}}}' ;;
+    *initialize*) echo '{{"jsonrpc":"2.0","id":1,"result":{{"serverInfo":{{"version":"0.15.0"}}}}}}' ;;
     *tools/list*) echo '{{"jsonrpc":"2.0","id":2,"result":{{"tools":[{VERBS}]}}}}' ;;
   esac
 done
@@ -45,7 +45,7 @@ VERBS_NO_DIFF = VERBS.replace(',{"name":"unica.diff"}', '')
 NO_DIFF = f'''#!/bin/sh
 while IFS= read -r line; do
   case "$line" in
-    *initialize*) echo '{{"jsonrpc":"2.0","id":1,"result":{{"serverInfo":{{"version":"0.15.0-rc.5"}}}}}}' ;;
+    *initialize*) echo '{{"jsonrpc":"2.0","id":1,"result":{{"serverInfo":{{"version":"0.15.0"}}}}}}' ;;
     *tools/list*) echo '{{"jsonrpc":"2.0","id":2,"result":{{"tools":[{VERBS_NO_DIFF}]}}}}' ;;
   esac
 done
@@ -104,7 +104,7 @@ def main() -> int:
 
 			code, message, verbs = unica_ping.ping(60, str(project))
 			check("живой handshake — код 0", code == 0, message)
-			check("версия из serverInfo", "0.15.0-rc.5" in message, message)
+			check("версия из serverInfo", "0.15.0" in message, message)
 			check("обязательные глаголы контура на месте",
 			      unica_ping.REQUIRED_VERBS <= verbs, sorted(verbs))
 			check("в запросе назван протокол 2025-11-25",

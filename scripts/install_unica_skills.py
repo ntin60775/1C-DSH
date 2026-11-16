@@ -12,8 +12,8 @@
 половину скиллов.
 
 Запуск:
-  python3 install_unica_skills.py                 # версия по умолчанию
-  python3 install_unica_skills.py --version 0.15.0-rc.5
+  python3 install_unica_skills.py                 # версия из unica.yaml
+  python3 install_unica_skills.py --version X.Y.Z # явная версия вместо yaml
   python3 install_unica_skills.py --check         # 0 — установлено, 1 — нет
 
 Exit: 0 — успех (для --check — установлено), 1 — не установлено или
@@ -33,9 +33,11 @@ from pathlib import Path
 REPOSITORY = "https://github.com/IngvarConsulting/unica"
 SKILLS_PATH = "plugins/unica/skills"
 LICENSE_PATH = "plugins/unica/LICENSE"
-DEFAULT_VERSION = "0.15.0-rc.5"
 DEFAULT_TARGET = Path.home() / ".local" / "share" / "unica" / "skills"
 MARKER = "SOURCE.json"
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from unica_versions import skills_version  # noqa: E402
 
 
 def default_target() -> Path:
@@ -148,9 +150,13 @@ def main(argv: list[str]) -> int:
 	parser.add_argument("--check", action="store_true")
 	args = parser.parse_args(argv)
 
-	version = args.version or DEFAULT_VERSION
+	try:
+		version = args.version or skills_version()
+	except RuntimeError as error:
+		print(f"install_unica_skills: {error}", file=sys.stderr)
+		return 1
 	if args.check:
-		ok, message = check(args.target, args.version)
+		ok, message = check(args.target, version)
 		print(message, file=sys.stdout if ok else sys.stderr)
 		return 0 if ok else 1
 	try:
