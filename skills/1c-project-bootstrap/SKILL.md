@@ -1,7 +1,7 @@
 ---
 name: 1c-project-bootstrap
 description: "Подключение проекта 1С к контуру DSH: секция AGENTS.md, contour.json, профили testpilot, gitignore, реестр потребителей, сценарии. Применяй при онбординге проекта на контур или после обновления раскладки .dsh/1c. MCP и гейты приходят с пресетом 1c, в проекте разводятся только проектные файлы."
-whenToUse: "Проект 1С подключается к контуру (впервые или после обновления), нужно собрать проектные файлы контура в .dsh/1c и проверить их /1c-doctor."
+whenToUse: "Проект 1С подключается к контуру (впервые или после обновления), нужно собрать проектные файлы контура в .dsh/1c и проверить их /1c-doctor; перевод проекта с ZCode/omp — раздел «Перевод с legacy-каналов»."
 ---
 
 # Bootstrap проекта 1С на контур DSH
@@ -27,9 +27,10 @@ whenToUse: "Проект 1С подключается к контуру (впе�
    `style.pack`. Ключ `1c_kd.url` — адрес станции правил обмена (скилл
    `1c-kd-rules`).
 2. **`.dsh/1c/testpilot/profiles.yaml`** — профили тестовых баз (если нет):
-   по образцу `$DSH_1C_ROOT/templates/profiles.example.yaml`. Пароль —
-   полем `password` в этом файле: он машинно-локальный и вне git
-   (`password_env` апстрим тоже принимает, канон контура — `password`).
+   по образцу `$DSH_1C_ROOT/templates/profiles.example.yaml`. Файл не
+   коммитится: пароль лежит полем `password` (`password_env` апстрим тоже
+   принимает, канон контура — `password`), строка в `.gitignore` — по
+   шаблону.
    У профиля для e2e нужен `base` (путь к тестовой копии базы) и
    `desktop: isolated`. E2E-тесты живут в `tests/e2e/` проекта
    (автор — скрипт `workflows/1c-e2e-author.dwf.ts`); XML-сценарии
@@ -51,7 +52,7 @@ whenToUse: "Проект 1С подключается к контуру (впе�
    AGENTS.md принадлежит проекту. Обновление — замена секции между
    маркерами.
 5. **`.gitignore`** — строки контура (если нет):
-   `.dsh/1c/testpilot/profiles.local.yaml`, `tools/VAParams.json`,
+   `.dsh/1c/testpilot/profiles.yaml`, `tools/VAParams.json`,
    `tools/va-env.local.json`, `v8project.local.yaml`, `build/`,
    `.dsh/1c/db-instances.yaml` (креды инстансов 1c-db),
    `.dsh/1c/contour.local.json` (локальный оверлей контура),
@@ -73,41 +74,53 @@ whenToUse: "Проект 1С подключается к контуру (впе�
    Первые тесты пишет скрипт `workflows/1c-e2e-author.dwf.ts`, переданный
    в инструмент `workflow`.
 
+Проект пришёл с ZCode/omp — после сборки файлов пройди раздел «Перевод с
+legacy-каналов» ниже.
+
 ## Перевод с legacy-каналов (ZCode/omp)
 
 Проект с прежнего канала после сборки `.dsh/1c` держит мёртвый слой:
-`.zcode/` (скрипты, шаблоны, скиллы, workflows, `.backup`) и `.omp/`.
+`.zcode/` (скрипты, шаблоны, скиллы, workflows, hooks, `config.json`,
+`deployed.json`, `.backup`) и `.omp/`.
 Оставлять его нельзя: проектные runbook'и и AGENTS.md зовут удалённые
 скрипты, агент исполняет мёртвые команды. Порядок:
 
-1. **Удалить слой**: `git rm -r -f .zcode .omp` — tracked-файлы уходят в
-   коммит проекта; остатки вне git (`.backup`, `agents/`, `.workflow-runs`)
-   снять `rm -rf`. Машино-локальное состояние не переносится: реестр
-   потребителей ведётся заново в `.dsh/1c`.
+1. **Удалить слой**: `git rm -r -f --ignore-unmatch .zcode .omp` —
+   `--ignore-unmatch` не даёт упасть, если одного каталога нет (типично:
+   `.omp` уже снят). Tracked-файлы уходят в коммит проекта; остатки вне git
+   (`hooks/`, `agents/`, `.backup`, `.workflow-runs`) снять
+   `rm -rf .zcode .omp`. Машино-локальное состояние не переносится: журнал
+   развёртывания прежнего канала не мигрирует, первая запись нового
+   `deploy_log` — сам перевод.
 2. **Секция AGENTS.md и её копия**: `.dsh/1c/templates/agents-section.md` —
    побайтовая копия `$DSH_1C_ROOT/templates/agents-section.md`; секцию в
    AGENTS.md заменить между маркерами. Маркер канала в шапке — новый
    (`dsh-1c-contour`); копия с маркером прежнего канала — признак
    незавершённого перевода.
-3. **`.gitignore`**: снять строки `.zcode/*`; машино-локальные входы нового
-   канала — `.dsh/1c/registry.local.json`, `contour.local.json`,
-   `db-instances.yaml`, `testpilot/profiles.local.yaml` (если ещё не внесены —
-   вместе с `tools/mcp/`, `build/`, `v8project.local.yaml`).
-4. **Обёртки и скрипты проекта**: `tasks/init-worktree.sh` и подобные —
-   тонкая обёртка на `"$DSH_1C_ROOT/scripts/<имя>.sh"`; копий логики
-   контура в проекте не остаётся.
+3. **`.gitignore`**: снять строки `.zcode/*` и `.omp/*`; строки нового
+   канала — по шаблону
+   `$DSH_1C_ROOT/skills/1c-project-layout/templates/gitignore.template`,
+   второй список не заводить.
+4. **Обёртки и скрипты проекта**: обёртки, зовущие скрипты прежнего канала
+   (проектные `*.sh` и подобные), — тонкий вызов скрипта контура из
+   `$DSH_1C_ROOT/scripts/` (`*.sh` — `bash`, `*.py` — `python3`; имена
+   подчёркиванием: `init_worktree.sh`); копий логики в проекте не остаётся.
 5. **Живые ссылки** — `grep` по дереву проекта:
 
    ```sh
-   grep -rn "\.zcode" --exclude-dir=.agents --exclude-dir=.git .
+   git grep -n -E "\.zcode|\.omp" -- . ':!.agents'
    ```
 
    Каждую находку переписать на `.dsh/1c/...` или `$DSH_1C_ROOT/scripts/...`
-   либо пометить историей (планы, записи приёмки). Вендоренные
-   `.agents/skills` и архивные снимки не переписываются.
+   либо пометить историей (планы, записи приёмки); машинный слой
+   (`~/.dsh/state/1c`) — вне проекта, его пути не переписываются. Вендоренные
+   `.agents/skills` и архивные снимки не переписываются. Ветка `.omp` живой
+   пробой не пройдена (каталога в пилоте не было) — граница «не проверено».
 6. **Реестр потребителей**: `deploy_log` и `acceptance` — append-only
    записью о переводе и doctor; прошлые записи не правятся.
 7. **Проверка**: `/1c-doctor` зелёный; `git ls-files .zcode .omp` пуст;
+   `diff -q` копии `.dsh/1c/templates/agents-section.md` с
+   `$DSH_1C_ROOT/templates/agents-section.md` молчит;
    `python3 -m pytest tests/e2e --collect-only -q` собирает набор (если
    testpilot поставлен); grep из п. 5 — только история. Коммит проекта —
    за владельцем: удаление tracked-файлов его решение.

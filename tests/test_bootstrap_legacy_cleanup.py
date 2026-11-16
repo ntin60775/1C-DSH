@@ -2,19 +2,19 @@
 """Т11 «Флоу деплоя проекта: уборка legacy-каналов (ZCode/omp)».
 
 Цели:
-  spec: tickets/dsh-contour/T11-legacy-cleanup-flow.md — критерии 1–4.
-  invariant: после перевода проекта на DSH флоу не оставляет мёртвый
-        `.zcode`/`.omp`-слой: навык называет удаление, обновление секции,
-        чистку `.gitignore`, обёртки, grep живых путей, append-запись реестра
-        и проверку; команда и install-док ссылаются на раздел; живых
-        `.zcode`-команд в поставляемом тексте нет.
+  spec: tickets/dsh-contour/T11-legacy-cleanup-flow.md — критерии 1–2.
+  invariant: флоу уборки полон: навык называет удаление слоя, обновление
+        секции, чистку `.gitignore`, обёртки, grep живых путей, append-запись
+        реестра и проверку; команда и install-док ссылаются на раздел и
+        оставляют коммит владельцу. Живой путь legacy-слоя в носителях флоу
+        запрещён отдельной проверкой `tests/unit/no-legacy.spec.ts`
+        (`pnpm test`), здесь — содержание шагов.
   target (греп-носитель): базовое дерево 2938dd8 — раздела нет, команда и
         install-док молчат: краснота снята прогоном на базе — 5 провалов
-        из 6.
+        из 5.
 
 Запуск: python3 tests/test_bootstrap_legacy_cleanup.py
 """
-import re
 import sys
 from pathlib import Path
 
@@ -25,21 +25,20 @@ ROOT = Path(__file__).resolve().parent.parent
 SKILL = ROOT / "skills" / "1c-project-bootstrap" / "SKILL.md"
 COMMAND = ROOT / "commands" / "1c-bootstrap.md"
 INSTALL = ROOT / "docs" / "dsh-install.md"
+GITIGNORE_TPL = (ROOT / "skills" / "1c-project-layout" / "templates"
+                 / "gitignore.template")
 HEAD = "## Перевод с legacy-каналов"
 
 # Шаги, без которых уборка оставляет тех-долг (найдено на пилоте перевода).
 STEPS = (
-	"git rm -r -f .zcode .omp",
+	"--ignore-unmatch .zcode .omp",
 	"agents-section.md",
 	".gitignore",
-	"grep -rn",
+	"git grep -n",
 	"--collect-only",
 	"append",
 	"за владельцем",
 )
-# Живые команды прежнего канала: путь `.zcode/...scripts` в поставляемом
-# слое — мёртвая инструкция, `.zcode` допустим только как цель удаления.
-LIVE_RE = re.compile(r"\.zcode/(?:1c/)?(?:scripts|skills|templates)/")
 
 
 def flat(text: str) -> str:
@@ -68,23 +67,20 @@ def main() -> int:
 	check("1: шаги уборки названы", not missing,
 	      "нет: " + "; ".join(missing))
 	check("1: удаление идёт из git и снимает остатки",
-	      "git rm -r -f" in block and "rm -rf" in block, block[:300])
+	      "git rm" in block and "rm -rf .zcode .omp" in block, block[:300])
+	tpl = GITIGNORE_TPL.read_text(encoding="utf-8") if GITIGNORE_TPL.is_file() else ""
+	check("1: шаблон .gitignore держит профили вне git",
+	      ".dsh/1c/testpilot/profiles.yaml" in tpl
+	      and "пароль" in flat(tpl), flat(tpl)[:200])
 
 	# ── критерий 2: команда и install-док ведут в раздел
 	check("2: команда 1c-bootstrap ведёт в раздел",
 	      "Перевод с legacy-каналов" in command
 	      and "1c-project-bootstrap" in command, flat(command)[:300])
-	check("2: install-док называет уборку и владельца коммита",
+	check("2: install-док называет уборку, проверку и владельца коммита",
 	      "Перевод с legacy-каналов" in install
-	      and "git ls-files .zcode .omp" in flat(install), flat(install)[-400:])
-
-	# ── критерий 3: живых команд прежнего канала в флоу нет
-	live = [name for name, text in (("skills/1c-project-bootstrap", skill),
-	                                 ("commands/1c-bootstrap", command),
-	                                 ("docs/dsh-install", install))
-	        if LIVE_RE.search(text)]
-	check("3: живых `.zcode`-команд в флоу нет", not live,
-	      "осталось: " + "; ".join(live))
+	      and "git ls-files .zcode .omp" in flat(install)
+	      and "владелец" in flat(install), flat(install)[-400:])
 
 	return summary()
 
