@@ -1832,9 +1832,12 @@ client_wait_failed() { # диагностика провала ожидания 
 	echo "    аутентификация) руками владельца на видимом дисплее — навык" >&2
 	echo "    1c-db-data, раздел «Первая/перезалитая база»" >&2
 	echo "  база не новая? состояние стенда:" >&2
-	echo "    bash \"$SELF_DIR/start_1c_db.sh\" \"$ROOT\" --status" >&2
-	echo "    (процессы с базой, владелец порта, лок 1Cv8.1CL, stand-замок;" >&2
-	echo "     Usr/Pwd маскированы — навык 1c-test-contour, «Грабли»)" >&2
+	if [ -n "${INSTANCE:-}" ]; then
+		echo "    bash \"$SELF_DIR/start_1c_db.sh\" \"$ROOT\" --status --instance $INSTANCE" >&2
+	else
+		echo "    bash \"$SELF_DIR/start_1c_db.sh\" \"$ROOT\" --status" >&2
+	fi
+	echo "    (креды маскированы — навык 1c-test-contour, «Грабли»)" >&2
 	echo "  прочее: wrong mode (embedded на Linux невозможен)" >&2
 	exit 1
 }
