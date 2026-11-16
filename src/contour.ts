@@ -53,7 +53,11 @@ export interface UnicaTools {
   readonly op_tools: readonly string[]
   /** Операции раннера, меняющие базу: захватывают замок инфобазы. */
   readonly ib_mutating_ops: readonly string[]
-  /** Операции раннера, требующие сверки с документацией (гейт doc). */
+  /** Операции раннера, требующие сверки с документацией (гейт doc).
+   * Критерий: агент принимает решение о платформенной семантике —
+   * авторская правка и её доставка. Opaque-данные (`infobase.restore`,
+   * `dump`, `create`) сюда не входят: сверять с докой нечего, их риск —
+   * потеря данных, его несут замок ИБ и подтверждение человека. */
   readonly verify_ops: readonly string[]
   /** Правила инвариантов пересборки из `contour.json`. */
   readonly rebuild_rules: readonly RebuildRule[]

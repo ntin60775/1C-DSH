@@ -42,7 +42,10 @@ dryRun: true|false}` (аргументы операции — ВЛОЖЕННО �
    `epf-dump` (`1c-ibcmd-delivery`).
    Разовый обход: `.dsh/1c/unica-gate-escalations.txt`.
 2. Мутации (`unica.apply`, `unica.run {op: push|upload|apply|reset}`) —
-   только после непустой сверки с `unica.docs`. Пустой ответ не считается;
+   только после непустой сверки с `unica.docs`. Критерий списка —
+   авторское решение о платформенной семантике; операции с opaque-данными
+   (`infobase.restore/dump/create`) сверки не требуют — их несут замок ИБ
+   и подтверждение человека. Пустой ответ не считается;
    источники — `platform-help` и `development-standard`,
    `configuration-documentation` в 0.15 отвечает `unsupported_source`;
    принятая задача (`status: working`) — не сверка, пока не дочитана через
