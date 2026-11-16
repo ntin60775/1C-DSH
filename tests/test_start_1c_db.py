@@ -7,11 +7,14 @@
 - wait_client (#36): выход по стенному дедлайну, не по счётчику итераций.
 - Гард stand-замка (мультистенд Т3): второй старт отказан, владение
   клиенту, release-on-stop, серверная база не замкивается.
+- Провал ожидания (Т12): сообщение ведёт к `--status` с корнем и путём
+  скрипта, инстанс-стенд — с `--instance`.
 - Инстансы (мультистенд Т4): --instance X без файла/инстанса, с битым
   YAML или неполными полями — exit 2 с перечнем и путём к образцу;
   годная запись останавливается громко (рантайм — Т5); пароль из конфига
   не печатается; моно-режим без --instance живёт как раньше."""
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -129,6 +132,43 @@ wait_client тест2 && echo "ok=$n"
         "wait_client: подключившийся клиент завершает фазу успехом",
         r.returncode == 0 and "ok=3" in r.stdout and "✓ подключён" in r.stdout,
         f"rc={r.returncode}, stdout={r.stdout!r}",
+    )
+
+    # 5b. Т12: провал ожидания ведёт к --status (носитель Т6/Т11) с корнем и
+    #     путём скрипта, инстанс-стенд — с --instance; вопрос о новой базе
+    #     остаётся порядком причин. Функция извлекается из скрипта.
+    def wait_failed(instance: str = ""):
+        harness = f"""set -u
+SELF_DIR={shlex.quote(str(REPO / "scripts"))}
+ROOT={shlex.quote(str(tmp))}
+INSTANCE={shlex.quote(instance)}
+eval "$(sed -n '/^client_wait_failed() {{/,/^}}/p' {shlex.quote(str(SCRIPT))})"
+rc=0
+( client_wait_failed ) || rc=$?
+echo "rc=$rc"
+"""
+        return subprocess.run(["bash", "-c", harness],
+                              capture_output=True, text=True)
+
+    r = wait_failed()
+    _lib.check(
+        "провал ожидания: сообщение ведёт к --status с корнем и путём скрипта",
+        r.stdout.strip().endswith("rc=1")
+        and "--status" in r.stderr
+        and str(REPO / "scripts") in r.stderr
+        and str(tmp) in r.stderr
+        and "--instance" not in r.stderr,
+        f"stdout={r.stdout!r}, stderr={r.stderr!r}",
+    )
+    _lib.check(
+        "провал ожидания: вопрос о новой базе сохранён",
+        "НОВАЯ или перезалитая" in r.stderr,
+        f"stderr={r.stderr!r}",
+    )
+    _lib.check(
+        "провал ожидания: инстанс-стенд — --status --instance <имя>",
+        "--status --instance inst2" in wait_failed("inst2").stderr,
+        f"stderr={wait_failed('inst2').stderr!r}",
     )
 
     # 6. Т3 гард stand-замка: второй старт отказан, владение клиенту, release-on-stop.
