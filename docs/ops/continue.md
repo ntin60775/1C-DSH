@@ -245,7 +245,7 @@ stand-замка) и границу `--stop --base` на общей базе; `e
 `docs/plans/team-delivery-preset-ids.md`.
 Юнит DSH завершён: Т1–Т10 приняты (Т10 — 13.11); Т11 (хвост флоу
 деплоя) принят 16.11. T12 dsh-contour «Профили testpilot: сверка `base` в doctor и
-bootstrap» слит 16.11 — ждёт приёмки оператора.
+bootstrap» слит и принят оператором 16.11 — тикет закрыт.
 Юнит #62 завершён: Т1–Т6 приняты (Т6 — 13.11). Юнит #56 закрыт: Т1–Т10
 приняты (Т10 — 16.11), протокол опубликован комментом в #56,
 `https://github.com/ntin60775/1c-zcode/issues/56#issuecomment-6916217699`.
@@ -271,7 +271,8 @@ ship (записи: DSH — 09.11 в спеке, #62 — 08.11, #56 — 06.11); 
   `test-results/t10/` проекта `erp-demo`. Находка Т10 — сломанный `base`
   профиля testpilot после переезда раскладки (исправлен в `erp-demo`; тот
   же в двух проектах парка); хвост заведён тикетом
-  `tickets/dsh-contour/T12-testpilot-profile-check.md` (doctor + bootstrap).
+  `tickets/dsh-contour/T12-testpilot-profile-check.md` (doctor + bootstrap;
+  слит и принят 16.11, тикет закрыт).
   Канон `1c-db-data` (кандидат из Т6) закрыт Т11, его границы (чужие
   клиенты базы, embedded) — e2e-Т12 (`T12-starter-index`).
 - Хвост Т9 (решение оператора): шаблон набора изменился — у проектов с

@@ -97,3 +97,9 @@ doctor: `project-bp`/`dealer-network-orders` — FAIL `mcp.testpilot-base`
 `test_bootstrap_legacy_cleanup`, `test_project_layout` — зелёные.
 `test_db_status` падал на живом стенде приёмки (чужие процессы с базой в
 зоне видимости), после остановки стенда — зелёный: среда, не дифф.
+
+## Приёмка
+
+Принят оператором 16.11 — тикет закрыт. Парк не правился: битые профили
+`dealer-network-orders` и `project-bp` doctor теперь называет, перезапись —
+решение оператора (границы тикета).
