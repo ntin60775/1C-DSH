@@ -123,7 +123,7 @@ prefetch — рассинхрон обновления называется ко
 дефект: лаунчер не передавал ядру `UNICA_ARTIFACT_CACHE`/
 `UNICA_RUNTIME_MANIFEST` (handoff bootstrap) — движки не резолвились
 (`bundled_tool_missing`). Лаунчер несёт полный handoff, пресет подаёт
-`CLAUDE_PROJECT_DIR` (манифест включает строгий хост-контекст), `lib/`
+`ZCODE_PROJECT_DIR` (манифест включает строгий хост-контекст), `lib/`
 пересобран — живые сессии после перезапуска хоста. Канон приведён к
 0.17.4 (providers, живой агент, localPath, source.reexport, untracked_base);
 контур erp-demo обновлён (секция AGENTS.md, providers-пины, modeline,

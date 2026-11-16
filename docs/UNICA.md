@@ -49,7 +49,7 @@ handshake лаунчера и версию скиллов Юники (`SOURCE.js
 `UNICA_RUNTIME_MANIFEST` (манифест установки), `UNICA_PROVIDER_STATE_DIR`
 (состояние провайдеров — `<корень>/provider-state`). Без этого handoff
 первый `push`/`pull` отвечает `bundled_tool_missing`, а с манифестом ядро
-требует хост-контекст: пресет подаёт `CLAUDE_PROJECT_DIR` корня проекта
+требует хост-контекст: пресет подаёт `ZCODE_PROJECT_DIR` корня проекта
 (cwd-канал в строгом режиме не фолбэк). Лаунчер ставит
 `scripts/install_unica_runtime.py`. Проверка установки —
 `unica --help` (первая строка `unica <версия из unica.yaml>`).
@@ -113,10 +113,12 @@ python3 scripts/install_unica_skills.py --check
 проецирует его в текст модели начиная с 0.2.2-rc.2 (фикс `mcp-client`,
 ntin60775/deepseek-harness#1). Воркспейс Юники фиксируется при старте;
 вызов инструмента `cwd` не переключает: для второй копии — своя сессия,
-а не второй вызов. Привязку подаёт пресет через `CLAUDE_PROJECT_DIR` —
-это имя env-канала юники (хост Claude Code), не зависимость от Claude
-Code: DSH не входит в хосты юники, а из её каналов привязки (per-call
-meta Codex, MCP roots, env) клиенту DSH доступен только env.
+а не второй вызов. Привязку подаёт пресет через `ZCODE_PROJECT_DIR` —
+это имя env-канала юники (хост ZCode), не ZCode-слой контура (снят в
+Т10) и не зависимость от ZCode: DSH не входит в хосты юники, а из её
+каналов привязки (per-call meta Codex, MCP roots, env) клиенту DSH
+доступен только env. Имя канала — решение оператора; нейтральный ключ
+(`UNICA_PROJECT_DIR`) — кандидат в апстрим-ишью.
 
 - `UNICA_RUNTIME_CACHE_DIR` указывает на глобальный кэш; проект своего
   кэша не держит.

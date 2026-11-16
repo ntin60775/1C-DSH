@@ -19,7 +19,7 @@ whenToUse: "Создание или использование git-ворктр�
   1. per-call метаданные хоста, если хост их подаёт;
   2. первый MCP `roots` от клиента;
   3. env проекта, которую хост подаёт при старте (юника читает
-     `CLAUDE_PROJECT_DIR`);
+     `ZCODE_PROJECT_DIR`);
   4. cwd запуска (канал `LaunchCwd`) — только standalone-режим.
   В сессии 1С-проекта канал стартовый: пресет `1c` поднимает MCP `unica`
   записью с `cwd` и env проекта.
@@ -32,7 +32,7 @@ whenToUse: "Создание или использование git-ворктр�
   а правится основное дерево.
 - Диагностика привязки: `unica.view {}` → `structuredContent`:
   `workspaceRoot`, `workspaceRootOrigin` (канал и переменная, напр.
-  `startupEnvironment/CLAUDE_PROJECT_DIR`), `effectiveSourceRoot`.
+  `startupEnvironment/ZCODE_PROJECT_DIR`), `effectiveSourceRoot`.
 
 ## Файловая база и владелец копии (0.15)
 
@@ -92,7 +92,7 @@ local-слоя (`File=` / `Srvr+Ref`); не совпало — прогон не
    ROOT=${UNICA_GLOBAL_ROOT:-$HOME/.local/share/unica}
    VER=$(sed -n 's/^unica:[[:space:]]*//p' "$DSH_1C_ROOT/unica.yaml")
    # stdio: handshake initialize → tools/list
-   CLAUDE_PROJECT_DIR=<ворктри> \
+   ZCODE_PROJECT_DIR=<ворктри> \
    UNICA_HOST_CONTEXT_REQUIRED=1 \
    UNICA_RUNTIME_CACHE_DIR="$ROOT/runtimes" \
    UNICA_ARTIFACT_CACHE="$ROOT/runtimes" \
@@ -110,7 +110,7 @@ local-слоя (`File=` / `Srvr+Ref`); не совпало — прогон не
 
 Ошибка строгого режима без хост-контекста: обёртка включила
 `UNICA_HOST_CONTEXT_REQUIRED=1`, а env/roots не подала. Это **не** удаление
-cwd-механики. Лечение: подать `CLAUDE_PROJECT_DIR=<дерево>` или убрать
+cwd-механики. Лечение: подать `ZCODE_PROJECT_DIR=<дерево>` или убрать
 строгие переменные (см. ниже), но не искать выключенную фичу.
 
 ## Прямой запуск (cwd-канал) — запасной ход

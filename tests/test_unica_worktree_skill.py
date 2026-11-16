@@ -33,7 +33,7 @@ def main() -> int:
 	for marker in (
 		"UNICA_HOST_CONTEXT_REQUIRED",       # строгий режим bootstrap
 		"UNICA_RUNTIME_MANIFEST",            # вторая строгая переменная
-		"CLAUDE_PROJECT_DIR",                # env-канал воркспейса
+		"ZCODE_PROJECT_DIR",                # env-канал воркспейса
 		"LaunchCwd",                         # cwd-канал standalone
 		"The host did not supply workspace context",  # диагноз ошибочного вывода
 		"workspaceRootOrigin",               # факт привязки смотрят unica.view

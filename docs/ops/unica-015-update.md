@@ -193,7 +193,7 @@ CLA и реестр участников (#2853), независимое рев�
 ## Проверки
 
 - Handshake (протокол `2025-11-25`): `serverInfo 0.15.0`, 11 инструментов.
-- Строгий запуск `bootstrap/launch.sh` с `CLAUDE_PROJECT_DIR`: живой
+- Строгий запуск `bootstrap/launch.sh` с `ZCODE_PROJECT_DIR`: живой
   handshake, привязка воркспейса на месте.
 - `scripts/doctor.py erp-demo --json`: exit 0, артефакты 3/3,
   `MCP unica жив: unica 0.15.0 жив: 11 глаголов`, скиллы 50 (версия
@@ -255,10 +255,14 @@ rc.5). Дефект латентный: живые пробы Т5 не вклю�
   `UNICA_RUNTIME_MANIFEST`, `UNICA_PROVIDER_STATE_DIR`; охранник
   `test_unica_versions.py` проверяет состав;
 - `UNICA_RUNTIME_MANIFEST` включает строгий хост-контекст ядра
-  (cwd-канал не фолбэк) — пресет подаёт `CLAUDE_PROJECT_DIR` корня
+  (cwd-канал не фолбэк) — пресет подаёт `ZCODE_PROJECT_DIR` корня
   проекта (`src/preset/config.ts`, spec-тест обновлён); `lib/`
   пересобран, живые сессии подхватят после перезапуска хоста;
-- пример `launch.sh` в скилле worktree дополнен `UNICA_ARTIFACT_CACHE`.
+- пример `launch.sh` в скилле worktree дополнен `UNICA_ARTIFACT_CACHE`;
+- имя env-канала привязки — решение оператора: `ZCODE_PROJECT_DIR`
+  вместо `CLAUDE_PROJECT_DIR` (канал юники, не ZCode-слой контура;
+  Claude Code в системе нет и не будет). Живая проба: `unica.view {}`
+  → `workspaceRootOrigin: startupEnvironment/ZCODE_PROJECT_DIR`.
 
 После починки живой `push dryRun` доходит до раннера и отвечает
 типизированным отказом `untracked_base` (копия без памяти базы) —
