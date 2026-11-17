@@ -38,6 +38,16 @@ const KEY_PLANS = 'style:plans'
 /** Строка отчёта чекера: `путь:строка: пункт`. */
 const CHECKER_LINE_RE = /^(.+?):(\d+): (.+)$/
 
+/**
+ * Итоговые строки отчёта чекера пака — не нарушения.
+ *
+ * Реальный `bsl_style_check.py` печатает в stdout итог прогона
+ * (`bsl_style_check_ok` либо `bsl_style_violations=N fixed=M`). Раньше такая
+ * строка попадала в `hot` как нераспознанная, и режим «фон не блокирует»
+ * становился недостижим при любом нарушении в файле.
+ */
+const CHECKER_META_RE = /^(?:bsl_style_check_ok|bsl_style_violations=\d+(?: fixed=\d+)?)$/
+
 /** Сохранённый план `unica.apply`. */
 interface Plan {
   readonly savedAt: number
@@ -90,6 +100,7 @@ export function splitReport(
   const cold: string[] = []
   for (const line of report.split('\n')) {
     const trimmed = line.trim()
+    if (trimmed === '' || CHECKER_META_RE.test(trimmed)) continue
     const match = CHECKER_LINE_RE.exec(trimmed)
     let assigned = false
     if (match !== null) {

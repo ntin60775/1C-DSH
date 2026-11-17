@@ -206,7 +206,7 @@ Python — stdlib без зависимостей; bash — стартеры и 
 
 ## Границы парадигмы
 
-- **ZCode-слой снят**: marketplace-канал, deploy-plugin, раскладка `.zcode`,
+- **ZCode-слой снят**: marketplace-канал, deploy-plugin, legacy-раскладка,
   переменная состояния ZCode, донор `1c-omp`, мигратор и `/1c-migrate`.
   В поставляемом слое наследия нет; критерий охраняет
   [no-legacy.spec.ts](../../tests/unit/no-legacy.spec.ts). История порта —
