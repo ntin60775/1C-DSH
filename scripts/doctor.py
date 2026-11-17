@@ -989,6 +989,23 @@ def section_keys(text: str, section: str) -> list:
 	return keys
 
 
+def section_values(text: str, section: str) -> dict:
+	"""Пары ключ-значение секции: кавычки и inline-комментарий снимаются."""
+	values, inside = {}, False
+	for line in text.splitlines():
+		if re.match(rf"^{re.escape(section)}\s*:", line):
+			inside = True
+			continue
+		if inside:
+			if line[:1] not in (" ", "\t"):
+				break
+			match = re.match(r"^  ([A-Za-z0-9_.-]+)\s*:\s*(.*)$", line)
+			if match:
+				value = re.sub(r"\s+#.*$", "", match.group(2)).strip()
+				values[match.group(1)] = value.strip("'\"")
+	return values
+
+
 def platform_path(text: str) -> str:
 	"""Путь `tools.platform.path`: кавычки и inline-комментарий снимаются.
 
@@ -1060,6 +1077,27 @@ def check_v8project(report: Report, v8text: str, local_text: str) -> None:
 			            code="project.schema-legacy")
 	if local_text and re.search(r"(?m)^infobases\s*:", local_text):
 		report.ok("project", "привязка базы в local-слое (канон 0.15)")
+	# Канон маршрутизации: run-операции исполняет только ibcmd (инвариант 8
+	# навыка 1c-contour). Пины живут в local-слое; launch не пинится.
+	required_pins = ("push", "pull", "download", "make", "infobase.create",
+	                 "infobase.dump", "infobase.restore", "extensions")
+	pins = section_values(local_text, "providers") if local_text else {}
+	missing = [key for key in required_pins if key not in pins]
+	foreign = sorted(f"{key}={pins[key]}" for key in pins
+	                 if key in required_pins and pins[key] != "ibcmd")
+	if foreign:
+		report.fail("project", "v8project.local.yaml: providers "
+		            f"{', '.join(foreign)} — канон контура: run-операции "
+		            "исполняет только ibcmd, конфигуратор и агент не используются",
+		            code="project.providers-policy")
+	elif missing:
+		report.warn("project", "v8project.local.yaml: нет пинов ibcmd "
+		            f"providers.{', providers.'.join(missing)} — исполнитель "
+		            "выберется цепочкой раннера (агент/конфигуратор); добавь "
+		            "пины по шаблону 1c-project-layout",
+		            code="project.providers-pins")
+	elif pins:
+		report.ok("project", "run-операции запинены на ibcmd (канон контура)")
 
 
 def check_platform(report: Report, root: Path, v8text: str, local_text: str,

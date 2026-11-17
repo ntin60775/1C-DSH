@@ -166,11 +166,20 @@ def write_install(fx: Fixture, package: Path, *, selected: str = "1c",
 
 
 V8PROJECT = "workPath: build\nformat: DESIGNER\nsource-set:\n  - name: main\n    type: CONFIGURATION\n    path: src/cf\n"
-V8LOCAL = "infobases:\n  origin:\n    connection: 'File=build/ib'\n"
+V8LOCAL = ("infobases:\n  origin:\n    connection: 'File=build/ib'\n"
+           "providers:\n"
+           "  push: ibcmd\n"
+           "  pull: ibcmd\n"
+           "  download: ibcmd\n"
+           "  make: ibcmd\n"
+           "  infobase.create: ibcmd\n"
+           "  infobase.dump: ibcmd\n"
+           "  infobase.restore: ibcmd\n"
+           "  extensions: ibcmd\n")
 
 
 def write_project(fx: Fixture, *, contour=None,
-                  local=None, topology: bool = True) -> Path:
+                  local=None, topology: bool = True, v8local=None) -> Path:
 	root = fx.project
 	data = root / ".dsh/1c"
 	(data / "testpilot").mkdir(parents=True, exist_ok=True)
@@ -192,7 +201,8 @@ def write_project(fx: Fixture, *, contour=None,
 		(data / "contour.local.json").write_text(json.dumps(local), encoding="utf-8")
 	(data / "testpilot" / "profiles.yaml").write_text("profiles: {}\n", encoding="utf-8")
 	(root / "v8project.yaml").write_text(V8PROJECT, encoding="utf-8")
-	(root / "v8project.local.yaml").write_text(V8LOCAL, encoding="utf-8")
+	(root / "v8project.local.yaml").write_text(
+		v8local if v8local is not None else V8LOCAL, encoding="utf-8")
 	if topology:
 		for relative in ("src/cf", "src/cfe", "src/epf", "src/erf", "tools", "vendor",
 		                 "tests/e2e"):
@@ -516,6 +526,39 @@ def main() -> int:
 		check("v8project 0.15: builder отвергнут — project.schema",
 		      schema["data"]["project"]["code"] == "project.schema"
 		      and "builder" in schema["result"].stdout, schema["result"].stdout[-600:])
+
+		# ── 9b. Маршрутизация run-операций: пины ibcmd (инвариант 8) ──
+		fx_pins = Fixture(Path(tmp) / "pins-missing")
+		make_launcher(fx_pins)
+		make_testpilot(fx_pins)
+		write_install(fx_pins, make_package(Path(tmp) / "pins-missing" / "pkgsrc"))
+		write_project(fx_pins, v8local="infobases:\n  origin:\n    connection: 'File=build/ib'\n")
+		pins_missing = fx_pins.report()
+		check("нет пинов ibcmd — WARN project.providers-pins",
+		      pins_missing["data"]["project"]["code"] == "project.providers-pins"
+		      and pins_missing["result"].returncode == 0,
+		      json.dumps(pins_missing["data"]["project"])[:400])
+
+		fx_foreign = Fixture(Path(tmp) / "pins-foreign")
+		make_launcher(fx_foreign)
+		make_testpilot(fx_foreign)
+		write_install(fx_foreign, make_package(Path(tmp) / "pins-foreign" / "pkgsrc"))
+		write_project(fx_foreign, v8local=V8LOCAL.replace("push: ibcmd", "push: designer"))
+		pins_foreign = fx_foreign.report()
+		check("чужой исполнитель — FAIL project.providers-policy",
+		      pins_foreign["data"]["project"]["code"] == "project.providers-policy"
+		      and pins_foreign["result"].returncode == 1,
+		      json.dumps(pins_foreign["data"]["project"])[:400])
+
+		fx_pinned = Fixture(Path(tmp) / "pins-full")
+		make_launcher(fx_pinned)
+		make_testpilot(fx_pinned)
+		write_install(fx_pinned, make_package(Path(tmp) / "pins-full" / "pkgsrc"))
+		write_project(fx_pinned)
+		pins_full = fx_pinned.report()
+		check("полные пины ibcmd — project ok",
+		      "запинены на ibcmd" in pins_full["result"].stdout,
+		      pins_full["result"].stdout[-600:])
 
 		# ── 10. Незавершённая топология — FAIL с ритуалом навыка ──
 		fx_topo = Fixture(Path(tmp) / "topology")

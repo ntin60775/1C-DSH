@@ -3,8 +3,10 @@
 # конфигуратор падает по GTK в Wayland-сессии (разовый обход:
 # env -u WAYLAND_DISPLAY GDK_BACKEND=x11). Раннер 0.17 по умолчанию
 # ведёт полные операции ibcmd-ом, а инкрементальные — живым агентом;
-# пин ниже фиксирует ibcmd для детерминизма headless-контура. Пин
-# строгий: не готов ibcmd — отказ, без отката на агента.
+# пины ниже фиксируют ibcmd для всех операций с исходниками и ИБ —
+# детерминизм headless-контура, конфигуратор и агент не используются.
+# Пин строгий: не готов ibcmd — отказ, без отката на агента.
+# launch не пинится: единственный исполнитель — клиент платформы.
 infobases:
   origin:
     connection: '{ib_connection}'   # БЕЗ user/password внутри строки
@@ -12,6 +14,12 @@ infobases:
     # password: <через env или этот файл, но не в общий v8project.yaml>
 providers:
   push: ibcmd
+  pull: ibcmd
+  download: ibcmd
+  make: ibcmd
+  infobase.create: ibcmd
+  infobase.dump: ibcmd
+  infobase.restore: ibcmd
   extensions: ibcmd
 tools:
   platform:

@@ -47,6 +47,9 @@ whenToUse: "bsl_diagnostics/bsl_index не оживает или провайд�
 - В логах демона: «bsl-analyzer is not bundled in this workspace» и
   «could not locate Unica plugin root for bsl-analyzer MCP adapter
   lookup».
+- Не дефект: `symbol`-поиск отвечает `dependencyPending` / `buildingIndex` —
+  индекс строится (первый прогон на большой конфигурации — десятки минут);
+  повторяй тот же запрос, артефакт тут ни при чём.
 
 ## Диагноз по шагам
 
