@@ -12,6 +12,8 @@
   invariant: `--json` печатает ровно JSON; doctor не зависит от живой машины
         (HOME, DSH_HOME и PATH указывают во временные каталоги, живой MCP не
         поднимается — `--no-ping`); неизвестный флаг не глотается;
+  invariant: вендоренные паки учтены в разделе project: стиль-движок и
+        скилл bsp — наличие ok, отсутствие WARN с лечением, не FAIL;
   spec: tickets/dsh-contour/T12-testpilot-profile-check.md — сверка `base`
         профилей testpilot: битый — FAIL `mcp.testpilot-base` с резолвом,
         серверные и профили без base — не FAIL, нечитаемый файл — WARN;
@@ -109,7 +111,10 @@ def make_launcher(fx: Fixture) -> Path:
 
 
 def make_testpilot(fx: Fixture) -> Path:
-	path = fx.bin / "1c-testpilot"
+	# Каноническое место установки (scripts/install_testpilot.sh):
+	# ~/.local/bin, не PATH — PATH хоста может быть без него.
+	path = fx.home / ".local" / "bin" / "1c-testpilot"
+	path.parent.mkdir(parents=True, exist_ok=True)
 	path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
 	path.chmod(0o755)
 	return path
@@ -184,11 +189,14 @@ def write_project(fx: Fixture, *, contour=None,
 	data = root / ".dsh/1c"
 	(data / "testpilot").mkdir(parents=True, exist_ok=True)
 	(data / "contour").write_text("test\n", encoding="utf-8")
-	# Стиль-движок и платформа — заглушки: раздел project чист до проверки
-	# реестра, иначе ранние WARN перехватывают код раздела.
+	# Стиль-движок, скилл bsp и платформа — заглушки: раздел project чист
+	# до проверки реестра, иначе ранние WARN перехватывают код раздела.
 	style = data / "skills" / "1c-bsl-code-style" / "scripts" / "bsl_style_check.py"
 	style.parent.mkdir(parents=True, exist_ok=True)
 	style.write_text("# stub\n", encoding="utf-8")
+	bsp = data / "skills" / "bsp" / "SKILL.md"
+	bsp.parent.mkdir(parents=True, exist_ok=True)
+	bsp.write_text("---\nname: bsp\n---\n", encoding="utf-8")
 	platform = root / "tools" / "1cv8"
 	platform.parent.mkdir(parents=True, exist_ok=True)
 	platform.write_text("", encoding="utf-8")
@@ -277,6 +285,20 @@ def main() -> int:
 		check("здоровая установка — человеческий вывод без FAIL",
 		      "FAIL" not in human.stdout and "итог: зелёный" in human.stdout,
 		      human.stdout[-800:])
+
+		# ── 1a. Команда testpilot только в PATH — диагностическая ветка резолва ──
+		fx_pathbin = Fixture(Path(tmp) / "pathbin")
+		make_launcher(fx_pathbin)
+		pathbin = fx_pathbin.bin / "1c-testpilot"
+		pathbin.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+		pathbin.chmod(0o755)
+		write_install(fx_pathbin, make_package(Path(tmp) / "pathbin" / "pkgsrc"))
+		write_project(fx_pathbin)
+		pathbin_human = fx_pathbin.run()
+		check("testpilot только в PATH — резолвится, без FAIL mcp",
+		      f"1c-testpilot: {pathbin}" in pathbin_human.stdout
+		      and "FAIL mcp:" not in pathbin_human.stdout,
+		      pathbin_human.stdout[-500:])
 		guard = DOCTOR.read_text(encoding="utf-8")
 
 		# ── 1b. Профили testpilot: base резолвится от каталога файла ──
@@ -353,6 +375,25 @@ def main() -> int:
 		check("doctor не импортирует deploy_recon (критерий приёмки)",
 		      "import deploy_recon" not in guard and "from deploy_recon" not in guard,
 		      "импорт нашёлся")
+
+		# ── 1c. Скилл bsp: вендорен — ok; нет — WARN project.bsp-missing, exit 0 ──
+		fx_bsp = Fixture(Path(tmp) / "bsp-missing")
+		make_launcher(fx_bsp)
+		make_testpilot(fx_bsp)
+		write_install(fx_bsp, make_package(Path(tmp) / "bsp-missing" / "pkgsrc"))
+		write_project(fx_bsp)
+		write_registry(fx_bsp)
+		(fx_bsp.project / ".dsh/1c/skills/bsp/SKILL.md").unlink()
+		bsp_report = fx_bsp.report()
+		check("bsp не вендорен — WARN project.bsp-missing, exit 0",
+		      bsp_report["result"].returncode == 0
+		      and bsp_report["data"]["project"]["status"] == "warn"
+		      and bsp_report["data"]["project"]["code"] == "project.bsp-missing",
+		      json.dumps(bsp_report["data"]["project"])[:400])
+		check("bsp не вендорен — причина и лечение в человеческом выводе",
+		      "скилл bsp не вендорен" in bsp_report["result"].stdout
+		      and "1c-ssl-skills" in bsp_report["result"].stdout,
+		      bsp_report["result"].stdout[-800:])
 
 		# ── 2. Фикстура «нет пресета»: свой код и своя причина ──
 		fx_preset = Fixture(Path(tmp) / "no-preset")

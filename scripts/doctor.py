@@ -11,7 +11,7 @@
             из проектных входов и их живость;
   layout  — раскладка проекта: канон `.dsh/1c` и промежуточная `.dsh`;
   project — `v8project.yaml`, платформа, обязательный минимум топологии,
-            `build/out`, движок стиля, запись в реестре проектов;
+            `build/out`, движок стиля, скилл bsp, запись в реестре проектов;
   state   — корень состояния контура, замки инфобаз, журнал гейтов.
 
 Реестр проектов (`projects.json` в корне состояния) ведётся при переводе
@@ -791,14 +791,20 @@ def _check_profile_bases(report: Report, path: Path) -> None:
 
 def check_testpilot(report: Report, root: Path) -> dict:
 	"""Команда `1c-testpilot` и профили e2e для MCP-записи."""
-	configured = os.environ.get("DSH_1C_TESTPILOT") or "1c-testpilot"
-	resolved = (configured if os.path.isabs(configured) and os.access(configured, os.X_OK)
-	            else shutil.which(configured) if not os.path.isabs(configured) else "")
+	# Резолв как у unica: env-подмена, глобальная установка ~/.local/bin,
+	# PATH — только без подмены. PATH хоста может не содержать ~/.local/bin.
+	configured = os.environ.get("DSH_1C_TESTPILOT") or ""
+	candidate = Path(configured) if configured else Path.home() / ".local" / "bin" / "1c-testpilot"
+	resolved = ""
+	if candidate.is_file() and os.access(str(candidate), os.X_OK):
+		resolved = str(candidate)
+	elif not configured:
+		resolved = shutil.which("1c-testpilot") or ""
 	server = {"name": "1c-testpilot", "transport": "stdio", "state": "ok"}
 	if not resolved:
-		report.fail("mcp", f"MCP 1c-testpilot не поднимется: команда {configured} не "
-		            f"найдена (scripts/install_testpilot.sh)", code="mcp.testpilot-missing")
-		server.update({"state": "missing", "detail": configured})
+		report.fail("mcp", f"MCP 1c-testpilot не поднимется: команда не найдена "
+		            f"({candidate}); ставит scripts/install_testpilot.sh", code="mcp.testpilot-missing")
+		server.update({"state": "missing", "detail": str(candidate)})
 	else:
 		server["detail"] = resolved
 	hit = find_input(root, "testpilot/profiles.yaml")
@@ -1213,6 +1219,18 @@ def check_style(report: Report, root: Path) -> None:
 	            code="project.style-missing")
 
 
+def check_bsp(report: Report, root: Path) -> None:
+	"""Скилл bsp: вендоренный пак 1c-ssl-skills в раскладке проекта."""
+	hit = find_input(root, "skills/bsp/SKILL.md")
+	if hit is not None:
+		report.ok("project", f"скилл bsp: вендоренный пак 1c-ssl-skills ({hit[1]})")
+		return
+	report.warn("project", "скилл bsp не вендорен — вызовы БСП без сверки "
+	            "сигнатур (вендорь пак 1c-ssl-skills в раскладку проекта: "
+	            "install.sh --skill bsp --target .dsh/1c/skills)",
+	            code="project.bsp-missing")
+
+
 def registry_path() -> Path:
 	"""Реестр проектов: `projects.json` в корне состояния."""
 	return state_root()[0] / REGISTRY
@@ -1312,6 +1330,7 @@ def check_project(report: Report, root: Path, project: dict) -> None:
 	check_topology(report, root)
 	check_build_out(report, root)
 	check_style(report, root)
+	check_bsp(report, root)
 	check_registry(report, root)
 
 

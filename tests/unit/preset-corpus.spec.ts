@@ -120,13 +120,14 @@ describe('пресет в поставке', () => {
     expect(Object.keys(manifest.exports)).toContain('./preset')
   })
 
-  it('доставка реального пресета видит 4 MCP-сервера и три корня скиллов', () => {
+  it('доставка реального пресета видит 4 MCP-сервера и четыре корня скиллов', () => {
     const project: ContourProject = { root: ROOT, layout: 'markers', contour: {} }
     const delivery = planDelivery(project, { root: ROOT, home: '/home/tester' })
     expect(delivery.mcp.map((row) => row.config.serverName)).toEqual(['unica', '1c-testpilot', '1c-db', '1c-kd'])
     expect(delivery.skills).toEqual([
       join(ROOT, 'skills'),
       join(ROOT, 'commands'),
+      join(ROOT, '.dsh/1c/skills'),
       '/home/tester/.local/share/unica/skills',
     ])
     expect(statSync(join(ROOT, 'skills')).isDirectory()).toBe(true)

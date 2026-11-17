@@ -94,6 +94,7 @@
           "from": { "type": "string" },
           "to": { "type": "string" },
           "result": { "type": "string", "enum": ["ok", "partial", "failed"] },
+          "note": { "type": "string", "description": "свободная заметка об акте: состав, doctor-вердикт, пробелы" },
           "followups": {
             "type": "array",
             "description": "Незакрытые обязательства (рестарт сессии, say-шаги post_update) — сверять перед следующим update.",

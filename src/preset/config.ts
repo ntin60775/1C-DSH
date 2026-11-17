@@ -310,7 +310,10 @@ export function mcpRows(
   const home = env.home
   const processEnv = env.env ?? {}
   const unica = processEnv['UNICA_LAUNCHER'] ?? join(home, '.local', 'bin', 'unica')
-  const testpilot = processEnv['DSH_1C_TESTPILOT'] ?? '1c-testpilot'
+  // Абсолютный путь глобальной установки — как у unica: PATH хоста может
+  // не содержать ~/.local/bin (systemd user service), команда по имени
+  // не стартует. Подмена команды — DSH_1C_TESTPILOT.
+  const testpilot = processEnv['DSH_1C_TESTPILOT'] ?? join(home, '.local', 'bin', '1c-testpilot')
   const db = actualDbUrl(reading.contour, reading.local)
   const kd = kdUrl(reading.contour)
   const profiles = join(reading.dataDir, 'testpilot', 'profiles.yaml')
@@ -381,15 +384,20 @@ export function mcpRows(
 /**
  * Каталоги скиллов пресета.
  *
- * Контурные скиллы и три команды живут в пакете контура, скиллы Юники —
+ * Контурные скиллы и три команды живут в пакете контура, вендоренные паки
+ * проекта (стиль, bsp) — в раскладке `.dsh/1c/skills`, скиллы Юники —
  * в глобальной установке на машине. Порядок задаёт приоритет имён: контур
- * перекрывает одноимённый скилл Юники.
+ * перекрывает проектные паки, проектные паки — одноимённые скиллы Юники.
  * @param packageRoot - корень пакета контура.
  * @param home - домашний каталог машины.
+ * @param projectSkills - каталог вендоренных паков проекта; без него — только пакет и Юника.
  * @returns абсолютные корни для провайдера скиллов.
  */
-export function skillDirs(packageRoot: string, home: string): string[] {
-  return [join(packageRoot, 'skills'), join(packageRoot, 'commands'), unicaSkillsDir(home)]
+export function skillDirs(packageRoot: string, home: string, projectSkills?: string): string[] {
+  const dirs = [join(packageRoot, 'skills'), join(packageRoot, 'commands')]
+  if (projectSkills !== undefined) dirs.push(projectSkills)
+  dirs.push(unicaSkillsDir(home))
+  return dirs
 }
 
 /** Домашний каталог по умолчанию (выделено для тестов). */

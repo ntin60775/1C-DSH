@@ -7,7 +7,8 @@
  * он резолвит проект от каталога сессии и, если это проект 1С:
  *
  * - поднимает провайдер скиллов в области агента — 15 контурных скиллов,
- *   3 команды (`/1c-*`) и скиллы Юники с машины; вне проекта 1С их нет;
+ *   3 команды (`/1c-*`), вендоренные паки проекта (`.dsh/1c/skills`) и
+ *   скиллы Юники с машины; вне проекта 1С их нет;
  * - монтирует MCP-серверы проекта (`unica`, `1c-testpilot`, `1c-db` с
  *   инстансами, `1c-kd`) в области агента: `unica` получает cwd проекта и
  *   глобальный кэш рантаймов, адреса тулкита — из `.dsh/1c`;
@@ -21,6 +22,7 @@
 
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -105,7 +107,7 @@ export function presetOf(agent: Agent, services: Services): string | null {
 export interface Delivery {
   /** Проект 1С, к которому привязана доставка. */
   readonly project: ContourProject
-  /** Корни скиллов: пакет контура и глобальная установка Юники. */
+  /** Корни скиллов: пакет контура, вендоренные паки проекта и глобальная установка Юники. */
   readonly skills: readonly string[]
   /** MCP-записи проекта. */
   readonly mcp: readonly McpRow[]
@@ -130,7 +132,7 @@ export function planDelivery(
     : { packageRoot: options.root, home: options.home, env: options.env }
   return {
     project,
-    skills: skillDirs(options.root, options.home),
+    skills: skillDirs(options.root, options.home, join(dataDir, 'skills')),
     mcp: mcpRows(project, reading, deliveryEnv),
     problems: reading.problems,
   }

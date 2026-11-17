@@ -148,6 +148,32 @@ describe('readProject и mcpRows', () => {
     }
   })
 
+  it('команда 1c-testpilot — абсолютный путь установки, подмена — DSH_1C_TESTPILOT', () => {
+    // target: хост как systemd user service несёт PATH без ~/.local/bin —
+    // MCP-команда по имени не стартует. Правило лаунчера unica: абсолютный
+    // путь глобальной установки (~/.local/bin, scripts/install_testpilot.sh).
+    const tree = tempTree({ '.dsh/1c/contour.json': '{}' })
+    try {
+      const reading = readProject(join(tree.root, '.dsh', '1c'), (path) => {
+        try {
+          return readFileSync(path, 'utf8')
+        } catch {
+          return null
+        }
+      })
+      const rows = mcpRows(project(tree.root), reading, { packageRoot: '/pkg', home: '/home/tester' })
+      expect(rows[1]?.config.command).toBe('/home/tester/.local/bin/1c-testpilot')
+      const overridden = mcpRows(project(tree.root), reading, {
+        packageRoot: '/pkg',
+        home: '/home/tester',
+        env: { DSH_1C_TESTPILOT: '/opt/testpilot/bin/1c-testpilot' },
+      })
+      expect(overridden[1]?.config.command).toBe('/opt/testpilot/bin/1c-testpilot')
+    } finally {
+      tree.cleanup()
+    }
+  })
+
   it('битый db-instances не роняет доставку, проблема названа', () => {
     const tree = tempTree({ '.dsh/1c/db-instances.yaml': 'instances:\n  Bad Name:\n' })
     try {
@@ -171,6 +197,15 @@ describe('раскладка и скиллы', () => {
     expect(skillDirs('/pkg', '/home/tester')).toEqual([
       '/pkg/skills',
       '/pkg/commands',
+      '/home/tester/.local/share/unica/skills',
+    ])
+  })
+
+  it('корни скиллов с проектом: вендоренные паки между пакетом и Юникой', () => {
+    expect(skillDirs('/pkg', '/home/tester', '/proj/.dsh/1c/skills')).toEqual([
+      '/pkg/skills',
+      '/pkg/commands',
+      '/proj/.dsh/1c/skills',
       '/home/tester/.local/share/unica/skills',
     ])
   })

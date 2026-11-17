@@ -92,7 +92,8 @@ ZCode и переменная состояния сняты в Т10 после �
 - `1c-bsl-code-style` — пак стиля BSL (приоритет 1 над стандартами и
   стат-анализом), отдельный репо, вендорится в проект.
 - `1c-ssl-skills` (зеркало `brake71/1c-ssl-skills`, MIT) — скилл `bsp`:
-  публичный API БСП.
+  публичный API БСП; вендорится в проект (`.dsh/1c/skills`), поднимается
+  пресетом `1c`.
 - `kd-rules-mcp` ([egordoronchenko/kd-rules-mcp](https://github.com/egordoronchenko/kd-rules-mcp),
   MIT) — вендорится в `vendor/`, ставится станцией на машину (MCP `1c-kd`,
   [docs/KD-RULES.md](docs/KD-RULES.md)).
