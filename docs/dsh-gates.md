@@ -3,7 +3,7 @@ node_type: reference
 title: Гейты контура 1С на DSH
 service: _platform
 status: active
-updated: 2026-11-13
+updated: 2026-11-17
 links:
   relates_to: [dsh-install.md, plans/dsh-contour.md]
 ---
@@ -32,19 +32,24 @@ MCP-имена нормализованы под контракт function-name
 
 ## Гейты
 
-| Гейт | События | Решение и класс причины |
-|---|---|---|
-| `unica_source_gate` | pre + post | правка исходников 1С (`src/{cf,cfe}`, `tests/epf`) только через Unica; внешние `src/epf`/`src/erf` вне гейта (каркас — файлами по `epf-init`/`erf-init`, спека `external-epf-loop`): прямая запись — deny `source-edit`, bash-запись — deny `source-bash`; ворктри без инициализации — deny `worktree-uninit`; правило пересборки из `contour.json` — deny `rebuild-rule`; инфобаза занята другим деревом — deny `ib-lock`; путь-разрешение строкой allowlist'а эскалаций (действует, пока строка не убрана) — allow `escalation-granted` |
-| `doc_gate` | pre + post | авторская мутация метаданных/кода (операции `verify_ops`) без сверки с документацией платформы — deny `docs-unverified`; сверка (`unica.docs`) ведёт флаг сессии, структурная мутация флаг сбрасывает. Критерий списка — решение агента о платформенной семантике; opaque-данные (`infobase.restore/dump/create`) вне doc-гейта: их риск — потеря данных, его несут замок ИБ и подтверждение человека |
-| `mcp_gate` | pre | изменяющий вызов тест-контура в прод-контуре — deny `mcp-unsafe` (fail-closed: нечитаемый маркер контура = прод); тест-контур — allow; stand-замок базы — deny `stand-lock`; REST-вызовы через bash распознаются |
-| `bsl_style_gate` | post | чекер пака `1c-bsl-code-style`: нарушения в изменённых строках — block `bsl-style` («исправь и повтори»); фоновые нарушения вне правки — заметка (не блокируют); пред-чек плана `unica.apply` до записи — advisory; приоритет пака над стандартами и стат-анализом |
-| `bsl_module_gate` | post | контракт носителя 1С-кода — block `bsl-module`; строка эскалации в allowlist'е снимает блок, пока не убрана |
-| `anon_gate` | pre | отключение анонимизации канала 1c-db (raw-режим, API деанонимизации) — deny `anon-raw`, исключений нет |
-| `retry_gate` | pre + result | третий идентичный повтор после двух ошибок — deny `retry-discipline`; ошибки считаются из `tools/result` (включая bash exit ≠ 0) |
-| `worktree_hint` | post | после `git worktree add` — заметка-подсказка: работа в новом ворктри (accept + notice, не блок) |
-| `session_clean` | created | выметание просроченных замков инфобаз и файлов состояния старше 7 дней |
-| `session_context` | created | контекст старта: проект, раскладка, ворктри — сообщением в сессию |
-| `kd_session_start` | created | станция `1c-kd`: станции нет — подъём; станция есть — pid не меняется |
+| Гейт | Правило в журнале | События | Решение и класс причины |
+|---|---|---|---|
+| `unica_source_gate` | `unica-source-gate` | pre + post | правка исходников 1С (`src/{cf,cfe}`, `tests/epf`) только через Unica; внешние `src/epf`/`src/erf` вне гейта (каркас — файлами по `epf-init`/`erf-init`, спека `external-epf-loop`): прямая запись — deny `source-edit`, bash-запись — deny `source-bash`; ворктри без инициализации — deny `worktree-uninit`; правило пересборки из `contour.json` — deny `rebuild-rule`; инфобаза занята другим деревом — deny `ib-lock`; путь-разрешение строкой allowlist'а эскалаций (действует, пока строка не убрана) — allow `escalation-granted` |
+| `doc_gate` | `docs-before-design` | pre + post | авторская мутация метаданных/кода (операции `verify_ops`) без сверки с документацией платформы — deny `docs-unverified`; сверка (`unica.docs`) ведёт флаг сессии, структурная мутация флаг сбрасывает. Критерий списка — решение агента о платформенной семантике; opaque-данные (`infobase.restore/dump/create`) вне doc-гейта: их риск — потеря данных, его несут замок ИБ и подтверждение человека |
+| `mcp_gate` | `mcp-unsafe-gate`, `stand-lock` | pre | изменяющий вызов тест-контура в прод-контуре — deny `mcp-unsafe` (fail-closed: нечитаемый маркер контура = прод); тест-контур — allow; stand-замок базы — deny `stand-lock`; REST-вызовы через bash распознаются |
+| `bsl_style_gate` | `bsl-style-gate` | post | чекер пака `1c-bsl-code-style`: нарушения в изменённых строках — block `bsl-style` («исправь и повтори»); фоновые нарушения вне правки — заметка (не блокируют); пред-чек плана `unica.apply` до записи — advisory; приоритет пака над стандартами и стат-анализом |
+| `bsl_module_gate` | `bsl-module-gate` | post | контракт носителя 1С-кода — block `bsl-module`; строка эскалации в allowlist'е снимает блок, пока не убрана |
+| `anon_gate` | `anon-gate` | pre | отключение анонимизации канала 1c-db (raw-режим, API деанонимизации) — deny `anon-raw`, исключений нет |
+| `retry_gate` | `retry-discipline` | pre + result | третий идентичный повтор после двух ошибок — deny `retry-discipline`; ошибки считаются из `tools/result` (включая bash exit ≠ 0) |
+| `worktree_hint` | — | post | после `git worktree add` — заметка-подсказка: работа в новом ворктри (accept + notice, не блок) |
+| `session_clean` | — | created | выметание просроченных замков инфобаз и файлов состояния старше 7 дней |
+| `session_context` | — | created | контекст старта: проект, раскладка, ворктри — сообщением в сессию |
+| `kd_session_start` | — | created | станция `1c-kd`: станции нет — подъём; станция есть — pid не меняется |
+
+Колонка «Правило в журнале» — значение поля `rule` в
+`logs/rule-audit.jsonl` (`RULE` в модуле гейта). Имя модуля и имя правила
+расходятся у трёх гейтов; диагностика по журналу ищет правило, а не гейт.
+Прочерк — гейт журнал не ведёт.
 
 Граница списков исходников (Т5, решение оператора): охранный
 `SOURCE_PREFIXES` (`src/{cf,cfe}`, `tests/epf`) читают гейт исходников и
