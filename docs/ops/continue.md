@@ -348,6 +348,16 @@ ship (записи: DSH — 09.11 в спеке, #62 — 08.11, #56 — 06.11); 
 - Профили testpilot: `profiles.yaml` содержит пароль и теперь вне git
   (шаблон `gitignore.template`, шаг 2 навыка); в `erp-demo` файл снят с
   трекинга, на диске остался.
+- Возврат поставки внешних паков (17.11, решение оператора, `eb43226`):
+  пресет `1c` поднимает `.dsh/1c/skills` проекта, doctor учитывает bsp,
+  канон вендоринга — `1c-project-bootstrap`; зеркало `1c-ssl-skills`
+  v0.16.2 на слотах DSH, bsp вендорен в erp-main. Хвосты: перезапуск
+  хоста и живая проба скиллов bsp/стиля в 1c-сессии; re-vendor bsp в
+  остальных проектах парка (erp-demo, erp-mini, dealer-network-orders,
+  project-bp) с записями в реестры; фронматтер style-пака
+  (`1c-bsl-code-style`, отдельный репо) ещё на ZCode-ключе `when_to_use`;
+  в erp-main `.dsh/1c` целиком untracked — коммит за владельцем
+  (followup `commit-dsh-inputs` в реестре проекта).
 
 ## Стартовый промпт
 
