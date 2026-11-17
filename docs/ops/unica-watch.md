@@ -1,6 +1,6 @@
 ---
 node_type: runbook
-title: Ежедневное слежение за апстримом Unica
+title: Ежедневное слежение за апстримами контура
 service: _platform
 status: active
 updated: 2026-11-17
@@ -9,42 +9,63 @@ links:
     - ../UNICA.md
 ---
 
-# Ежедневное слежение за апстримом Unica
+# Ежедневное слежение за апстримами контура
 
-Ежедневная отдельная сессия проверяет движения апстрима и докладывает
+Ежедневная отдельная сессия проверяет движения апстримов и докладывает
 оператору. Канон и версии контур не меняет сам — решения принимает
-оператор. Пины версий — `unica.yaml` в корне контура.
+оператор. Слежение покрывает релизы, ишью (наши отправленные и
+интересные нам) и контрактные изменения.
 
-## Источники
+## Источники и пины
 
-- `IngvarConsulting/unica` — ядро, теги релизов, issues.
-- `IngvarConsulting/v8-runner-rust` — раннер, теги релизов.
-- `itrous/bsl-analyzer` — анализатор, теги релизов, docs/architecture.
-- Локальный пин: `unica.yaml` (tag, unica, bsl-analyzer, v8-runner).
+| Репо | Пин контура | Носитель пина |
+|---|---|---|
+| IngvarConsulting/unica | tag/unica | `unica.yaml` |
+| IngvarConsulting/v8-runner-rust | v8-runner | `unica.yaml` |
+| itrous/bsl-analyzer | bsl-analyzer | `unica.yaml` |
+| ROCTUP/1c-testpilot | TESTPILOT_PIN | `scripts/install_testpilot.sh` |
+| ntin60775/1c-onec-db | ONEC_DB_PIN | `scripts/install_testpilot.sh` |
+| egordoronchenko/kd-rules-mcp | KD_PIN | `scripts/install_kd_rules.sh` |
+| deepseek-harness (форк) | master | `/home/prog7/home/dev/contrib/forks/deepseek-harness` |
 
 ## Чек-лист прогона
 
-1. Новые теги/релизы трёх репозиториев против пинов `unica.yaml`.
-   Свежий релиз — назвать состав изменений по release notes; обновление
-   контура — процедура `docs/UNICA.md`, не автоматическое действие.
-2. Issues контура: #939 (справка конфигурации), #1246 (upload/apply/reset),
-   #1119 (большие конфигурации), #1797/#1798 (extensions.list/pull),
-   #2512 (адаптер semantic-роли через bsl-analyzer и EMBEDDING_URL).
-   Движение — статус, комментарии, назначенная версия.
-3. Semantic-роль: `crates/unica-daemon/src/infrastructure/daemon/v13_service.rs`,
+1. **Релизы/теги** каждого репо против пина. Свежий релиз — состав
+   изменений по release notes, ломающие изменения контракта назвать;
+   обновление контура — процедура `docs/UNICA.md` / ритуал
+   `vendor/kd-rules-mcp/UPSTREAM.md`, не автоматическое действие.
+2. **Наши ишью** (author ntin60775) в каждом апстрим-репо: смена
+   state, новые комментарии, закрытие. Открытые наши ишью — в каждом
+   докладе до закрытия.
+3. **Интересные ишью** unica: #939 (справка конфигурации),
+   #1246 (upload/apply/reset), #1119 (большие конфигурации),
+   #2512 (адаптер semantic-роли). Движение — статус, комментарии,
+   назначенная версия. Список пополняется решением оператора.
+4. **Новые ишью по темам контура** во всех апстримах: search, run,
+   providers, ibcmd, semantic, embeddings, docs, формат выгрузки.
+   Релевантные — в доклад с ссылкой; шум не перечислять.
+5. **Semantic-роль**: `crates/unica-daemon/src/infrastructure/daemon/v13_service.rs`,
    функция `selected_role_engine` ветки main — `ProviderRole::Semantic`
    подключён к движку или по-прежнему `None`. Подключение (закрытие
    #2512) — событие для возврата semantic в `unica.search` и снятия
    обходного канала `1c-bsl-search`.
-4. Эмбеддинги: новые документы `itrous/bsl-analyzer` про интеграцию
-   эмбеддеров и central-postgres-search; изменения контракта `EMBEDDING_*`.
-5. Контрактные сюрпризы: новые/снятые операции `unica.run`, изменения
-   словаря провайдеров v8-runner (пины ibcmd), отказы формата выгрузки.
+6. **Особый контроль #2512**: решение оператора от 17.11 — ждать
+   апстрим до 24.11. Любое движение — сразу в доклад; после 24.11 без
+   подвижек — пункт решения «неделя без подвижек по #2512 — оператор
+   решает вопрос своего канала 1c-bsl-search».
+7. **Форк DSH**: `git fetch upstream --prune`, сравнение master с
+   upstream/master, новые теги. Движение — ключевые изменения и
+   предложение ритуала `scripts/fork-merge-ritual.sh`; ритуал и push
+   без подтверждения оператора не запускать.
+8. **Ишью контура** (ntin60775/1C-DSH): открытые — напоминанием в
+   докладе (например, обновление вендора kd-rules-mcp).
 
 ## Снимок и журнал
 
-- Снимок последнего прогона — `.scratch/unica-watch/state.json`: теги,
-  `updated_at` issues, хеш `selected_role_engine`. Производный, вне git.
+- Снимок последнего прогона — `.scratch/unica-watch/state.json`:
+  пины, теги репо, наши и интересные ишью (state, updated_at,
+  comments, milestone), хеш `selected_role_engine`, позиция форка DSH.
+  Производный, вне git.
 - Журнал наблюдений — `.scratch/unica-watch/log.md`: дата, находка,
   ссылка. Производный, вне git.
 - Первый прогон без снимка фиксирует базовую линию, не докладывает
