@@ -159,9 +159,26 @@ Python — stdlib без зависимостей; bash — стартеры и 
 - Профиль `$DSH_HOME/profiles/<имя>`: строки патча `1c-contour` и `preset-1c`,
   установленный бандл, умолчание пресета.
 - Проект `.dsh/1c/`: входы гейтов (`contour.json`, `contour.local.json`,
-  `db-instances.yaml`, маркер `contour`, эскалации, `mcp-write-allow.txt`,
-  `standards-exceptions.yaml`, профили testpilot), вендоренные паки `skills/`,
-  реестр потребителя `registry.local.json`.
+  `db-instances.yaml`, маркер `contour`, эскалации
+  `unica-gate-escalations.txt` и `bsl-module-gate-escalations.txt`,
+  `mcp-write-allow.txt`, `standards-exceptions.yaml`, профили testpilot),
+  вендоренные паки `skills/`, реестр потребителя `registry.local.json`.
+
+### Env-каналы
+
+Единый список каналов окружения контура (подмены и пути):
+
+| Канал | Роль | Носитель |
+|---|---|---|
+| `DSH_1C_ROOT` | корень пакета контура для скриптов и скиллов; пресет публикует как переменную промпта | `src/preset/index.ts` |
+| `DSH_1C_STATE_DIR` | корень состояния, умолчание `~/.dsh/state/1c` | `src/state.ts`, скрипты |
+| `DSH_1C_TESTPILOT` | подмена команды 1c-testpilot; умолчание — абсолютный путь глобальной установки | `src/preset/config.ts`, `scripts/doctor.py` |
+| `UNICA_LAUNCHER` | подмена лаунчера Юники; умолчание — `~/.local/bin/unica` | `src/preset/config.ts` |
+| `1C_STYLE_ENGINE` | подмена движка стиля | `src/style-checker.ts` |
+| `KD_RULES_STATION` | путь станции КД; умолчание — `~/.local/share/1c-dsh/kd-rules-mcp` | `scripts/install_kd_rules.sh` |
+| `KD_START_SCRIPT` | подмена скрипта старта станции КД (тестовый шов и нестандартная поставка) | `src/gates/kd-session-start.ts` |
+| `ONEC_MCP_TOOLKIT_DIR` | путь чекаута тулкита при установке прокси 1c-db | `scripts/install_1c_mcp_proxy.sh` |
+| `ZCODE_PROJECT_DIR` | env-канал привязки воркспейса Юники — не наследие (раздел «Границы парадигмы») | `src/preset/config.ts` |
 
 ## Процессный слой (не поставляется)
 
