@@ -26,6 +26,7 @@ links:
 | ROCTUP/1c-testpilot | TESTPILOT_PIN | `scripts/install_testpilot.sh` |
 | ntin60775/1c-onec-db | ONEC_DB_PIN | `scripts/install_testpilot.sh` |
 | egordoronchenko/kd-rules-mcp | KD_PIN | `scripts/install_kd_rules.sh` |
+| brake71/1c-ssl-skills | последний синкнутый тег апстрима | журнал синков зеркала `1c-ssl-skills/UPSTREAM.md` (`~/home/dev/personal/1c-ssl-skills`) |
 | deepseek-harness (форк) | master | `/home/prog7/home/dev/contrib/forks/deepseek-harness` |
 
 ## Чек-лист прогона
@@ -33,7 +34,9 @@ links:
 1. **Релизы/теги** каждого репо против пина. Свежий релиз — состав
    изменений по release notes, ломающие изменения контракта назвать;
    обновление контура — процедура `docs/UNICA.md` / ритуал
-   `vendor/kd-rules-mcp/UPSTREAM.md`, не автоматическое действие.
+   `vendor/kd-rules-mcp/UPSTREAM.md` / синк зеркала
+   `1c-ssl-skills/UPSTREAM.md` (merge апстрима, линт, тег зеркала,
+   re-vendor в проекты), не автоматическое действие.
 2. **Наши ишью** (author ntin60775) в каждом апстрим-репо: смена
    state, новые комментарии, закрытие. Открытые наши ишью — в каждом
    докладе до закрытия.
