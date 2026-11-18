@@ -1,18 +1,21 @@
 """Сервер MCP через клиент MCP (спецификация `mcp-service`): каждый инструмент вызывается."""
 
+import hashlib
 import json
 import logging
 import shutil
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
+import httpx2 as httpx
 import pytest
 from mcp import Client
 
 from kd_rules_mcp.errors import DuplicateRuleError, RuleNotFoundError
 from kd_rules_mcp.kd2.model import ExchangeRules
 from kd_rules_mcp.kd2.rules_io import load_registration_rules
-from kd_rules_mcp.server import create_server
+from kd_rules_mcp.server import DESTRUCTIVE_TOOLS, TOOL_EFFECTS, create_app, create_server
 from kd_rules_mcp.service import Kd2Service, PathMap, Settings
 from tests.sqlite_structure import StructureBuilder
 from tests.test_authoring_candidates import _composition_props
@@ -155,6 +158,7 @@ async def test_registration_retarget_deletion_filter_tool(tmp_path: Path) -> Non
 EXPECTED_TOOLS = {
     "live_base_check",
     "live_status",
+    "live_format_support",
     "live_rules_dump",
     "live_rules_check",
     "live_registration_check",
@@ -171,6 +175,8 @@ EXPECTED_TOOLS = {
     "ed_schema_close",
     "ed_routes",
     "ed_route_compare",
+    "ed_pair_validate",
+    "ed_trace",
     "ed_open",
     "ed_overview",
     "ed_list",
@@ -221,6 +227,8 @@ EXPECTED_TOOLS = {
     "registration_build",
     "registration_retarget",
     "correspondent_draft",
+    "download_link",
+    "upload_link",
 }
 
 
@@ -482,6 +490,70 @@ async def test_rules_open_schema_has_private(service: Kd2Service) -> None:
     assert private["default"] is False
     assert private.get("description")
     assert "private" not in tools["rules_open"].input_schema.get("required", [])
+
+
+async def test_tool_annotations_from_effects(service: Kd2Service) -> None:
+    """Аннотации MCP выведены из меток эффекта и DESTRUCTIVE_TOOLS (tool-annotations, Р1, Р2)."""
+    async with Client(create_server(service)) as client:
+        tools = {tool.name: tool for tool in (await client.list_tools()).tools}
+    for name, tool in tools.items():
+        hints = tool.annotations
+        assert hints is not None, name
+        effect, _ = TOOL_EFFECTS[name]
+        assert hints.read_only_hint is (effect == "read"), name
+        assert hints.open_world_hint is name.startswith("live_"), name
+        if effect == "read":
+            assert hints.destructive_hint is None, name
+        else:
+            assert hints.destructive_hint is (name in DESTRUCTIVE_TOOLS), name
+    rules_get = tools["rules_get"]
+    assert rules_get.annotations is not None and rules_get.annotations.read_only_hint is True
+    assert (rules_get.description or "").startswith("[read]")
+    for name, destructive in (("rule_create", False), ("rule_delete", True), ("rules_save", True)):
+        hints = tools[name].annotations
+        assert hints is not None and hints.read_only_hint is False
+        assert hints.destructive_hint is destructive, name
+    install = tools["live_rules_install"].annotations
+    status = tools["live_status"].annotations
+    assert install is not None and install.destructive_hint and install.open_world_hint
+    assert status is not None and status.open_world_hint and status.destructive_hint is False
+
+
+def test_destructive_tools_are_known_writers() -> None:
+    """Каждое имя DESTRUCTIVE_TOOLS — инструмент из TOOL_EFFECTS с меткой записи."""
+    for name in DESTRUCTIVE_TOOLS:
+        assert name in TOOL_EFFECTS, name
+        assert TOOL_EFFECTS[name][0] != "read", name
+
+
+async def test_disable_tools_by_mask(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """KD2_DISABLE_TOOLS снимает инструменты по маскам; маска без совпадений — предупреждение."""
+    settings = Settings.from_env(
+        {
+            "KD2_CACHE_DIR": str(tmp_path / "cache"),
+            "KD2_WORKSPACE": str(tmp_path / "workspace"),
+            "KD2_PROJECTS_FILE": str(tmp_path / "projects.yaml"),
+            "KD2_DISABLE_TOOLS": " ed_*, live_rules_install ,kd3_*",
+        }
+    )
+    assert settings.disabled_tools == ("ed_*", "live_rules_install", "kd3_*")
+    with caplog.at_level(logging.WARNING, logger="kd_rules_mcp"):
+        server = create_server(Kd2Service(settings))
+    assert "kd3_*" in caplog.text
+    async with Client(server) as client:
+        names = {tool.name for tool in (await client.list_tools()).tools}
+        assert not {name for name in names if name.startswith("ed_")}
+        assert "live_rules_install" not in names
+        assert {"rules_get", "live_status", "download_link"} <= names
+        result = await client.call_tool("ed_open", {"path": "x"})
+        assert result.is_error
+    full = {
+        tool.name
+        for tool in create_server(
+            Kd2Service(Settings(cache_dir=tmp_path / "c2", workspace=tmp_path / "w2"))
+        )._tool_manager.list_tools()
+    }
+    assert len(full) == len(TOOL_EFFECTS)
 
 
 async def test_pro_only_in_read_rule_kind_schema(service: Kd2Service) -> None:
@@ -1503,3 +1575,46 @@ async def test_pko_create_many_preview_then_apply(service: Kd2Service) -> None:
         overview = await _call(client, "rules_overview", project_id=project)
         assert overview["modified"] is True
         assert overview["counts"]["pko"] == 3
+
+
+async def test_download_link_after_rules_save_matches_hash(service: Kd2Service) -> None:
+    """rules_save, затем download_link и GET: байты и SHA-256 совпадают с файлом."""
+    async with Client(create_server(service)) as client:
+        opened = await _call(client, "rules_open", path=str(DATA / "exchange_rules.xml"))
+        saved = await _call(
+            client,
+            "rules_save",
+            project_id=opened["project_id"],
+            path="out/rules.xml",
+            acknowledge_errors=True,
+        )
+        link = await _call(client, "download_link", path=saved["path"])
+    raw = Path(saved["path"]).read_bytes()
+    expected = hashlib.sha256(raw).hexdigest()
+    assert link["sha256"] == expected
+    assert link["size"] == len(raw)
+    transport = httpx.ASGITransport(app=create_app(service))
+    async with httpx.AsyncClient(transport=transport, base_url="http://files.test") as http:
+        response = await http.get(urlsplit(link["url"]).path)
+    assert response.status_code == 200
+    assert response.content == raw
+    assert response.headers["x-content-sha256"] == expected
+
+
+async def test_upload_link_put_then_rules_open(service: Kd2Service) -> None:
+    """upload_link, PUT и rules_open по пути ответа открывают закачанные правила."""
+    raw = (DATA / "exchange_rules.xml").read_bytes()
+    expected = hashlib.sha256(raw).hexdigest()
+    async with Client(create_server(service)) as client:
+        link = await _call(client, "upload_link", name="ПравилаОбмена.xml")
+        transport = httpx.ASGITransport(app=create_app(service))
+        async with httpx.AsyncClient(transport=transport, base_url="http://files.test") as http:
+            response = await http.put(urlsplit(link["url"]).path, content=raw)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["size"] == len(raw)
+        assert body["sha256"] == expected
+        assert Path(link["path"]).read_bytes() == raw
+        opened = await _call(client, "rules_open", path=link["path"])
+    assert opened["kind"] == "exchange"
+    assert opened["counts"]["pko"] > 0

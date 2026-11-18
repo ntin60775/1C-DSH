@@ -18,6 +18,7 @@ from kd_rules_mcp.server import (
     _without_schema_titles,
     create_server,
     effect_tag,
+    tool_annotations,
 )
 from kd_rules_mcp.service import Kd2Service, Settings
 
@@ -80,7 +81,13 @@ def test_instructions_name_tags_and_boundaries() -> None:
     """Инструкция сервера: легенда меток эффекта и границы (agent-ux, Р2)."""
     for tag in ("[read]", "[workspace]", "[project]", "[sandbox]"):
         assert tag in INSTRUCTIONS
-    for words in ("never widen allowed", "sandboxes", "deletion needs separate human consent"):
+    for words in (
+        "never widen allowed",
+        "sandboxes",
+        "deletion needs separate human consent",
+        "download_link",
+        "upload_link",
+    ):
         assert words in " ".join(INSTRUCTIONS.split()), words
 
 
@@ -115,7 +122,10 @@ def test_tool_schema_context_budget(tmp_path: Path) -> None:
     # project_exchanges и live_base_check (#83) — около 1250 знаков схем и описаний.
     # rule_update_many для ПКО и ПВД (filter, mode, expected_count, страница) и pko_create_many —
     # около 1810 знаков при однословных описаниях полей.
-    assert len(serialized) <= 57_850, f"Схемы: {len(serialized)} знаков"
+    # ed_trace, ed_pair_validate и live_format_support (kd3-trace-pair) — около 3110 знаков при
+    # однословных описаниях полей (вместо урезания чужих описаний).
+    # download_link и upload_link (remote-file-links, #88) — около 870 знаков.
+    assert len(serialized) <= 61_850, f"Схемы: {len(serialized)} знаков"
     descriptions = sum(len(tool.description or "") for tool in tools)
     assert descriptions >= 6_000, f"Описания инструментов: {descriptions} знаков"
     for tool in tools:
@@ -135,7 +145,8 @@ def test_tool_schema_context_budget(tmp_path: Path) -> None:
     cyrillic = sum("\u0400" <= char <= "\u04ff" for char in serialized)
     assert cyrillic / len(serialized) <= 0.08, f"Кириллица: {cyrillic / len(serialized):.2%}"
     # Писатель и перенос регистрации добавили по строке о порядке работы.
-    assert len(INSTRUCTIONS) <= 2_100, f"INSTRUCTIONS: {len(INSTRUCTIONS)} знаков"
+    # Ссылки на файлы для сервера на другой машине (#88) — строка около 50 знаков.
+    assert len(INSTRUCTIONS) <= 2_150, f"INSTRUCTIONS: {len(INSTRUCTIONS)} знаков"
 
 
 def test_schema_titles_keep_named_properties_and_literal_values() -> None:
@@ -234,6 +245,8 @@ def test_public_schemas_preserve_calls_and_argument_errors(
         tool["description"] = (
             f"{effect_tag(tool['name'])} {inspect.cleandoc(tool['description'] or '')}"
         )
+        # Аннотации MCP добавляет только выдача (tool-annotations, Р1).
+        tool["annotations"] = tool_annotations(tool["name"]).model_dump()
 
     # Восстанавливаем простые union-типы для сравнения листьев с исходной схемой SDK.
     def expand_types(value: Any) -> Any:

@@ -13,6 +13,7 @@
 INFO, в лог пишется предупреждение. `create_server` логирование не настраивает.
 """
 
+import fnmatch
 import hmac
 import inspect
 import json
@@ -25,9 +26,10 @@ from typing import Annotated, Any
 
 import anyio
 import uvicorn
-from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import Tool as MCPTool
+from mcp.types import ToolAnnotations
 from pydantic import Field
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
@@ -60,6 +62,7 @@ from kd_rules_mcp.errors import (
     EdSchemaReadError,
     EdSchemaResourceLimitError,
     EdSchemaTypeNotFoundError,
+    FileLinkNotFoundError,
     Kd2Error,
     LiveError,
     ObjectNotFoundError,
@@ -80,6 +83,7 @@ from kd_rules_mcp.errors import (
 )
 from kd_rules_mcp.projects import ProjectConfigError, is_loopback_host
 from kd_rules_mcp.service import Kd2Service, Settings
+from kd_rules_mcp.service.file_links import FilesASGI, mcp_base_url
 
 logger = logging.getLogger("kd_rules_mcp")
 
@@ -115,6 +119,7 @@ ERROR_CODES: tuple[tuple[type[Exception], str], ...] = (
     (ProjectNotFoundError, "project_not_found"),
     (DuplicateProjectError, "duplicate_project"),
     (WorkspacePathError, "path_outside_workspace"),
+    (FileLinkNotFoundError, "file_not_found"),
     (RulesSaveErrorsError, "rules_save_errors"),
     (UnknownFieldError, "unknown_field"),
     (DuplicateRuleError, "duplicate_rule"),
@@ -144,6 +149,7 @@ Structures: project_list → structure_load_project, or structure_load_xml/md83e
 Open/create rules → match_* → rule_* or pko_create_from_candidates → rules_validate →
 handlers_export for a syntax checker → rules_save to workspace or project rules_dir.
 Compare versions with rules_diff. rules_close removes the snapshot, keeping saved files.
+Remote server files: download_link/upload_link.
 registration_build: registration rules; correspondent_draft: reverse rules. The agent makes
 semantic decisions.
 registration_retarget: preview → write with hash and notice IDs.
@@ -220,6 +226,7 @@ TOOL_EFFECTS: dict[str, tuple[str, str]] = {
     "correspondent_draft": ("workspace", "project snapshot in workspace/.projects"),
     "live_base_check": ("workspace", _LIVE_LOG),
     "live_status": ("workspace", _LIVE_LOG),
+    "live_format_support": ("workspace", _LIVE_LOG),
     "live_rules_dump": (
         "workspace",
         "rules files in workspace/.live; open=true also opens projects",
@@ -238,6 +245,7 @@ TOOL_EFFECTS: dict[str, tuple[str, str]] = {
     "ed_get": ("read", ""),
     "ed_locate": ("read", ""),
     "ed_validate": ("read", ""),
+    "ed_trace": ("read", ""),
     "ed_close": ("workspace", "deletes a manager project in workspace/.ed-projects"),
     "ed_schema_open": ("read", "snapshot in memory"),
     "ed_schema_types": ("read", ""),
@@ -245,11 +253,53 @@ TOOL_EFFECTS: dict[str, tuple[str, str]] = {
     "ed_schema_close": ("read", ""),
     "ed_routes": ("read", "snapshots in memory"),
     "ed_route_compare": ("read", ""),
+    "ed_pair_validate": ("read", ""),
     "ed_create": ("workspace", "manager project in workspace/.ed-projects"),
     "ed_apply": ("workspace", "preview and apply both write to workspace/.ed-projects"),
     "ed_authoring_candidates": ("read", ""),
     "ed_authoring_build": ("project", _KIT),
+    "download_link": ("read", ""),
+    "upload_link": ("workspace", "file in workspace/inbox"),
 }
+
+
+# Пишущие инструменты, которые могут удалить или заменить сохранённое, в том числе под флагом
+# перезаписи или режимом применения: destructiveHint MCP (tool-annotations, Р2). Остальные пишущие
+# только добавляют. Новый пишущий инструмент — решить, место ли ему здесь.
+DESTRUCTIVE_TOOLS: frozenset[str] = frozenset(
+    {
+        "rules_close",
+        "rule_update",
+        "rule_update_many",
+        "rule_delete",
+        "rules_save",
+        "rules_pack",
+        "handlers_export",
+        "registration_build",
+        "registration_retarget",
+        "ed_close",
+        "ed_create",
+        "ed_apply",
+        "ed_authoring_build",
+        "upload_link",
+        "live_rules_install",
+        "live_nodes_setup",
+        "live_exchange_run",
+    }
+)
+# К базе 1С через сервер данных ходят только живые инструменты: openWorldHint MCP.
+_OPEN_WORLD_PREFIX = "live_"
+
+
+def tool_annotations(name: str) -> ToolAnnotations:
+    """Аннотации MCP инструмента из метки эффекта и `DESTRUCTIVE_TOOLS` (tool-annotations, Р1)."""
+    effect, _ = TOOL_EFFECTS[name]
+    read_only = effect == "read"
+    return ToolAnnotations(
+        read_only_hint=read_only,
+        destructive_hint=None if read_only else name in DESTRUCTIVE_TOOLS,
+        open_world_hint=name.startswith(_OPEN_WORLD_PREFIX),
+    )
 
 
 def effect_tag(name: str) -> str:
@@ -418,6 +468,7 @@ class _SchemaServer(MCPServer):
                     "description": (
                         f"{effect_tag(tool.name)} {inspect.cleandoc(tool.description or '')}"
                     ),
+                    "annotations": tool_annotations(tool.name),
                     "input_schema": _without_schema_titles(tool.input_schema),
                     "output_schema": (
                         _without_schema_titles(tool.output_schema)
@@ -472,6 +523,22 @@ def create_server(service: Kd2Service) -> MCPServer:
     ) -> dict[str, Any]:
         """Read exchange nodes, message numbers, registrations and active rules."""
         return await call(service.live_status, base, plan)
+
+    @server.tool()
+    async def live_format_support(
+        base: Annotated[str, Field(description="Sandbox project.base")],
+        plan: Annotated[str, Field(description="Plan")],
+        node: Annotated[str | None, Field(description="Node code")] = None,
+        format_object: Annotated[str | None, Field(description="Format object")] = None,
+        version: Annotated[str | None, Field(description="Version")] = None,
+        offset: Offset = 0,
+        limit: Limit = 50,
+    ) -> dict[str, Any]:
+        """Read correspondent format objects known to the base per node: node version,
+        settings received, send/receive rows."""
+        return await call(
+            service.live_format_support, base, plan, node, format_object, version, offset, limit
+        )
 
     @server.tool()
     async def live_rules_dump(
@@ -1628,6 +1695,33 @@ def create_server(service: Kd2Service) -> MCPServer:
         )
 
     @server.tool()
+    async def ed_trace(
+        project_id: Annotated[str, Field(description="ED ID")],
+        object: Annotated[str, Field(description="Metadata/type/PKO or ПКО/name")],
+        direction: Annotated[str, Field(description="send/receive")] = "send",
+        schema_id: Annotated[str | None, Field(description="Schema ID")] = None,
+        version: Annotated[str | None, Field(description="Version or schema's")] = None,
+        property: Annotated[str | None, Field(description="Metadata/format property")] = None,
+        depth: Annotated[int, Field(description="Cascade depth 0..3")] = 1,
+        offset: Offset = 0,
+        limit: Limit = 50,
+    ) -> dict[str, Any]:
+        """Trace one object through one ED module: links, first break, BSP lines. The
+        correspondent link is unknown: ed_pair_validate, live_format_support."""
+        return await call(
+            service.ed_trace,
+            project_id,
+            object,
+            direction,
+            schema_id,
+            version,
+            property,
+            depth,
+            offset,
+            limit,
+        )
+
+    @server.tool()
     async def ed_close(
         project_id: Annotated[str, Field(description="ED snapshot or manager project ID")],
     ) -> dict[str, Any]:
@@ -1825,6 +1919,39 @@ def create_server(service: Kd2Service) -> MCPServer:
         )
 
     @server.tool()
+    async def ed_pair_validate(
+        source_project_id: Annotated[str, Field(description="Sender ED ID")],
+        target_project_id: Annotated[str, Field(description="Receiver ED ID")],
+        version: Annotated[str | None, Field(description="Version; null = schemas")] = None,
+        source_schema_id: Annotated[str | None, Field(description="Sender schema")] = None,
+        target_schema_id: Annotated[str | None, Field(description="Receiver schema")] = None,
+        section: Annotated[str, Field(description="issues/objects/skipped")] = "issues",
+        level: Annotated[str | None, Field(description="Severity")] = None,
+        check_prefix: Annotated[str | None, Field(description="Check prefix")] = None,
+        address_prefix: Annotated[str | None, Field(description="Address prefix")] = None,
+        format_object: Annotated[str | None, Field(description="Format object")] = None,
+        offset: Offset = 0,
+        limit: Limit = 50,
+    ) -> dict[str, Any]:
+        """Compare sender send rules with receiver receive rules statically in one version:
+        intersection, search fields, cleared tables/properties. Details: docs/tools.md."""
+        return await call(
+            service.ed_pair_validate,
+            source_project_id,
+            target_project_id,
+            version,
+            source_schema_id,
+            target_schema_id,
+            section,
+            level,
+            check_prefix,
+            address_prefix,
+            format_object,
+            offset,
+            limit,
+        )
+
+    @server.tool()
     async def ed_create(
         project_id: Annotated[str, Field(description="Durable manager ID")],
         mode: Annotated[str, Field(description="new/import/rebind (fresh inputs)")] = "new",
@@ -1887,11 +2014,10 @@ def create_server(service: Kd2Service) -> MCPServer:
         operations: Annotated[
             list[dict[str, Any]] | None,
             Field(
-                description="Up to 100 manager ops: docs/tools.md. "
-                "Код/ or Алгоритм/; client_id refs. "
-                "after_id: omitted=last, null=first. Omit to reuse preview. "
-                "Header: manager_name,title,generated_at,text_style; "
-                "pko.extensions URIs; table_part/property namespace"
+                description="100 manager ops; docs/tools.md. client_id/address refs. "
+                "after_id: omitted=last,null=first. Omit to reuse preview. "
+                "pko.extensions; property/table_part namespace; "
+                "format_package/type/property CRUD (package source=JSON/XDTO)"
             ),
         ] = None,
         mode: Annotated[str, Field(description="preview or apply")] = "preview",
@@ -2124,10 +2250,53 @@ def create_server(service: Kd2Service) -> MCPServer:
             format_package,
         )
 
+    @server.tool()
+    async def download_link(
+        path: Annotated[
+            str, Field(description="Agent path of one file in the workspace or rules_dir")
+        ],
+        ttl_seconds: Annotated[
+            int | None,
+            Field(description="Lifetime in seconds, 1..3600; default KD2_LINK_TTL"),
+        ] = None,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
+        """Signed URL to download one file byte for byte."""
+        return await call(service.download_link, path, ttl_seconds, mcp_base_url(ctx))
+
+    @server.tool()
+    async def upload_link(
+        name: Annotated[str, Field(description="File name without directories")],
+        overwrite: Annotated[bool, Field(description="Replace an existing inbox file")] = False,
+        ttl_seconds: Annotated[
+            int | None,
+            Field(description="Lifetime in seconds, 1..3600; default KD2_LINK_TTL"),
+        ] = None,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
+        """Signed URL to upload one file into workspace/inbox."""
+        return await call(service.upload_link, name, overwrite, ttl_seconds, mcp_base_url(ctx))
+
+    disable_tools(server, service.settings.disabled_tools)
     # Новый инструмент без метки эффекта не выходит наружу (agent-ux, Р1).
     for tool in server._tool_manager.list_tools():
         effect_tag(tool.name)
     return server
+
+
+def disable_tools(server: MCPServer, patterns: tuple[str, ...]) -> None:
+    """Снимает инструменты по именам и маскам `KD2_DISABLE_TOOLS` (tool-annotations, Р3)."""
+    names = [tool.name for tool in server._tool_manager.list_tools()]
+    disabled: set[str] = set()
+    for pattern in patterns:
+        matched = {name for name in names if fnmatch.fnmatchcase(name, pattern)}
+        if not matched:
+            logger.warning(
+                "KD2_DISABLE_TOOLS: маска %s не совпала ни с одним инструментом", pattern
+            )
+        disabled |= matched
+    for name in sorted(disabled):
+        server._tool_manager.remove_tool(name)
 
 
 def _log_call(name: str, started: float, outcome: str) -> None:
@@ -2194,15 +2363,18 @@ def _bearer_ok(scope: Scope, expected: bytes) -> bool:
 def create_app(
     service: Kd2Service, token: str | None = None, *, host: str = "127.0.0.1"
 ) -> Starlette:
-    """ASGI-приложение MCP (`/mcp`).
+    """ASGI-приложение MCP (`/mcp`) и маршрут файлов `/files`.
 
     `host` передаётся в `streamable_http_app`, как это делает `MCPServer.run`: для петли
     SDK включает защиту от DNS rebinding. При заданном токене запрос к `/mcp` без
-    `Authorization: Bearer <token>` отвечает 401.
+    `Authorization: Bearer <token>` отвечает 401. `/files` проверяет подпись ссылки,
+    а не заголовок Authorization.
     """
     app = create_server(service).streamable_http_app(streamable_http_path="/mcp", host=host)
     if token:
         app.add_middleware(_BearerTokenMiddleware, token=token)
+    # Снаружи Bearer: маршрут забирает `/files` до проверки токена MCP.
+    app.add_middleware(FilesASGI, service=service)
     return app
 
 
