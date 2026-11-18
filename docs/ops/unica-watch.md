@@ -3,7 +3,7 @@ node_type: runbook
 title: Ежедневное слежение за апстримами контура
 service: _platform
 status: active
-updated: 2026-11-17
+updated: 2026-11-18
 links:
   depends_on:
     - ../UNICA.md
@@ -27,7 +27,6 @@ links:
 | ntin60775/1c-onec-db | ONEC_DB_PIN | `scripts/install_testpilot.sh` |
 | egordoronchenko/kd-rules-mcp | KD_PIN | `scripts/install_kd_rules.sh` |
 | brake71/1c-ssl-skills | последний синкнутый тег апстрима | журнал синков зеркала `1c-ssl-skills/UPSTREAM.md` (`~/home/dev/personal/1c-ssl-skills`) |
-| deepseek-harness (форк) | master | `/home/prog7/home/dev/contrib/forks/deepseek-harness` |
 
 ## Чек-лист прогона
 
@@ -56,18 +55,14 @@ links:
    апстрим до 24.11. Любое движение — сразу в доклад; после 24.11 без
    подвижек — пункт решения «неделя без подвижек по #2512 — оператор
    решает вопрос своего канала 1c-bsl-search».
-7. **Форк DSH**: `git fetch upstream --prune`, сравнение master с
-   upstream/master, новые теги. Движение — ключевые изменения и
-   предложение ритуала `scripts/fork-merge-ritual.sh`; ритуал и push
-   без подтверждения оператора не запускать.
-8. **Ишью контура** (ntin60775/1C-DSH): открытые — напоминанием в
+7. **Ишью контура** (ntin60775/1C-DSH): открытые — напоминанием в
    докладе (например, обновление вендора kd-rules-mcp).
 
 ## Снимок и журнал
 
 - Снимок последнего прогона — `.scratch/unica-watch/state.json`:
   пины, теги репо, наши и интересные ишью (state, updated_at,
-  comments, milestone), хеш `selected_role_engine`, позиция форка DSH.
+  comments, milestone), хеш `selected_role_engine`.
   Производный, вне git.
 - Журнал наблюдений — `.scratch/unica-watch/log.md`: дата, находка,
   ссылка. Производный, вне git.
