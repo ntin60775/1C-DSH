@@ -52,7 +52,7 @@ MCP 1С-проекта. Репозиторий создан копией `1c-zco
 | `vendor/` | `kd-rules-mcp` — вендор-копия апстрима (MIT), источник станции `1c-kd`; правки запрещены, синк по [UPSTREAM.md](vendor/kd-rules-mcp/UPSTREAM.md) |
 | `templates/` | contour.json, profiles.example.yaml, db-instances.example.yaml, agents-section.md (секция AGENTS.md проекта) |
 | `docs/` | KB контура: [индекс](docs/README.md), установка, гейты, каноны текстов |
-| `.agents/skills/` | процессные скиллы OntoShip (ship, critic, grilling, kb-*, to-tickets, init, testing, onto-doc) и реестр ролей `.agents/config.toml` |
+| `.agents/skills/` | процессные скиллы OntoShip (ship, critic, grilling, kb-*, to-tickets, init, testing, onto-doc, pack, deliver) и реестр ролей `.agents/config.toml` |
 
 ## Гейты
 

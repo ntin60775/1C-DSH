@@ -1,7 +1,7 @@
 ---
 name: kb-curate
 description: "Создание, обновление, вывод из эксплуатации, связывание и переиндексация markdown-документов базы знаний в docs/. Используй до добавления или правки документа: классифицируй его node_type по docs/ontology.md, размести в нужной папке, напиши frontmatter, добавь типизированные ссылки и ссылку из README папки, затем пересобери индекс и запусти lint --strict."
-whenToUse: "До создания, правки, вывода из эксплуатации или связывания документа в docs/: тип, frontmatter, ссылки, индекс папки, переиндексация."
+whenToUse: "Перед добавлением или правкой документа KB: node_type, папка, frontmatter, типизированные ссылки, README-индекс, затем index и lint --strict."
 ---
 
 # Курирование KB
@@ -14,8 +14,14 @@ whenToUse: "До создания, правки, вывода из эксплу�
 (I8).
 
 Ищи до записи: используй скилл `kb-search` или запусти
-`python3 skills/kb-search/gitmark.py search "<terms>"`. Если существующий документ
-покрывает тему, обнови его, а не создавай дубль.
+`python3 skills/kb-search/gitmark.py search "<terms>"`. Если существующий
+документ покрывает тему, обнови его, а не создавай дубль. Если покрывает
+частично — дополни существующий или создай новый с `relates_to`/`part_of` и
+назови, чего не хватает.
+
+Состав KB-корпуса поиска проект задаёт файлом `gitmark.scope.json`; полный
+текст правила — в скилле `kb-search`, раздел «KB-корпус и
+`gitmark.scope.json`» (`skills/kb-search/SKILL.md`).
 
 ## Пять операций
 
@@ -91,9 +97,9 @@ python3 skills/kb-search/gitmark.py index
 python3 skills/kb-search/gitmark.py lint --strict
 ```
 
-После project-local установки движок лежит в навыковом корне канала:
-`.agents/skills/kb-search/gitmark.py` или `.zcode/skills/kb-search/gitmark.py`;
-используй путь твоего канала вместо `skills/kb-search/gitmark.py`.
+После project-local установки движок лежит в навыковом корне:
+`.agents/skills/kb-search/gitmark.py`; используй этот путь вместо
+`skills/kb-search/gitmark.py`.
 
 `index` пересобирает `.gitmark/index.db`; он производный и никогда не коммитится.
 `lint` проверяет I1–I6 и I8–I10; `--strict` выходит с кодом 1, когда остаётся любой

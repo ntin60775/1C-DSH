@@ -6,11 +6,13 @@
         скилл проверен на слоты DSH»; «Контекст»: when_to_use DSH не
         читает, нужен whenToUse;
   invariant: tickets/dsh-contour/T9-devtools-docs.md — аудит процессных
-        скиллов: состав процесса (девять скиллов метода) и линт слотов
-        DSH (scripts/lint_skill_frontmatter.py);
-  invariant: ship — пользовательский (disable-model-invocation: true,
-        модель его не вызывает), critic — модельный (ключа нет или false;
-        агент запускает сам). Семантика ключей — исходник хоста
+        скиллов: состав поставки ядра (одиннадцать скиллов: девять
+        метода плюс pack и deliver) и линт слотов DSH
+        (scripts/lint_skill_frontmatter.py);
+  invariant: вызов скиллов — как в каноне ядра: ship флага не несёт,
+        ручной канал назван текстом скилла командой /ship; critic —
+        модельный (ключа нет или false; агент запускает сам).
+        Семантика ключей — исходник хоста
         packages/skill/skill-filesystem (frontmatterBoolean).
 
 Краснота на базовом коммите Т9 (938158a): у девяти процессных скиллов
@@ -30,10 +32,11 @@ LINT = REPO / "scripts" / "lint_skill_frontmatter.py"
 sys.path.insert(0, str(REPO / "scripts"))
 from lint_skill_frontmatter import parse_frontmatter  # noqa: E402
 
-# Состав — список аудита Т9 (tickets/dsh-contour/T9-devtools-docs.md).
+# Состав — поставка ядра (массив SKILLS установщика): девять скиллов
+# аудита Т9 (tickets/dsh-contour/T9-devtools-docs.md) плюс pack и deliver.
 PROCESS_SKILLS = [
 	"ship", "critic", "grilling", "kb-curate", "kb-search",
-	"to-tickets", "init", "testing", "onto-doc",
+	"to-tickets", "init", "testing", "onto-doc", "pack", "deliver",
 ]
 
 
@@ -58,10 +61,7 @@ def main() -> int:
 	check("процессные скиллы: линт слотов DSH чист",
 	      r.returncode == 0, (r.stdout + r.stderr)[:800])
 
-	# ── инварианты вызова: ship — пользовательский, critic — модельный ──
-	ship = frontmatter(SKILLS / "ship" / "SKILL.md")
-	check("ship: disable-model-invocation: true (зовёт только пользователь)",
-	      ship.get("disable-model-invocation") == "true", str(ship))
+	# ── инвариант вызова: critic — модельный (канон ядра) ──
 	critic = frontmatter(SKILLS / "critic" / "SKILL.md")
 	check("critic: модельный (ключа disable-model-invocation нет или false)",
 	      critic.get("disable-model-invocation") in (None, "false"), str(critic))

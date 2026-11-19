@@ -184,8 +184,9 @@ Python — stdlib без зависимостей; bash — стартеры и 
 
 Метод OntoShip живёт в репо и работает скиллами DSH:
 
-- `.agents/skills/` — девять процессных скиллов: `grilling`, `to-tickets`,
-  `ship`, `critic`, `testing`, `kb-search`, `kb-curate`, `onto-doc`, `init`.
+- `.agents/skills/` — одиннадцать процессных скиллов: `grilling`, `to-tickets`,
+  `ship`, `critic`, `testing`, `kb-search`, `kb-curate`, `onto-doc`, `init`,
+  `pack`, `deliver`.
 - `.agents/config.toml` — реестр ролей; `.agents/redpolitika.md` — редполитика
   текстовых проходов.
 - `tickets/`, `docs/plans/`, `docs/ops/` — тикеты, спеки, состояние работы.

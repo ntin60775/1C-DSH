@@ -32,8 +32,8 @@ from pathlib import Path
 
 # Vendored from ontoship-zcode (gitmark.py at 5528ae1; MIT, © vakovalskii and OntoShip
 # contributors / 1cprog7), trimmed for the OntoShip core: no inventory/registry (I7),
-# no serve. The engine is harness-agnostic: .agents is the universal install root;
-# .dsh and .zcode stay excluded as legacy roots. Keep the diff to the core minimal.
+# no serve. .agents is the project-local install root; .dsh and .zcode stay
+# excluded as legacy roots of consumer projects. Keep the diff to the core minimal.
 VERSION = "0.1.0"
 
 EXCLUDE_DIRS = {
@@ -41,10 +41,13 @@ EXCLUDE_DIRS = {
     ".pytest_cache", "_vendor", ".venv", "venv", "vendor",
     ".gitmark",
     ".agents",  # installer channel root: skills are not KB documents
-    ".zcode",   # marketplace-plugin channel root: same duplication
+    ".zcode",   # legacy ZCode install root: same duplication
     ".dsh",     # legacy DSH install root: same duplication
 }
 DB_REL = ".gitmark/index.db"
+# Истина покрытия — отслеживаемый git файл в корне; .gitmark/ — производное.
+SCOPE_REL = "gitmark.scope.json"
+SCOPE_KEY = "exclude_prefixes"
 HEAD_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*$")
 H1_RE = re.compile(r"^#\s+(.+)$", re.MULTILINE)
 LINK_RE = re.compile(r"(?<!\!)\[[^\]]*\]\(([^)]+)\)")
@@ -62,8 +65,7 @@ def repo_root(start: Path) -> Path:
 
 # Корень пакета — от расположения самого движка (<пакет>/skills/kb-search/gitmark.py).
 # В этом репо <пакет> = корень репо; в установленном проекте
-# <проект>/.agents/skills/kb-search/... — навыковый корень (installer
-# и плагин маркета с v0.2.0; деплой v0.1.0 держал его в .zcode/skills).
+# <проект>/.agents/skills/kb-search/... — навыковый корень установщика.
 # Путь не хардкодится и манифесты не читаются.
 PKG_ROOT = Path(__file__).resolve().parents[2]
 
@@ -261,12 +263,79 @@ def iter_md_fallback(root: Path):
 
 
 def iter_md(root: Path):
-    """Markdown, которые git видит как файлы репозитория."""
-    from_git = git_md_files(root)
-    if from_git is not None:
-        yield from from_git
-        return
-    yield from iter_md_fallback(root)
+    """Markdown корпуса: то, что видит git, минус срезанное `gitmark.scope.json`."""
+    yield from iter_corpus(root)[0]
+
+
+def read_scope(root: Path) -> list:
+    """Префиксы исключения из `gitmark.scope.json`; файла нет — пустой список.
+
+    Формат — носитель `SKILL.md` (решение 13); любое отклонение — `ScopeError`.
+    """
+    path = root / SCOPE_REL
+    # висящий симлинк — не «файла нет» (иначе `ln -s /nonexistent` обходит отказ)
+    if not (path.exists() or path.is_symlink()):
+        return []
+    try:
+        raw = path.read_text("utf-8", errors="replace")
+    except OSError as e:
+        raise ScopeError(f"{SCOPE_REL}: не читается — {e}")
+    try:
+        data = json.loads(raw)
+    except (ValueError, RecursionError) as e:
+        # RecursionError — предельная вложенность: traceback не должен обходить
+        # usage-контракт
+        raise ScopeError(f"{SCOPE_REL}: не JSON — {e}")
+    if not isinstance(data, dict):
+        raise ScopeError(f"{SCOPE_REL}: ожидался объект, получен {type(data).__name__}")
+    unknown = sorted(set(data) - {SCOPE_KEY})
+    if unknown:
+        raise ScopeError(f"{SCOPE_REL}: неизвестный ключ {', '.join(unknown)}, "
+                         f"формат — только {SCOPE_KEY}")
+    prefixes = data.get(SCOPE_KEY, [])
+    if not isinstance(prefixes, list):
+        raise ScopeError(f"{SCOPE_REL}: {SCOPE_KEY} — не список")
+    out = []
+    for item in prefixes:
+        if not isinstance(item, str):
+            raise ScopeError(f"{SCOPE_REL}: элемент {SCOPE_KEY} — не строка")
+        rel = _nfc(item.replace("\\", "/"))
+        if not rel.strip():
+            raise ScopeError(f"{SCOPE_REL}: пустой префикс")
+        if rel.startswith("/"):
+            raise ScopeError(f"{SCOPE_REL}: абсолютный префикс вне формата: {rel}")
+        if rel == ".." or "../" in rel or rel.endswith("/.."):
+            raise ScopeError(f"{SCOPE_REL}: префикс не может уходить из репозитория: {rel}")
+        if rel.endswith("/"):
+            out.append(rel)
+        elif (root / rel).is_file():
+            out.append(rel)
+        else:
+            raise ScopeError(f"{SCOPE_REL}: префикс обязан заканчиваться '/' (папка) "
+                             f"или именовать существующий файл: {rel}")
+    return out
+
+
+def _under_scope(path: Path, root: Path, prefixes: list) -> bool:
+    """True — файл под префиксом, то есть вне KB-корпуса проекта."""
+    rel = _nfc(path.relative_to(root).as_posix())
+    return any(rel == pre or (pre.endswith("/") and rel.startswith(pre)) for pre in prefixes)
+
+
+def iter_corpus(root: Path):
+    """Одно определение покрытия: (файлы, сколько исключено, префиксы).
+
+    Фильтр стоит до развилки git/фолбэк — `index`, `stat`, `search`, `map`,
+    `lint` называют один корпус.
+    """
+    prefixes = read_scope(root)
+    files = git_md_files(root)
+    if files is None:
+        files = list(iter_md_fallback(root))
+    if not prefixes:
+        return files, 0, prefixes
+    kept = [p for p in files if not _under_scope(p, root, prefixes)]
+    return kept, len(files) - len(kept), prefixes
 
 
 def area_of(rel: str) -> str:
@@ -348,9 +417,10 @@ def fs_resolve(root: Path, src_rel: str, href: str):
 def resolve_link(src_rel: str, href: str, known: set) -> str | None:
     """Мягкий резолв `.md`-ссылки внутри KB — «что имел в виду автор».
 
-    Для индекса, графа, I3 и I6: точный путь от файла, путь от корня KB и, наконец,
-    единственное совпадение по имени файла — так документы связываются, даже если
-    ссылку писали «как в вики». Адресуемость проверяет не он, а `fs_resolve` (I4).
+    Для индекса, `map` и I6 (I3 — через `resolve_edge`, который зовёт его первым
+    шагом): точный путь от файла, путь от корня KB и, наконец, единственное
+    совпадение по имени файла — так документы связываются, даже если ссылку
+    писали «как в вики». Адресуемость проверяет не он, а `fs_resolve` (I4).
     """
     href = _nfc(urllib.parse.unquote(_strip_sel(href)))
     if not href or not href.endswith(".md") or is_external(href):
@@ -370,6 +440,29 @@ def resolve_link(src_rel: str, href: str, known: set) -> str | None:
     base = Path(href).name
     hits = [r for r in known if r.endswith("/" + base) or r == base]
     return hits[0] if len(hits) == 1 else None
+
+
+def resolve_edge(root: Path, src_rel: str, href: str, known: set,
+                 ok: bool, norm: str | None) -> str | None:
+    """Ребро связности (I3): мягкий резолв по корпусу, иначе — цель на ФС.
+
+    Файл вне корпуса — его срезал `gitmark.scope.json` или не взял git, — но на
+    файловой системе он есть: читатель по ссылке дойдёт, и «сироту» из этого не
+    делают. `(ok, norm)` приходит из `fs_resolve` вызывающего цикла: второй
+    резолв на ту же ссылку обошёл бы линт в +15% времени (замер на корпусе
+    1509 файлов: 3.33 с → 3.84 с).
+
+    В обратную сторону связь не считается: исключённый документ не сканируется,
+    и связность KB решают документы KB (решение оператора, ask 2026-11-11). Цель
+    за корнем репозитория связностью тоже не считается — у графа нет узлов вне
+    дерева. Мягкий граф индекса остаётся на `known`: его узлы только из корпуса
+    (страж `test_soft_graph_edges_stay_in_the_corpus`).
+    """
+    tgt = resolve_link(src_rel, href, known)
+    if tgt or not ok or not norm or not norm.endswith(".md") \
+            or norm.startswith("../"):
+        return tgt
+    return norm if (root / norm).is_file() else None
 
 
 # ─────────────────────────── index ───────────────────────────
@@ -542,9 +635,14 @@ def cmd_search(root: Path, query: str, k: int = 8) -> list:
 
 # ─────────────────────────── stat ───────────────────────────
 def cmd_stat(root: Path) -> dict:
+    # scope живёт в корпусе, а не в индексе: поле есть всегда — и до первой
+    # сборки, и без gitmark.scope.json (нули), иначе машинный вывод молчал бы
+    # о сужении покрытия (спека «Готово» 7, решение 17)
+    _, scope_excluded, scope_prefixes = iter_corpus(root)
+    scope = {"excluded_files": scope_excluded, "prefix_count": len(scope_prefixes)}
     db = root / DB_REL
     if not db.exists():
-        return {"indexed": False}
+        return {"indexed": False, "scope": scope}
     con = sqlite3.connect(db)
     f = con.execute("SELECT count(*), coalesce(sum(size),0), coalesce(sum(chunks),0) FROM files").fetchone()
     links = con.execute("SELECT count(*) FROM links").fetchone()[0]
@@ -552,7 +650,7 @@ def cmd_stat(root: Path) -> dict:
     has_tri = (con.execute("SELECT v FROM meta WHERE k='trigram'").fetchone() or ("0",))[0] == "1"
     con.close()
     return {"indexed": True, "files": f[0], "bytes": f[1], "chunks": f[2],
-            "links": links, "areas": areas, "trigram": has_tri}
+            "links": links, "areas": areas, "trigram": has_tri, "scope": scope}
 
 
 # ─────────────────────────── lint (онтология) ───────────────────────────
@@ -721,26 +819,29 @@ def card_schema_issues(rels: list, fm_cache: dict) -> list:
     return issues
 
 
-def index_chain_issues(root: Path) -> list:
-    """I10 — индексная цепочка: README каждого подраздела docs/ достижим по
-    body-ссылке из README родителя, от docs/README.md вниз по дереву.
+def index_chain_issues(root: Path, rels) -> list:
+    """I10 — индексная цепочка по корпусу: README подраздела docs/ достижим по
+    body-ссылке из README родителя, от docs/README.md вниз.
 
-    Body-семантика: frontmatter не участвует, ссылки внутри fenced-блоков и
-    inline-кода не считаются (тот же strip_code, что у I4). Ссылка покрывает
-    подраздел, если резолвится в сам каталог подраздела или его README.md.
-    Подраздел без README — находка I5, здесь не дублируется; без docs/README.md
-    цепочки нет и проверять нечего.
+    Цепочка идёт по корпусу, а не по дереву (path-выборкой она не сужается):
+    подраздел, исключённый `gitmark.scope.json`, из неё выпадает — находок нет
+    ни на его родителе, ни на его собственном README. Body-семантика: frontmatter не участвует, ссылки
+    внутри fenced-блоков и inline-кода не считаются (тот же strip_code, что у
+    I4). Ссылка покрывает подраздел, если резолвится в сам каталог подраздела
+    или его README.md. Подраздел без README — находка I5, здесь не дублируется;
+    без docs/README.md в корпусе цепочки нет и проверять нечего.
     """
-    docs_root = root / "docs"
-    if not (docs_root / "README.md").exists():
-        return []
+    # ключ — NFC (им в `covered` сверяются ссылки), путь чтения — raw из git
     readmes: dict = {}
-    for p in docs_root.rglob("README.md"):
-        readmes[p.parent.relative_to(root).as_posix()] = p
+    for r in rels:
+        if r.startswith("docs/") and r.endswith("/README.md"):
+            readmes.setdefault(posixpath.dirname(_nfc(r)), r)
+    if "docs" not in readmes:
+        return []
     issues = []
     for rel_dir in sorted(readmes):
         try:
-            text = readmes[rel_dir].read_text("utf-8", errors="replace")
+            text = (root / readmes[rel_dir]).read_text("utf-8", errors="replace")
         except Exception:
             # Нечитаемый README — fail-closed: находка, а не молчаливый пропуск
             # всей подцепочки ниже (гейт-находка 12).
@@ -754,12 +855,7 @@ def index_chain_issues(root: Path) -> list:
             if not h or is_external(h) or h.startswith("/"):
                 continue
             covered.add(posixpath.normpath((Path(rel_dir) / h).as_posix()))
-        for child in sorted((root / rel_dir).iterdir()):
-            if not child.is_dir():
-                continue
-            child_rel = child.relative_to(root).as_posix()
-            if child_rel not in readmes:
-                continue
+        for child_rel in sorted(d for d in readmes if posixpath.dirname(d) == rel_dir):
             if child_rel not in covered and child_rel + "/README.md" not in covered:
                 issues.append(("ERR", "I10", rel_dir + "/README.md",
                                f"в теле индекса нет ссылки на подраздел {child_rel}/"))
@@ -771,6 +867,11 @@ class LintPathError(ValueError):
     не выбирающий ни одного файла KB. Только этот класс ловится CLI как
     usage-отказ (exit 2) — прочие ValueError тела lint остаются внутренними
     ошибками и не переклассифицируются."""
+
+
+class ScopeError(LintPathError):
+    """Именованный отказ по невалидному `gitmark.scope.json` — usage-класс,
+    ловится одним обработчиком на любой команде, читающей корпус."""
 
 
 def _lint_path_guards(root: Path, rels: list, paths: list | None) -> None:
@@ -819,11 +920,12 @@ def _lint_link_graph(root: Path, docs: list, known: set):
         fm_cache[rel] = fm
         outs = set()
         for href in LINK_RE.findall(strip_code(text)):
-            tgt = resolve_link(rel, href, known)      # мягко: ребро графа и поиска
+            ok, norm = fs_resolve(root, rel, href)    # строго: дойдёт ли читатель
+            # мягкий резолв по корпусу плюс цель на ФС: срез не делает сироту
+            tgt = resolve_edge(root, rel, href, known, ok, norm)
             if tgt:
                 outs.add(tgt)
                 in_links.setdefault(tgt, set()).add(rel)
-            ok, _ = fs_resolve(root, rel, href)       # строго: дойдёт ли читатель
             if not ok:
                 hint = f" (рядом нет; похоже на {tgt})" if tgt else ""
                 issues.append(("ERR", "I4", rel, f"битая ссылка → {href}{hint}"))
@@ -902,17 +1004,18 @@ def _lint_global(root: Path, rels: list, fm_cache: dict) -> list:
     # I9 — схемы карточек: обязательные поля и допустимые значения
     issues.extend(card_schema_issues(rels, fm_cache))
     # I10 — индексная цепочка: README подраздела — по body-ссылке из README родителя
-    issues.extend(index_chain_issues(root))
+    issues.extend(index_chain_issues(root, rels))
     return issues
 
 
 def cmd_lint(root: Path, paths: list | None = None) -> dict:
     """Проверка инвариантов онтологии I1–I6 и I8–I10.
 
-    Возвращает {issues, errors, warnings, checked}; `checked` — весь KB и при
-    выборке: path-аргументы сужают только per-file проверки.
+    Возвращает {issues, errors, warnings, checked, scope_excluded,
+    scope_prefix_count}; `checked` — весь KB-корпус и при выборке: path-аргументы
+    сужают только per-file проверки. `scope_*` — что срезано `gitmark.scope.json`.
     """
-    docs = list(iter_md(root))
+    docs, scope_excluded, scope_prefixes = iter_corpus(root)
     rels = [p.relative_to(root).as_posix() for p in docs]
     _lint_path_guards(root, rels, paths)
     for warning in gitignore_warnings(root):
@@ -933,7 +1036,8 @@ def cmd_lint(root: Path, paths: list | None = None) -> dict:
     errs = [i for i in issues if i[0] == "ERR"]
     warns = [i for i in issues if i[0] == "WARN"]
     return {"issues": issues, "errors": errs, "warnings": warns,
-            "checked": len(docs)}
+            "checked": len(docs), "scope_excluded": scope_excluded,
+            "scope_prefix_count": len(scope_prefixes)}
 
 
 # ───────────────── инвариант I8: модель онтологии в проекте и в пакете ─────────────────
@@ -1078,7 +1182,34 @@ def cmd_map(root: Path, out: Path) -> dict:
 
 
 # ─────────────────────────── CLI ───────────────────────────
+def _force_utf8_output() -> None:
+    """Вывод CLI — UTF-8 независимо от локали и PYTHONIOENCODING (осознанное
+    решение юнита cli-utf8): кириллица и `✓` роняли `print` в C-локали без
+    PYTHONUTF8 (UnicodeEncodeError, exit-код подменён кодом падения).
+    `errors="backslashreplace"` на обоих потоках сохраняет контракт отказа:
+    неэнкодимые символы (суррогаты argv) печатаются эскейпами, а не крашем.
+    Поток без `reconfigure` (переопределён тестом) не трогается.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
+def _usage_refusal(e: Exception) -> None:
+    """Usage-отказ CLI: stderr, exit 2, stdout пустой (exit 1 — ERR под `--strict`).
+
+    Текст недоверен (argv, содержимое репозитория): `redact_lite` плюс замена
+    управляющих, C1 и bidi/формат-символов видимым маркером — замена, а не
+    вырезание: удаление склеивало бы путь в другой и открывало ESC-инъекцию.
+    """
+    msg = re.sub(r"[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202e]", "·",
+                 redact_lite(str(e)))
+    print(f"gitmark: {msg}", file=sys.stderr)
+    sys.exit(2)
+
+
 def main(argv=None):
+    _force_utf8_output()
     ap = argparse.ArgumentParser(prog="gitmark", description="GitMark Memory Bank — md+git knowledge base CLI")
     ap.add_argument("--root", default=None, help="корень репо (по умолчанию — авто по .git)")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -1093,6 +1224,14 @@ def main(argv=None):
     sub.add_parser("version", help="версия")
     a = ap.parse_args(argv)
     root = Path(a.root).resolve() if a.root else repo_root(Path.cwd())
+
+    # Битый scope отвергается до любой работы с корпусом — и на index/map/stat/
+    # search, а не только на lint (version корпус не читает)
+    if a.cmd != "version":
+        try:
+            read_scope(root)
+        except LintPathError as e:
+            _usage_refusal(e)
 
     if a.cmd == "index":
         r = cmd_index(root, a.force)
@@ -1128,21 +1267,9 @@ def main(argv=None):
         try:
             r = cmd_lint(root, a.paths or None)
         except LintPathError as e:
-            # именованный отказ по path-аргументу: exit 2 (класс usage-ошибки
-            # argparse), отдельный от exit 1 = ERR онтологии при --strict.
-            # argv-путь — недоверенный текст на границе вывода: как и соседние
-            # печати msg, проходит redact_lite (секрет в пути — ghp_/eyJ/…
-            # masкируется, не утекает в stderr), затем управляющие заменяются
-            # видимым маркером — C0/DEL, C1 (U+0080–U+009F: 8-битные CSI/OSC/
-            # NEL доживают до UTF-8-терминала) и bidi/формат-символы
-            # (U+200B–U+200F, U+2028–U+202E: RLO-подделка отображения,
-            # Unicode-разделители строк), включая переводы строк (ESC-инъекция
-            # и подделка строки отчёта). Замена, не вырезание: удаление
-            # склеивало бы путь в другой («docs/README\n.md» → «README.md»)
-            msg = re.sub(r"[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202e]", "·",
-                         redact_lite(str(e)))
-            print(f"gitmark: {msg}", file=sys.stderr)
-            sys.exit(2)
+            # именованный отказ (путь-аргумент или scope) — usage-код 2, см.
+            # _usage_refusal: печать с редактурой и подменой управляющих символов
+            _usage_refusal(e)
         order = {"ERR": 0, "WARN": 1}
         codes = {}
         for lvl, code, path, msg in sorted(r["issues"], key=lambda x: (order[x[0]], x[1], x[2])):
@@ -1154,7 +1281,22 @@ def main(argv=None):
         ne, nw = len(r["errors"]), len(r["warnings"])
         summary = " · ".join(f"{c}×{n}" for c, n in sorted(codes.items())) or "—"
         mark = "\033[32m✓ чисто\033[0m" if ne == 0 and nw == 0 else f"\033[31m{ne} ERR\033[0m · \033[33m{nw} WARN\033[0m"
-        print(f"\n{mark}  ({r['checked']} файлов · {summary})")
+        # Исключение видно в каждом прогоне: молчание не должно выглядеть
+        # чистотой. Строка — до итога, чтобы `lint | tail -1` не ломался.
+        print()
+        if r["scope_prefix_count"]:
+            print(f"scope: {r['scope_excluded']} файлов исключено по "
+                  f"{r['scope_prefix_count']} префиксам")
+        if a.paths:
+            # Выборка не сужает корпус и глобальные проверки — контракт
+            # «пути сужают только per-file» (страж tests/test_lint_paths.py);
+            # человек видит, где его файлы, а где остальной репозиторий
+            sel = set(a.paths)
+            in_err = sum(1 for x in r["errors"] if x[2] in sel)
+            in_warn = sum(1 for x in r["warnings"] if x[2] in sel)
+            print(f"в выборке: {in_err} ERR · {in_warn} WARN")
+            print(f"вне выборки: {ne - in_err} ERR · {nw - in_warn} WARN")
+        print(f"{mark}  ({r['checked']} файлов · {summary})")
         if a.strict and ne:
             sys.exit(1)
     elif a.cmd == "version":

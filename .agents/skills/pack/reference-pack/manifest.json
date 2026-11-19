@@ -1,0 +1,19 @@
+{
+  "name": "reference-pack",
+  "type": "team",
+  "version": "1.0.0",
+  "standards": ["standards/reference-standards.md"],
+  "roles": [
+    {
+      "name": "reviewer-reference-code",
+      "checklist": "roles/reference-code.md"
+    }
+  ],
+  "gates": [
+    {
+      "name": "reference-gate",
+      "command": ["python3", "-c", "print('reference gate: ok')"],
+      "expect_exit": 0
+    }
+  ]
+}
