@@ -188,10 +188,14 @@ def build_bootstrap(version: str, tag: str, target: str, workdir: Path) -> Path:
 
 
 def prune(share: Path, version: str) -> None:
-	"""Снести каталоги прежних версий: лаунчеру sort -V rc выше финала."""
+	"""Снести каталоги прежних версий: лаунчеру sort -V rc выше финала.
+
+	Не трогаются: каталог текущей версии, кэш артефактов, скиллы и
+	состояние провайдеров — это не версии, а общие данные установки.
+	"""
 	for path in sorted(share.iterdir()):
-		if path.is_dir() and path.name not in (version, "runtimes", "skills") \
-				and not path.name.startswith("."):
+		if path.is_dir() and path.name not in (version, "runtimes", "skills",
+				"provider-state") and not path.name.startswith("."):
 			print(f"снос прежней версии: {path}")
 			shutil.rmtree(path)
 	runtimes = share / "runtimes"

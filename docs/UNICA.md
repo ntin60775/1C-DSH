@@ -68,6 +68,7 @@ handshake лаунчера и версию скиллов Юники (`SOURCE.js
 ```bash
 python3 scripts/install_unica_runtime.py          # поставить/обновить
 python3 scripts/install_unica_runtime.py --prune  # то же + снос прежних версий
+# снос не трогает кэш артефактов, скиллы и provider-state
 ```
 
 Скрипт собирает `runtime-manifest.json` упаковщиком апстрима
