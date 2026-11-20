@@ -123,12 +123,16 @@ pnpm build        # tsc → lib/
 версия контура на момент перевода, дата, результат doctor); запись
 создаёт перевод проекта, doctor сверяет её с фактом и дописывает свой
 вердикт. Поля пак-шага: `org` — метка конторы (ключ карты `regulations`
-машинного конфига деплоя) и акт регламент-пака `regulations_pack`
-(под-ключи `name`, `version`, `channel`, `date`; для link — `commit`
-чекаута с dirty-маркером);
-писатель полей — оркестратор деплоя через `update_registry`
-(`scripts/contour_paths.py`, flock на `projects.json.lock`, атомарная
-запись). Новый проект — `/1c-bootstrap` (профили, contour.json, секция
+машинного конфига деплоя; поле опционально, нет — батч-вопрос деплоя;
+смена конторы — оператор вносит вручную) и акт регламент-пака
+`regulations_pack` (под-ключи `name`, `version`, `channel`, `date` —
+ISO YYYY-MM-DD; для link — `commit` чекаута с dirty-маркером).
+Значение null в карте `regulations` — терминальное «чекаута нет»,
+пак-шаг цели пропускается с названным пробелом. Писатель полей —
+оркестратор деплоя через `update_registry` (`scripts/contour_paths.py`:
+`state_dir` = dirname пути `fleet`, файл реестра — `projects.json`,
+flock на `projects.json.lock`, атомарная запись; `ok=False` —
+именованный стоп). Новый проект — `/1c-bootstrap` (профили, contour.json, секция
 AGENTS.md). Нечитаемый вход канона останавливает поиск (fail-closed):
 сломанный маркер не превращает прод в тест, сломанный allowlist не
 разрешает мутацию.
