@@ -280,12 +280,19 @@ try:
     bare = tmp / "bare"
     bare.mkdir()
     (bare / "v8project.yaml").write_text("имя: demo\n", encoding="utf-8")
-    rb = run(bare, "--status")
+    # Герметичность: дефолтный 6003 на машине может быть занят живым
+    # прокси тулкита (стенд другого проекта); адрес проверки — свободный
+    # порт через ONEC_DB_URL, кейс «проект без контура» сохранён.
+    bare_port = free_port()
+    env_b = dict(os.environ, DSH_1C_STATE_DIR=str(STATE), HOME=str(HOME),
+                 ONEC_DB_URL=f"http://127.0.0.1:{bare_port}/mcp")
+    rb = subprocess.run(["bash", str(SCRIPT), str(bare), "--status"],
+                        capture_output=True, text=True, timeout=120, env=env_b)
     out_b = rb.stdout + rb.stderr
     _lib.check(
         "сборка переживает проект без контура: rc 0 и честные пометки",
         rb.returncode == 0 and "не проверен" in out_b
-        and "6003" in out_b and "свободен" in out_b,
+        and str(bare_port) in out_b and "свободен" in out_b,
         f"rc={rb.returncode}, out={out_b[:500]!r}")
 
     # ── серверная база: лок и stand-замок не применимы, а не «свободен» ──
