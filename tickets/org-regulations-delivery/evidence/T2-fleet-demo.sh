@@ -13,13 +13,13 @@ D=$(mktemp -d /tmp/t2-fleet-XXXXXX)
 ONT=${ONTOSHIP:-/home/prog7/home/dev/contrib/forks/ontoship-ntin}
 DSH=${DSH_1C:-/home/prog7/home/dev/personal/1C-DSH}
 CD=${CONTOUR_DEPLOY:-/home/prog7/home/dev/personal/contour-deploy}
-CDT2=${CONTOUR_DEPLOY_T2:-/home/prog7/home/dev/personal/contour-deploy-t2-orchestrator}
-DSHT2=${DSH_1C_T2:-/home/prog7/home/dev/personal/1C-DSH-t2-canon}
+CDT2=${CONTOUR_DEPLOY_T2:-/home/prog7/home/dev/personal/contour-deploy}
+DSHT2=${DSH_1C_T2:-/home/prog7/home/dev/personal/1C-DSH}
 LIVE_CFG=$HOME/.config/contour-deploy.json
 LIVE_FLEET=$(python3 -c "import sys; sys.path.insert(0,'$DSH/scripts'); from contour_paths import state_root; print(state_root()[0]/'projects.json')")
 echo "provenance: $(date -Is)"
 echo "база: contour-deploy $(git -C $CD rev-parse --short HEAD); 1C-DSH $(git -C $DSH rev-parse --short HEAD); ontoship $(git -C $ONT rev-parse --short HEAD)"
-echo "тексты T2: contour-deploy-t2-orchestrator $(git -C $CDT2 rev-parse --short HEAD); 1C-DSH-t2-canon $(git -C $DSHT2 rev-parse --short HEAD)"
+echo "тексты T2 (в main): contour-deploy $(git -C $CDT2 rev-parse --short HEAD); 1C-DSH (канон в main) $(git -C $DSHT2 rev-parse --short HEAD)"
 HASH_BEFORE=$(sha256sum $LIVE_CFG $LIVE_FLEET | awk '{print $1}' | tr '\n' ' ')
 echo "checksum живых носителей до: $HASH_BEFORE"
 A=$D/demo-org-a-regulations; B=$D/demo-org-b-regulations

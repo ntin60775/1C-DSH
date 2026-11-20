@@ -1,30 +1,30 @@
- provenance: 2026-11-20T17:51:00+02:00
- base contour-deploy main: d5feec1
- worktree t1-pack-deploy: 884fd01
+ provenance: 2026-11-20T18:51:35+02:00
+ base contour-deploy main: 85eaea1
+ коммиты Т1 в main: 85eaea1
  ontoship: b033a62
 == 1. валидация источника (ожидание: валиден, exit 0) ==
 ✓ пак demo-org-a-regulations (team, 1.0.0) валиден
 == 2. link-установка в proj (ожидание: linked pack) ==
-linked pack demo-org-a-regulations -> /tmp/t1-demo-mXP9RV/demo-org-a-regulations
-цель: /tmp/t1-demo-mXP9RV/demo-org-a-regulations
+linked pack demo-org-a-regulations -> /tmp/t1-demo-UPjM1W/demo-org-a-regulations
+цель: /tmp/t1-demo-UPjM1W/demo-org-a-regulations
 == 3. факты акта (link) ==
 name: demo-org-a-regulations version: 1.0.0
-channel: link; commit: c80af3e
+channel: link; commit: 554a810
 == 4. валидация установленного (ожидание: валиден) ==
 ✓ пак demo-org-a-regulations (team, 1.0.0) валиден
 == 5. copy-установка в proj2 (ожидание: copied pack) ==
-copied pack demo-org-a-regulations -> /tmp/t1-demo-mXP9RV/proj2/.agents/packs/demo-org-a-regulations
+copied pack demo-org-a-regulations -> /tmp/t1-demo-UPjM1W/proj2/.agents/packs/demo-org-a-regulations
 == 6. обновление источника (коммит) ==
 == 7. copy-обновление: отказ установщика (ожидание: exit 1, copy differs) ==
-install: copy differs: /tmp/t1-demo-mXP9RV/proj2/.agents/packs/demo-org-a-regulations (remove it to reinstall)
+install: copy differs: /tmp/t1-demo-UPjM1W/proj2/.agents/packs/demo-org-a-regulations (remove it to reinstall)
 exit=1 (ожидание 1, copy differs)
 == 8. замена copy: архив + инвентарь + снос + поставка (справочно) ==
-архив: /tmp/t1-demo-mXP9RV/archive/proj2/demo-org-a-regulations/20261120-175100
-diff -r -x .git /tmp/t1-demo-mXP9RV/proj2/.agents/packs/demo-org-a-regulations/standards/rules.md /tmp/t1-demo-mXP9RV/demo-org-a-regulations/standards/rules.md
+архив: /tmp/t1-demo-UPjM1W/archive/proj2/demo-org-a-regulations/20261120-185135
+diff -r -x .git /tmp/t1-demo-UPjM1W/proj2/.agents/packs/demo-org-a-regulations/standards/rules.md /tmp/t1-demo-UPjM1W/demo-org-a-regulations/standards/rules.md
 3a4,5
 > 
 > Правило 2: имя несёт идентичность конторы.
-copied pack demo-org-a-regulations -> /tmp/t1-demo-mXP9RV/proj2/.agents/packs/demo-org-a-regulations
+copied pack demo-org-a-regulations -> /tmp/t1-demo-UPjM1W/proj2/.agents/packs/demo-org-a-regulations
 обновлённая копия: Правило 2: имя несёт идентичность конторы.
 == 9. link-обновление без действий (ожидание: правило 2 в proj) ==
 proj видит: Правило 2: имя несёт идентичность конторы.
@@ -35,8 +35,8 @@ team-паки: ['demo-org-a-regulations'] | источник: demo-org-b-regulat
 == 11. смесь канала: copy на симлинк (справочно: стоп до установщика) ==
 цель — симлинк, канал copy: аномалия «смесь канала», записей нет
 == 12. dry-run: ноль записей (ожидание: план, .agents не создан) ==
-would create /tmp/t1-demo-mXP9RV/proj3/.agents/packs
-would link pack demo-org-a-regulations -> /tmp/t1-demo-mXP9RV/demo-org-a-regulations
+would create /tmp/t1-demo-UPjM1W/proj3/.agents/packs
+would link pack demo-org-a-regulations -> /tmp/t1-demo-UPjM1W/demo-org-a-regulations
 записей нет: .agents не создан
 == 13. невалидный пак: именованный отказ (ожидание: exit 2) ==
 pack: манифест: type — team или stack: 'wrong'
@@ -50,4 +50,4 @@ drifted core skills: 1
 type источника: stack
 ОТКАЗ: протокол ставит только type: team, записей нет
 записей нет: stack-пак не установлен
-== демо завершено: /tmp/t1-demo-mXP9RV ==
+== демо завершено: /tmp/t1-demo-UPjM1W ==

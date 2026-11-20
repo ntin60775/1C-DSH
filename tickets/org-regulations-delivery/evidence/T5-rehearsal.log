@@ -1,0 +1,50 @@
+provenance: 2026-11-20T19:01:06+02:00
+contour-deploy 695d796; 1C-DSH 96a7882; ontoship b033a62
+checksum живых носителей до: 095b32a954571909be349651c8ea23412c579930eb56961c67cf3ad0526a7cac f14b9596f78de06326a686eba627a16a4496c490112412f144170ed09c4d0a28 
+== 1. link-установка + WIP-распространение + dirty-маркер ==
+linked pack demo-org-a-regulations -> /tmp/t5-rehearsal-WzV6fd/demo-org-a-regulations
+== 1b. ядро OntoShip в репетиционном проекте + здоровый --check ==
+ядро установлено: 11 скиллов
+здоровый --check exit=0 (ожидание 0): 12 ok, pack: ok pack (link)
+ok pack demo-org-a-regulations
+proj видит WIP без действий: Правило 2 (WIP, не коммит).
+dirty-маркер акта: a44e823-dirty (porcelain непуст)
+после коммита: 6035132 (dirty снят, porcelain пуст — утверждено)
+== 2. битый манифест в HEAD link: --check красный + run_gates exit 2 ==
+--check exit=1 (ожидание 1; красный и на валидном пакете из-за ядра — не самостоятельное доказательство)
+drift: pack demo-org-a-regulations: манифест: type — team или stack: 'broken'
+run_gates exit=2 (ожидание 2; различающий носитель: валидный манифест → 0, битый → 2)
+gates: манифест: type — team или stack: 'broken'
+возврат манифеста: ✓ пак demo-org-a-regulations (team, 1.0.0) валиден
+== 3. одноимённый подмес: установщик молча перетыкает link на B ==
+linked pack demo-org-a-regulations -> /tmp/t5-rehearsal-WzV6fd/org-b/demo-org-a-regulations
+старый target: /tmp/t5-rehearsal-WzV6fd/demo-org-a-regulations
+новый target: /tmp/t5-rehearsal-WzV6fd/org-b/demo-org-a-regulations
+факт: установщик перетыкнул без вопроса (защита — резолв по org в оркестраторе и разные имена паков; ручной --pack — обход)
+содержимое теперь конторы B: # Регламенты конторы B (подмес)
+== 4. смесь канала: copy на симлинк — стоп протокола до установщика ==
+цель — симлинк (link), запрошен copy: аномалия «смесь канала», именованный стоп, записей нет (установщик не вызывался)
+== 5. два team-пака: отказ (счёт по type, другое имя) ==
+linked pack demo-org-a-regulations -> /tmp/t5-rehearsal-WzV6fd/demo-org-a-regulations
+team-паки: ['demo-org-a-regulations'] | источник: third-team-regulations
+ОТКАЗ «два team-пака»: конфликт норм, вопрос оператору, записей нет
+записей нет: третий team-пак не установлен
+== 6. dry-run: ноль записей ==
+would create /tmp/t5-rehearsal-WzV6fd/proj3/.agents/packs
+would link pack demo-org-a-regulations -> /tmp/t5-rehearsal-WzV6fd/demo-org-a-regulations
+записей нет
+== 6b. отсутствие ключа regulations: батч о путях + null-ветка ==
+конторы без ключа regulations: ['org-b', 'org-c']
+батч-вопрос оператору (один по всем): «Назови пути чекаутов для контор: org-b, org-c (терминально «нет» → null)»
+конфиг ЗАПИСАН в файл: /tmp/t5-rehearsal-WzV6fd/cfg6b.json
+null-ветка: org-c = None → пропуск пак-шага с названным пробелом
+повтор: контор без ключа: [] (ожидание 0)
+== 6c. новый ПК: висящий link → relink на живой источник ==
+цель — висящий симлинк (target отсутствует)
+linked pack demo-org-a-regulations -> /tmp/t5-rehearsal-WzV6fd/demo-org-a-regulations
+новый target: /tmp/t5-rehearsal-WzV6fd/demo-org-a-regulations
+relink на живой источник: манифест читается
+== 7. изоляция: checksum живых носителей после ==
+checksum после: 095b32a954571909be349651c8ea23412c579930eb56961c67cf3ad0526a7cac f14b9596f78de06326a686eba627a16a4496c490112412f144170ed09c4d0a28 
+изоляция: идентичны
+== репетиция завершена: /tmp/t5-rehearsal-WzV6fd ==

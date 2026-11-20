@@ -16,12 +16,6 @@ updated: 2026-11-20
 
 ## Открытые
 
-- [org-regulations-delivery.md](org-regulations-delivery.md) — поставка
-  орг-регламентов: team-паки контор в проекты парка, семантическая
-  привязка, тихое обновление, фриланс-сценарий; скилл `pack-deploy` в
-  contour-deploy. План-гейт и гейт проекций 20.11 пройдены (27 находок
-  T1–T27 внесены, T8 решена оператором); Т1/Т4 приняты 20.11,
-  следующий Т2 (`ship`).
 - [dap-debugging.md](dap-debugging.md) — станция `1c-dap`: отладка BSL из
   сессии агента (точки, стек, локальные переменные) поверх `unica dap` и
   `debug-server` раннера; сценарий — e2e-прогон, клиент поднимает
@@ -33,6 +27,11 @@ updated: 2026-11-20
 
 ## Завершённые
 
+- [org-regulations-delivery.md](org-regulations-delivery.md) — поставка
+  орг-регламентов: team-паки контор в проекты парка, семантическая
+  привязка, тихое обновление, фриланс-сценарий; скилл `pack-deploy` в
+  contour-deploy, канон реестра org/regulations_pack/pack-archive.
+  Т1–Т5 приняты, юнит закрыт 20.11; проза норм — отдельный проход.
 - [e2e-client-lifecycle.md](e2e-client-lifecycle.md) — жизненный цикл
   тест-клиентов e2e (ишью #56): Т1–Т12 приняты, юнит закрыт 16.11.
 - [dsh-contour.md](dsh-contour.md) — переезд контура с ZCode на DSH:

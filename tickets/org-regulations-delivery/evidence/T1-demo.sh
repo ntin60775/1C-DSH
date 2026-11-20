@@ -9,11 +9,11 @@ set -euo pipefail
 D=$(mktemp -d /tmp/t1-demo-XXXXXX)
 ONT=${ONTOSHIP:-/home/prog7/home/dev/contrib/forks/ontoship-ntin}
 CD=${CONTOUR_DEPLOY:-/home/prog7/home/dev/personal/contour-deploy}
-WT=${CONTOUR_DEPLOY_WT:-/home/prog7/home/dev/personal/contour-deploy-t1-pack-deploy}
+WT=${CONTOUR_DEPLOY_WT:-/home/prog7/home/dev/personal/contour-deploy}
 A=$D/demo-org-a-regulations; B=$D/demo-org-b-regulations
 echo " provenance: $(date -Is)"
 echo " base contour-deploy main: $(git -C $CD rev-parse --short main)"
-echo " worktree t1-pack-deploy: $(git -C $WT rev-parse --short HEAD)"
+echo " коммиты Т1 в main: $(git -C $WT rev-parse --short HEAD)"
 echo " ontoship: $(git -C $ONT rev-parse --short HEAD)"
 mkdir -p $A/standards $B/standards $D/proj $D/proj2 $D/proj3 $D/archive
 printf '{"name":"demo-org-a-regulations","type":"team","version":"1.0.0","standards":["standards/rules.md"]}\n' > $A/manifest.json
