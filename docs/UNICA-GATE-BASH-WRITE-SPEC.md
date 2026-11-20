@@ -3,7 +3,10 @@ node_type: reference
 title: "Спека: обнаружение bash-записи в исходники (unica-source-gate)"
 service: _platform
 status: active
-updated: 2026-11-13
+updated: 2026-11-19
+links:
+  relates_to: [dsh-gates.md, UNICA.md]
+  implemented_by: [../src/gates/unica-source.ts, ../src/paths.ts]
 ---
 
 # Спека: обнаружение bash-записи в исходники (unica-source-gate)

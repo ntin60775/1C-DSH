@@ -3,7 +3,7 @@ node_type: index
 title: База знаний контура 1С на DSH
 service: _platform
 status: active
-updated: 2026-11-17
+updated: 2026-11-19
 ---
 
 # База знаний контура 1С на DSH

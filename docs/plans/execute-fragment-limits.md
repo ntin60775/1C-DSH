@@ -1,8 +1,11 @@
 ---
 node_type: plan
 title: "Ишью 58: границы execute-фрагмента 1c-db — матрица проб, канон, апстрим-репорт"
-status: approved
+service: _platform
+status: active
 updated: 2026-11-06
+links:
+  part_of: [README.md]
 ---
 
 # Ишью 58: границы execute-фрагмента 1c-db

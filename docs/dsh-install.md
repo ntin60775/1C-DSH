@@ -3,9 +3,10 @@ node_type: guide
 title: Установка контура 1С на DSH
 service: _platform
 status: active
-updated: 2026-11-16
+updated: 2026-11-19
 links:
   relates_to: [dsh-gates.md, UNICA.md, README.md]
+  implemented_by: [../package.json, ../cordis.patch.yml, ../scripts/doctor.py]
 ---
 
 # Установка контура 1С на DSH
@@ -23,6 +24,7 @@ links:
 | Node.js + pnpm | сборка плагина TS → `lib/` |
 | python3 | stdlib, без зависимостей: doctor, стартеры, замки |
 | Unica | версии — `unica.yaml` контура, бинарники глобально на машину — [UNICA.md](UNICA.md) |
+| Тест-контур | `1c-testpilot` и прокси `1c-mcp-toolkit` на машину: `scripts/install_testpilot.sh`, `scripts/install_1c_mcp_proxy.sh` (пины в скриптах); профили и инстансы — входы проекта, шаг 5 |
 | Профиль DSH | `$DSH_HOME/profiles/<профиль>` (по умолчанию `~/.dsh`) |
 
 Одна версия контура на машину; пина версии на проект нет. Реестр проектов
@@ -36,9 +38,9 @@ pnpm build        # tsc → lib/
 ```
 
 В поставку бандла идут `lib/`, `skills/`, `commands/`, `scripts/`,
-`workflows/`, `templates/`, `cordis.patch.yml`, локаль и иконка
-(`files` в `package.json`); тесты и процессные скиллы `.agents/` в поставку
-не входят.
+`workflows/`, `templates/`, `cordis.patch.yml`, `unica.yaml`, локаль и
+иконка (`files` в `package.json`); тесты и процессные скиллы `.agents/` в
+поставку не входят.
 
 ## 2. Bundle в профиль
 
@@ -147,7 +149,7 @@ python3 scripts/doctor.py <проект> --profile NAME
 (объявлен и выбран по умолчанию), `skills` (15 контурных, 3 команды, скиллы
 Юники, затенения), `mcp` (записи и живость), `layout` (раскладка DSH),
 `project` (`v8project.yaml`, платформа, топология, `build/out`, движок
-стиля, реестр), `state` (корень состояния, замки, журнал гейтов).
+стиля, скилл bsp, реестр), `state` (корень состояния, замки, журнал гейтов).
 Выход 0 — FAIL нет (WARN допустимы); у каждого раздела `--json` несёт
 `status` и машинный `code` (`bundle.missing`, `mcp.db-down`, …).
 

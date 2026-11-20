@@ -1,6 +1,6 @@
 ---
 node_type: report
-title: Адаптация проектов парка к DSH: следы ZCode и omp
+title: "Адаптация проектов парка к DSH: следы ZCode и omp"
 service: _platform
 status: active
 updated: 2026-11-17

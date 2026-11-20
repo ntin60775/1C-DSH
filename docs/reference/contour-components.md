@@ -3,10 +3,11 @@ node_type: reference
 title: Инвентаризация компонентов контура 1С на DSH
 service: _platform
 status: active
-updated: 2026-11-17
+updated: 2026-11-19
 tags: [inventory, components, dsh, preset, gates, skills, delivery]
 links:
   part_of: [README.md]
+  documents: [../../src/index.ts, ../../src/contract.ts]
   relates_to: [../dsh-install.md, ../dsh-gates.md, ../UNICA.md, ../KD-RULES.md, ../migration-map.md]
 ---
 
@@ -53,7 +54,7 @@ links:
 |---|---|
 | `package.json` | манифест `dsh-1c-contour`, `dsh.bundle.patch`, состав `files` |
 | `cordis.patch.yml` | строки профиля `1c-contour` (плагин) и `preset-1c` (пресет «Контур 1С») |
-| `unica.yaml` | пин версий рантайма Unica и инструментов |
+| `unica.yaml` | пин поставки Юники: тег скиллов, ядро, `bsl-analyzer`, `v8-runner`, минимальное ядро |
 | `locale/`, `icon.svg` | локаль и иконка бандла |
 | `src/` → `lib/` | сборка TS; живая сессия держит загруженное поколение модулей |
 
@@ -116,6 +117,10 @@ Python — stdlib без зависимостей; bash — стартеры и 
 | Ворктри | `init_worktree.sh` |
 | Прокси 1c-db | `install_1c_mcp_proxy.sh` |
 
+Скилловый слой несёт свой скрипт: `skills/1c-project-layout/scripts/scaffold.py`
+— каркас топологии проекта; doctor проверяет им обязательный минимум
+(`project.topology`).
+
 ### Шаблоны и workflow
 
 - `templates/`: `agents-section.md` (секция AGENTS.md проекта между маркерами
@@ -153,9 +158,9 @@ Python — stdlib без зависимостей; bash — стартеры и 
 Не поставляются, создаются при работе:
 
 - Корень состояния `${DSH_1C_STATE_DIR:-~/.dsh/state/1c}`: замки инфобаз
-  (файл на sha1-ключ подключения, TTL, права 0600, атомарно), stand-замок
-  (pid-владелец без TTL), журнал гейтов `logs/rule-audit.jsonl`, реестр
-  парка `projects.json`.
+  (`ib-locks/`, файл на sha1-ключ подключения, TTL, права 0600, атомарно),
+  stand-замок (`stand-locks/`, pid-владелец без TTL), журнал гейтов
+  `logs/rule-audit.jsonl`, реестр парка `projects.json`.
 - Профиль `$DSH_HOME/profiles/<имя>`: строки патча `1c-contour` и `preset-1c`,
   установленный бандл, умолчание пресета.
 - Проект `.dsh/1c/`: входы гейтов (`contour.json`, `contour.local.json`,
@@ -174,10 +179,14 @@ Python — stdlib без зависимостей; bash — стартеры и 
 | `DSH_1C_STATE_DIR` | корень состояния, умолчание `~/.dsh/state/1c` | `src/state.ts`, скрипты |
 | `DSH_1C_TESTPILOT` | подмена команды 1c-testpilot; умолчание — абсолютный путь глобальной установки | `src/preset/config.ts`, `scripts/doctor.py` |
 | `UNICA_LAUNCHER` | подмена лаунчера Юники; умолчание — `~/.local/bin/unica` | `src/preset/config.ts` |
-| `1C_STYLE_ENGINE` | подмена движка стиля | `src/style-checker.ts` |
-| `KD_RULES_STATION` | путь станции КД; умолчание — `~/.local/share/1c-dsh/kd-rules-mcp` | `scripts/install_kd_rules.sh` |
+| `UNICA_GLOBAL_ROOT` | корень глобальной установки Юники при установке рантайма | `scripts/install_unica_runtime.py` |
+| `UNICA_RUNTIME_CACHE_DIR` | корень кэша рантаймов: пресет отдаёт его записи `unica`, читают скрипты | `src/preset/config.ts`, `scripts/unica_ping.py` |
+| `1C_STYLE_ENGINE` | подмена движка стиля; порядок резолва — переменная → `bsl-style-engine` в PATH → скрипт пака | `src/style-checker.ts` |
+| `KD_RULES_STATION` | путь станции КД; умолчание — `~/.local/share/1c-dsh/kd-rules-mcp` | `src/gates/kd-session-start.ts`, `scripts/install_kd_rules.sh` |
 | `KD_START_SCRIPT` | подмена скрипта старта станции КД (тестовый шов и нестандартная поставка) | `src/gates/kd-session-start.ts` |
-| `ONEC_MCP_TOOLKIT_DIR` | путь чекаута тулкита при установке прокси 1c-db | `scripts/install_1c_mcp_proxy.sh` |
+| `KD_RULES_PYTHON` | интерпретатор с pyyaml для станции КД; умолчание — venv станции | `scripts/kd_register_project.py` |
+| `ONEC_MCP_TOOLKIT_DIR` | путь чекаута тулкита при установке прокси 1c-db | `scripts/install_1c_mcp_proxy.sh`, `scripts/start_1c_db.sh` |
+| `ONEC_DB_URL` | перекрытие адреса 1c-db для скриптов и прогонов из ворктри | `scripts/db_status.py`, `scripts/e2e_sweep.py` |
 | `ZCODE_PROJECT_DIR` | env-канал привязки воркспейса Юники — не наследие (раздел «Границы парадигмы») | `src/preset/config.ts` |
 
 ## Процессный слой (не поставляется)
@@ -198,8 +207,8 @@ Python — stdlib без зависимостей; bash — стартеры и 
 | Набор | Что охраняет |
 |---|---|
 | `tests/parity/` + `tests/vectors/` | паритет гейтов: оракул — векторы, без python |
-| `tests/unit/` | контракт пресета и раскладки, состав поставки, no-legacy |
-| `tests/test_*.py` | скрипты контура: doctor, замки, стартеры, вендоринг, линт |
+| `tests/unit/` | контракт гейтов (t3–t5), пресета и раскладки, замки, состав поставки, no-legacy |
+| `tests/test_*.py` | скрипты контура: doctor, замки и их выметка, стартеры и остановка баз, публикация, e2e, вендоринг; док-инварианты KB и процессные скиллы |
 | `scripts/lint_skill_frontmatter.py` | слоты DSH контурных и процессных скиллов |
 | `.agents/skills/kb-search/gitmark.py lint --strict` | инварианты KB |
 

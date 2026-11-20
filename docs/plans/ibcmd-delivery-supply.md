@@ -1,8 +1,11 @@
 ---
 node_type: plan
 title: "Поставка 1c-ibcmd-delivery: mapping, тело скилла, указатели, релиз"
-status: approved
+service: _platform
+status: active
 updated: 2026-11-05
+links:
+  part_of: [README.md]
 ---
 
 # Поставка 1c-ibcmd-delivery: mapping, тело скилла, указатели, релиз

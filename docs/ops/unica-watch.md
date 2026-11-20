@@ -3,10 +3,15 @@ node_type: runbook
 title: Ежедневное слежение за апстримами контура
 service: _platform
 status: active
-updated: 2026-11-18
+updated: 2026-11-19
 links:
+  part_of: [README.md]
   depends_on:
     - ../UNICA.md
+  implemented_by:
+    - ../../scripts/unica_ping.py
+    - ../../scripts/unica_versions.py
+    - ../../scripts/install_unica_skills.py
 ---
 
 # Ежедневное слежение за апстримами контура
@@ -15,6 +20,9 @@ links:
 оператору. Канон и версии контур не меняет сам — решения принимает
 оператор. Слежение покрывает релизы, ишью (наши отправленные и
 интересные нам) и контрактные изменения.
+
+Установка, версии и обновление — [UNICA.md](../UNICA.md); здесь только
+наблюдение. Расхождение версий — находка доклада, не действие прогона.
 
 ## Источники и пины
 
@@ -28,11 +36,43 @@ links:
 | egordoronchenko/kd-rules-mcp | KD_PIN | `scripts/install_kd_rules.sh` |
 | brake71/1c-ssl-skills | последний синкнутый тег апстрима | журнал синков зеркала `1c-ssl-skills/UPSTREAM.md` (`~/home/dev/personal/1c-ssl-skills`) |
 
+## Пины и живая версия
+
+Пины читать из носителя, не из памяти сессии:
+
+- бинари Юники — `unica.yaml` в корне контура; ключи и их смысл —
+  [UNICA.md](../UNICA.md). Парсер — stdlib-модуль
+  `scripts/unica_versions.py` (CLI нет); doctor сличает его ключи с
+  манифестом установки;
+- pip-пины — переменные `TESTPILOT_PIN` и `ONEC_DB_PIN` в
+  `scripts/install_testpilot.sh`, `KD_PIN` в `scripts/install_kd_rules.sh`;
+- зеркало `1c-ssl-skills` — журнал синков его `UPSTREAM.md`.
+
+Живая версия ядра против пина — `scripts/unica_ping.py`: handshake
+`2025-11-25`, `serverInfo.version` (ожидается версия из `unica.yaml`),
+набор глаголов.
+
+```bash
+python3 scripts/unica_ping.py --json             # code, version, verbs
+python3 scripts/unica_ping.py --timeout=300      # первый старт качает рантаймы
+python3 scripts/install_unica_skills.py --check  # тег и число скиллов
+```
+
+Exit `unica_ping.py`: 0 — жив и совместим, 1 — не стартует или не
+совместим (называет недостающие глаголы), 2 — таймаут, повтори позже.
+Обязательные глаголы — `run`, `apply`, `docs`, `view`, `check`, `search`,
+`resolve`, `diff`.
+
+Рассинхрон установки называет `/1c-doctor` (коды и лечение —
+[UNICA.md](../UNICA.md)). После смены пина рассинхрон артефактов
+рантайма ожидаем и виден только на первом вызове провайдера — лечение в
+скилле `1c-unica-artifacts`, а не в правке доков.
+
 ## Чек-лист прогона
 
 1. **Релизы/теги** каждого репо против пина. Свежий релиз — состав
    изменений по release notes, ломающие изменения контракта назвать;
-   обновление контура — процедура `docs/UNICA.md` / ритуал
+   обновление контура — процедура [UNICA.md](../UNICA.md) / ритуал
    `vendor/kd-rules-mcp/UPSTREAM.md` / синк зеркала
    `1c-ssl-skills/UPSTREAM.md` (merge апстрима, линт, тег зеркала,
    re-vendor в проекты), не автоматическое действие.
@@ -45,7 +85,11 @@ links:
    назначенная версия. Список пополняется решением оператора.
 4. **Новые ишью по темам контура** во всех апстримах: search, run,
    providers, ibcmd, semantic, embeddings, docs, формат выгрузки.
-   Релевантные — в доклад с ссылкой; шум не перечислять.
+   Релевантность проверять по живой разводке контура (MCP-подключения,
+   пины, каналы) до включения в доклад. В доклад — только то, что касается
+   боевой разводки или явного ожидающего решения оператора; условные
+   угрозы («если когда-нибудь подключим…») — в журнал, не в доклад.
+   Шум не перечислять.
 5. **Semantic-роль**: `crates/unica-daemon/src/infrastructure/daemon/v13_service.rs`,
    функция `selected_role_engine` ветки main — `ProviderRole::Semantic`
    подключён к движку или по-прежнему `None`. Подключение (закрытие
@@ -56,14 +100,14 @@ links:
    подвижек — пункт решения «неделя без подвижек по #2512 — оператор
    решает вопрос своего канала 1c-bsl-search».
 7. **Ишью контура** (ntin60775/1C-DSH): открытые — напоминанием в
-   докладе (например, обновление вендора kd-rules-mcp).
+   докладе; пустой список — так и назвать.
 
 ## Снимок и журнал
 
 - Снимок последнего прогона — `.scratch/unica-watch/state.json`:
   пины, теги репо, наши и интересные ишью (state, updated_at,
-  comments, milestone), хеш `selected_role_engine`.
-  Производный, вне git.
+  comments, milestone), хеш `selected_role_engine`, открытые ишью
+  контура. Производный, вне git.
 - Журнал наблюдений — `.scratch/unica-watch/log.md`: дата, находка,
   ссылка. Производный, вне git.
 - Первый прогон без снимка фиксирует базовую линию, не докладывает

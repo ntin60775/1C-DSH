@@ -1,3 +1,14 @@
+---
+node_type: reference
+title: Канал правил обмена КД 2/3 (MCP 1c-kd)
+service: _platform
+status: active
+updated: 2026-11-19
+links:
+  relates_to: [dsh-install.md, dsh-gates.md]
+  implemented_by: [../scripts/install_kd_rules.sh, ../scripts/start_kd_rules.sh, ../scripts/kd_register_project.py, ../src/gates/kd-session-start.ts]
+---
+
 # KD-RULES — правила обмена КД 2/3 в контуре (MCP `1c-kd`)
 
 Канал работает с правилами «Конвертации данных» 2 (ПравилаОбмена 2.01, правила
@@ -28,10 +39,11 @@ stateless к сессиям: рестарт сессии соединение п
 ## Разводка и конфигурация
 
 - MCP-запись `1c-kd` строит пресет (`src/preset/config.ts`): URL из
-  `contour.json → 1c_kd.url` (умолчание `http://127.0.0.1:8060/mcp`).
+  `.dsh/1c/contour.json → 1c_kd.url` (умолчание `http://127.0.0.1:8060/mcp`).
 - Сервер настраивается только env `KD2_*` (`KD2_HOST/KD2_PORT/KD2_PROJECTS_FILE/
-  KD2_WORKSPACE/KD2_CACHE_DIR/KD2_TOKEN/KD2_LOG_LEVEL`) — их задаёт
-  `start_kd_rules.sh`; в конфиге проекта настраивается лишь URL.
+  KD2_WORKSPACE/KD2_CACHE_DIR/KD2_REFERENCE_DIR/KD2_TOKEN/KD2_LOG_LEVEL`):
+  первые шесть задаёт `start_kd_rules.sh`, `KD2_TOKEN`/`KD2_LOG_LEVEL` —
+  по потребности; в конфиге проекта настраивается лишь URL.
 - `projects.yaml` станции — описания проектов; первый старт создаёт пустой
   каркас (`projects: {}`). Проект подключает `kd_register_project.py` из
   корня 1С-проекта: авто-детект выгрузок (`src/*/Configuration.xml`,
@@ -47,14 +59,17 @@ stateless к сессиям: рестарт сессии соединение п
 ```bash
 scripts/install_kd_rules.sh     # код станции + uv sync (пин сверяется с pyproject)
 scripts/start_kd_rules.sh       # старт; --status/--stop/--print-config; лог станции
-python3 scripts/doctor.py .     # секция 2c: станция/живость (мягкая зависимость)
+python3 scripts/doctor.py .     # секция mcp: станция/живость (мягкая зависимость)
 ```
 
-Подъём автоматический: SessionStart-хук `kd_session_start.py` в проекте с
-разведённым `1c-kd` будит спящую станцию фоном (url из config.json, станции
-нет на машине — молча). Граница: http-подключение MCP происходит на старте
+Подъём автоматический: гейт `kd_session_start`
+(`src/gates/kd-session-start.ts`, событие `agent/created`) в проекте с
+разведённым `1c-kd` пробует URL и будит спящую станцию фоном
+(`start_kd_rules.sh --url`); готовности не ждёт, станции нет на машине —
+молча, ошибки сессию не роняют. Повтор подъёма — не чаще раза в 30 с на
+ключ станции. Граница: http-подключение MCP происходит на старте
 сессии — в будящей сессии инструменты могут появиться только после
-перезапуска; станция хуком не гасится (`--stop` руками по окончании работы
+перезапуска; станция гейтом не гасится (`--stop` руками по окончании работы
 с правилами). Обновление станции: `install_kd_rules.sh` (пересинхронизирует
 код, состояние не трогает) + `start_kd_rules.sh --stop` и старт. Кэш
 структур пересобирается сам, если код загрузчика сменился (ключ кэша

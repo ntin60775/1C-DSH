@@ -1,9 +1,12 @@
 ---
 node_type: plan
 title: Цикл внешних epf — открытие в тест-клиенте, окна платформы, канон сборки
-status: approved
+service: _platform
+status: active
 updated: 2026-11-13
 issue: https://github.com/ntin60775/1c-zcode/issues/62
+links:
+  part_of: [README.md]
 ---
 
 # Спека: цикл внешних epf (ишью #62)

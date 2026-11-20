@@ -3,7 +3,10 @@ node_type: reference
 title: Unica: установка, версии, скиллы и MCP
 service: _platform
 status: active
-updated: 2026-11-17
+updated: 2026-11-19
+links:
+  relates_to: [dsh-install.md, dsh-gates.md]
+  implemented_by: [../unica.yaml, ../scripts/install_unica_runtime.py, ../scripts/install_unica_skills.py, ../scripts/unica_ping.py]
 ---
 
 # Unica: установка, версии, скиллы и MCP
