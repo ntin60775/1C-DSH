@@ -1,0 +1,44 @@
+provenance: 2026-11-20T18:34:05+02:00
+база: contour-deploy cd57c98; 1C-DSH b65ca89; ontoship b033a62
+тексты T2: contour-deploy-t2-orchestrator 1a018a5; 1C-DSH-t2-canon f7a143b
+checksum живых носителей до: 095b32a954571909be349651c8ea23412c579930eb56961c67cf3ad0526a7cac f14b9596f78de06326a686eba627a16a4496c490112412f144170ed09c4d0a28 
+== 1. батч-резолв: поля org нет у целей (ожидание: ОДИН вопрос на парк) ==
+батч-вопрос оператору (один на парк, проект→метка):
+  «Назови контору для каждого проекта: /tmp/t2-fleet-KojWsw/p1, /tmp/t2-fleet-KojWsw/p2, /tmp/t2-fleet-KojWsw/p3, /tmp/t2-fleet-KojWsw/p4, /tmp/t2-fleet-KojWsw/p5»
+запись org под замком: True 
+lock-файл: /tmp/t2-fleet-KojWsw/fleet/projects.json.lock mode: 0o600
+поля org: {'p1': 'org-a', 'p2': 'org-a', 'p3': 'org-b', 'p4': 'org-b', 'p5': 'org-c'}
+   p5 org: org-c → null: ПРОПУСК пак-шага с названным пробелом (чекаута нет)
+резолв org→regulations→чекаут: источники опознаны (manifest.json), null пропущен
+== 1b. батч каналов: свежие цели (один вопрос, ответ фикстурой) ==
+батч-вопрос оператору: «Канал link/copy для свежих целей p1..p4?»
+ответ фикстуры: p1=link p2=copy p3=link p4=copy (обновление читает канал из акта)
+== 2. пак-шаг: установка (p1,p3 link; p2,p4 copy; p5 пропуск) ==
+linked pack demo-org-a-regulations -> /tmp/t2-fleet-KojWsw/demo-org-a-regulations
+copied pack demo-org-a-regulations -> /tmp/t2-fleet-KojWsw/p2/.agents/packs/demo-org-a-regulations
+linked pack demo-org-b-regulations -> /tmp/t2-fleet-KojWsw/demo-org-b-regulations
+copied pack demo-org-b-regulations -> /tmp/t2-fleet-KojWsw/p4/.agents/packs/demo-org-b-regulations
+== 3. акты паков в реестр (писатель — оркестратор, update_registry) ==
+акты записаны: True 
+  p1 {'channel': 'link', 'commit': '643f4ef', 'date': '2026-11-20', 'name': 'demo-org-a-regulations', 'version': '1.0.0'}
+  p2 {'channel': 'copy', 'date': '2026-11-20', 'name': 'demo-org-a-regulations', 'version': '1.0.0'}
+  p3 {'channel': 'link', 'commit': '23d96d3', 'date': '2026-11-20', 'name': 'demo-org-b-regulations', 'version': '1.0.0'}
+  p4 {'channel': 'copy', 'date': '2026-11-20', 'name': 'demo-org-b-regulations', 'version': '1.0.0'}
+  p5 ПРОПУСК (null-контора)
+== 4. повторный прогон: тишина (org есть, unchanged pack, все 4; p5 пропуск молчит) ==
+батч-вопросов: 0 (ожидание 0)
+  p1 канал из акта: link
+  p2 канал из акта: copy
+  p3 канал из акта: link
+  p4 канал из акта: copy
+  p5 null-контора: пропуск молчит, вопросов нет
+unchanged pack demo-org-a-regulations
+unchanged pack demo-org-a-regulations
+unchanged pack demo-org-b-regulations
+unchanged pack demo-org-b-regulations
+== 5. пустой реестр: стоп, не батч ==
+СТОП: реестр пуст, целей нет (батч-вопрос не формируется)
+== 6. изоляция: checksum живых носителей после (сравнение) ==
+checksum живых носителей после: 095b32a954571909be349651c8ea23412c579930eb56961c67cf3ad0526a7cac f14b9596f78de06326a686eba627a16a4496c490112412f144170ed09c4d0a28 
+изоляция: идентичны
+== демо завершено: /tmp/t2-fleet-KojWsw ==

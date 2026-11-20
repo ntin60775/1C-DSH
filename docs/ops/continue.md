@@ -354,6 +354,12 @@ org-regulations-delivery — 20.11 в tickets/org-regulations-delivery/critic-tr
   Следующий — Т2 (`ship`). Цели: contour-deploy (Т2), орг-репо
   `org-dev-regulations` (Т3), 1C-DSH (Т2 канон схемы, Т5 отчёт репетиции).
   Реальный парк — отдельной командой оператора после приёмки Т5.
+  Followups юнита: дефект продюсера OntoShip — `install.sh --copy --pack`
+  тащит `.git` орг-репо в копию пака (вложенный репозиторий в проекте);
+  вне рамок юнита, issue продюсера при gh-доступе. Канон-проход:
+  `1c-contour-deploy/SKILL.md` несёт «кейс erp-mini 2026-11-20»
+  (имя проекта + дата, TEXT-STYLE §1) — было до юнита, чистится
+  следующим проходом канона.
 - Юнит «Отладка BSL из сессии агента» (`dap-debugging`): draft-спека
   [docs/plans/dap-debugging.md](../plans/dap-debugging.md), открыта 20.11;
   план-гейт пройден 20.11, дальше `critic` и нарезка. Зависимость —
