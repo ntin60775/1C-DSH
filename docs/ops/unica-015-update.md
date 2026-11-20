@@ -1,10 +1,11 @@
 ---
-node_type: runbook
+node_type: report
 title: Обновление контура на Unica 0.15.0 (финал)
 service: _platform
 status: active
 updated: 2026-11-16
 links:
+  part_of: [README.md]
   documents:
     - ../UNICA.md
   implemented_by:

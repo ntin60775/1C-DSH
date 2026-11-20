@@ -6,6 +6,7 @@ status: draft
 updated: 2026-11-13
 tags: [plan, preset, delivery, stack, team-profiles]
 links:
+  part_of: [README.md]
   depends_on: [dsh-contour.md]
   relates_to: [../dsh-install.md, ../../tickets/team-profiles-1c/T1-delivery-preset-ids.md]
 ---

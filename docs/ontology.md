@@ -4,6 +4,10 @@ title: Модель онтологии KB контура
 service: _platform
 status: active
 updated: 2026-11-19
+links:
+  part_of: [README.md]
+  relates_to: [../.agents/skills/kb-curate/ontology.md]
+  implemented_by: [../.agents/skills/kb-search/gitmark.py]
 ---
 
 # Модель онтологии KB

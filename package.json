@@ -1,7 +1,7 @@
 {
   "name": "dsh-1c-contour",
-  "description": "Контур 1С-разработки в DeepSeek Harness: гейты правки исходников",
-  "version": "0.1.0",
+  "description": "Контур 1С-разработки в DeepSeek Harness: гейты правки исходников и доставка контура в сессии 1С-проекта",
+  "version": "0.2.0",
   "icon": "./icon.svg",
   "type": "module",
   "main": "lib/index.js",
@@ -10,10 +10,6 @@
     ".": {
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
-    },
-    "./preset": {
-      "types": "./lib/types/preset/index.d.ts",
-      "default": "./lib/preset/index.js"
     },
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg",

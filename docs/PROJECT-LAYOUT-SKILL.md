@@ -1,3 +1,14 @@
+---
+node_type: reference
+title: "Дизайн навыка 1c-project-layout: топология каталогов 1С-проекта"
+service: _platform
+status: active
+updated: 2026-11-19
+links:
+  relates_to: [README.md, dsh-install.md]
+  implemented_by: [../skills/1c-project-layout/SKILL.md, ../skills/1c-project-layout/scripts/scaffold.py, ../tests/test_project_layout.py]
+---
+
 # Дизайн навыка 1c-project-layout — топология каталогов 1С-проекта
 
 Статус: реализовано (2026-10-08, `skills/1c-project-layout/`; тесты —
@@ -71,6 +82,7 @@
 | `vendor/` | вендоренный внешний код (паки, тулкиты) | да |
 | `tools/mcp/` | обработка 1c-mcp-toolkit под ОС хоста для 1c-db (вне git; доставляет `start_1c_db.sh`) | компонент |
 | `docs/` | документация проекта | компонент |
+| `kd2-rules/` | файлы правил обмена КД 2: XML правил, регистрации и корреспондента, zip-комплекты для БСП; git-tracked, `rules_dir` станции `1c-kd` | компонент |
 | `build/` | рантайм стенда и сборки: файловая ИБ `build/ib`, дампы `*.dt`, `build/tools/`, артефакты сборки `build/out/` — всё вне git (в шаблон gitignore идёт одна строка на `build/`, сам каталог не создаём) | да (строка) |
 | `build/out/` | поставляемые артефакты сборки и прогона, верхний уровень строгий: `cf/`, `cfe/`, `epf/`, `erf/` (зеркало `src/`), `reports/` (выводы прогонов; junit e2e-контура — исключение, живёт в `test-results/`), `tmp/` (служебное, снос в том же заходе); имя артефакта `<Имя>_<ГГГГ-ММ-ДД>[.<суффикс>].<ext>`; правило целиком — скилл `1c-project-layout`, свалка в корне — doctor WARN | нет — заводится с первыми артефактами своего типа |
 
@@ -99,8 +111,8 @@ source-set, юниты и e2e.
 `scaffold check`): `src/{cf,cfe,epf,erf}`, `tests/e2e`, `tools`, `vendor`,
 `v8project.yaml`, `.gitignore`, `.gitattributes`, `packagedef`, корневой
 `AGENTS.md`. Состав утверждён владельцем по эмпирике живых проектов.
-Компоненты сверх минимума — `tools/mcp`
-и `docs` — по вопросам ритуала, не молчаливыми дефолтами. Юнит-наследие
+Компоненты сверх минимума — `tools/mcp`, `docs` и `kd2-rules` — по
+вопросам ритуала, не молчаливыми дефолтами. Юнит-наследие
 omp-эпохи (`tests/cfe`/`tests/epf` вместо `tests/e2e`) `check` опознаёт
 отдельной подсказкой: лечение — перенос покрытия вручную и демонтаж, не
 ритуал layout. Единственная правда о составе — `REQUIRED_MINIMUM` в
@@ -120,7 +132,7 @@ omp-эпохи (`tests/cfe`/`tests/epf` вместо `tests/e2e`) `check` опо
 ```
 scaffold.py structure --dir <проект> --name <slug>
     [--kinds cf,cfe,epf,erf]        # дефолт: все четыре
-    [--components tools-mcp,docs]   # сверх обязательной топологии; дефолт: нет
+    [--components tools-mcp,docs,kd2-rules]   # сверх обязательной топологии; дефолт: нет
     [--dry-run] [--force]
 scaffold.py v8project --dir <проект> [--ib-connection 'File=build/ib']
     # --ib-connection уходит в v8project.local.yaml (0.15), не в общий файл
@@ -156,7 +168,7 @@ scaffold.py all …    # structure + v8project + git
 
 `v8project.yaml` — проверенный контрактом 0.15 каркас. `builder`, `basePath`,
 `execution_timeout`, `push.partialLoadThreshold` и верхнеуровневый
-`connection` v8-runner 0.15 отвергает; привязки ИБ здесь нет:
+`connection` раннер 0.17 отвергает; привязки ИБ здесь нет:
 
 ```yaml
 workPath: 'build'
@@ -178,7 +190,9 @@ source-set:
 # Локальный оверлей машины: в git не попадает.
 # Файловая база на Linux — мутации через ibcmd (headless): пакетный
 # конфигуратор падает по GTK в Wayland-сессии (разовый обход:
-# env -u WAYLAND_DISPLAY GDK_BACKEND=x11). 0.15: per-operation providers.
+# env -u WAYLAND_DISPLAY GDK_BACKEND=x11). Раннер 0.17 по умолчанию
+# ведёт полные операции ibcmd-ом, инкрементальные — живым агентом;
+# пины фиксируют ibcmd для всех операций с исходниками и ИБ.
 infobases:
   origin:
     connection: 'File=build/ib'   # БЕЗ user/password внутри строки
@@ -186,17 +200,27 @@ infobases:
     # password: <не в git, не в чат>
 providers:
   push: ibcmd
+  pull: ibcmd
+  download: ibcmd
+  make: ibcmd
+  infobase.create: ibcmd
+  infobase.dump: ibcmd
+  infobase.restore: ibcmd
   extensions: ibcmd
 tools:
   platform:
     path: '/opt/1cv8/x86_64/<версия>'   # каталог установки, БЕЗ strict-пина:
                                         # строгая проверка версии ломается
                                         # на установке без версии в пути
-# contour: test   # тест-дерево; прод по умолчанию (fail-closed), см. 1c-contour
 ```
 
+Маркер тест-дерева — слово `test` в `.dsh/1c/contour`; ключ `contour:`
+в `v8project.local.yaml` не писать: раннер отвергает незнакомый
+верхнеуровневый ключ local-слоя (`bad_value`), и любая операция падает.
+
 Каталожные `AGENTS.md` — тексты живого деплоя (src/cfe, src/epf, src/erf,
-tests/e2e) дословно; для `src/cf`, `tools/mcp`, `docs` — по той же форме.
+tests/e2e) дословно; для `src/cf`, `tools/mcp`, `docs` и `kd2-rules` —
+по той же форме.
 
 ## 7. Порядок работы (SKILL.md)
 
@@ -247,4 +271,5 @@ tests/e2e) дословно; для `src/cf`, `tools/mcp`, `docs` — по то�
    v8-runner 0.14 (unica rc.7) отвергал оба ключа; 0.15 продолжает
    отвергать, из шаблона и живых проектов убраны.
 3. ~~Точка роста: проверка топологии в `doctor.py`~~ — сделано в v0.4.39
-   (блок 3b: зовёт `scaffold check`, неполный минимум = FAIL).
+   (раздел `project`: doctor зовёт `scaffold check`, неполный минимум —
+   FAIL).

@@ -1,8 +1,11 @@
 ---
 node_type: plan
 title: Контур 1С на DSH — переезд с ZCode в репо 1C-DSH
-status: approved
+service: _platform
+status: active
 updated: 2026-11-10
+links:
+  part_of: [README.md]
 ---
 
 # Спека: контур 1С на DSH

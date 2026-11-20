@@ -162,7 +162,7 @@ def actual_db_url(contour, local):
 
 	Локальный слой применяется, только пока его `desired_url` совпадает с
 	желаемым: смена адреса в `contour.json` снимает дрейф порта (та же
-	семантика, что в `src/preset/config.ts` и `start_1c_db.sh`).
+	семантика, что в `src/delivery/config.ts` и `start_1c_db.sh`).
 	"""
 	url = _string(_object(contour, "1c_db"), "url", DEFAULT_DB_URL)
 	layer = _object(local, "1c_db") if isinstance(local, dict) else {}

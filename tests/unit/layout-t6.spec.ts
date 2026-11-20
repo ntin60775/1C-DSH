@@ -301,7 +301,7 @@ describe('инвариант: литералы раскладок живут т�
   const ALLOWED: Readonly<Record<string, string>> = {
     'src/paths.ts': 'таблица LAYOUT_DIRS и поиск конфига контура',
     'src/state.ts': 'путь состояния по умолчанию',
-    'src/preset/config.ts': 'доставка пресета резолвит данные проекта сама',
+    'src/delivery/config.ts': 'доставка резолвит данные проекта сама',
     'src/style-checker.ts': 'кандидаты пути чекера стиля',
   }
 

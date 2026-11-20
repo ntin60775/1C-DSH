@@ -1,8 +1,11 @@
 ---
 node_type: plan
 title: "Канон build/out: типовые каталоги (cf/cfe/epf/erf/reports/tmp), строка agents-section, doctor-WARN, уборка project-bp"
-status: approved
+service: _platform
+status: active
 updated: 2026-11-07
+links:
+  part_of: [README.md]
 ---
 
 # Канон build/out: типовые каталоги артефактов

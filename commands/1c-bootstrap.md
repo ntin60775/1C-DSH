@@ -14,7 +14,7 @@ disable-model-invocation: true
    `.dsh/1c/templates/`; секцию AGENTS.md — только
    свою, между маркерами `<!-- BEGIN 1C CONTOUR (dsh-1c-contour) -->` /
    `<!-- END 1C CONTOUR -->`, чужие секции не трогай.
-3. Гейты приходят с плагином `dsh-1c-contour`, MCP — с пресетом `1c`.
+3. Гейты и MCP приходят с хост-плагином `dsh-1c-contour` в cwd 1С-проекта.
 4. Прогони `/1c-doctor` и добейся зелёного.
 
 `.dsh/1c/db-instances.yaml` (инстансы мультистенда) бутстрап не

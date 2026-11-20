@@ -1,8 +1,11 @@
 ---
 node_type: plan
 title: "#37 этап 1: db-instances, start_1c_db --instance, гейты, гард базы"
-status: approved
+service: _platform
+status: active
 updated: 2026-11-05
+links:
+  part_of: [README.md]
 ---
 
 # #37 этап 1: db-instances, start_1c_db --instance, гейты, гард базы

@@ -1,5 +1,5 @@
 /**
- * Пресет `1c`: раскладка проекта → каталоги скиллов и MCP-записи.
+ * Доставка контура: раскладка проекта → каталоги скиллов и MCP-записи.
  *
  * Чистые функции без Cordis: юнит-тесты проверяют их на временных деревьях,
  * а `index.ts` только монтирует результат. Источник адресов — проектный
@@ -8,46 +8,13 @@
  *
  * Раскладка одна — DSH (`.dsh/1c`); legacy-чтение ZCode снято после
  * перевода парка (Т10).
- * @module dsh-1c-contour/preset/config
+ * @module dsh-1c-contour/delivery/config
  */
 
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 import type { ContourProject } from '../contract.js'
-
-/** Идентификатор пресета: сессия без него доставки не получает. */
-export const PRESET_ID = '1c'
-
-/** Строка пресета `1c` в патче контура: её id и адрес доставки по умолчанию. */
-export const PRESET_ROW = `preset-${PRESET_ID}`
-
-/**
- * Набор пресетов, которым доставка разрешена.
- *
- * Конфиг строки `contour-preset` расширяет набор: стековый бандл
- * (`ontoship-team-1c`) объявляет свои пресеты и передаёт их id. Дефолт —
- * ровно `1c`; невалидный или пустой набор не отключает доставку, а
- * откатывается к дефолту с громким логом.
- * @param configured - значение ключа `presetIds` из конфига строки.
- * @param warn - получатель предупреждения о невалидном наборе.
- * @returns набор id пресетов; всегда непустой.
- */
-export function presetIdSet(
-  configured: readonly unknown[] | undefined,
-  warn: (message: string) => void,
-): ReadonlySet<string> {
-  const fallback = (reason: string): ReadonlySet<string> => {
-    warn(`набор presetIds ${reason}; доставка по дефолту ${PRESET_ID}`)
-    return new Set([PRESET_ID])
-  }
-  if (configured === undefined) return new Set([PRESET_ID])
-  if (!Array.isArray(configured)) return fallback('не массив')
-  const ids = configured.map((value) => typeof value === 'string' ? value.trim() : '')
-  if (ids.length === 0) return fallback('пуст')
-  if (ids.some((id) => id === '')) return fallback('содержит пустой или нестроковый id')
-  return new Set(ids)
-}
 
 /** Адрес 1c-db по умолчанию: локальный прокси тулкита. */
 export const DEFAULT_DB_URL = 'http://127.0.0.1:6003/mcp'
@@ -291,7 +258,7 @@ export function readProject(
 }
 
 /**
- * MCP-записи пресета для проекта.
+ * MCP-записи доставки для проекта.
  *
  * Состав: `unica` (stdio, cwd проекта, глобальный кэш рантаймов),
  * `1c-testpilot` (stdio, профили проекта), `1c-db` (HTTP, адрес проекта) и
@@ -325,7 +292,7 @@ export function mcpRows(
         serverName: 'unica',
         transport: 'stdio',
         // Юника отдаёт ответ только в `structuredContent`; клиент MCP DSH
-        // проецирует его в текст модели начиная с 0.2.2-rc.2 — пресет
+        // проецирует его в текст модели начиная с 0.2.2-rc.2 — контур
         // требует DSH с этим фиксом (docs/UNICA.md).
         command: unica,
         args: ['mcp'],
@@ -334,7 +301,7 @@ export function mcpRows(
           UNICA_RUNTIME_CACHE_DIR: unicaRuntimeCache(home),
           // Лаунчер передаёт ядру UNICA_RUNTIME_MANIFEST, а тот включает
           // строгий хост-контекст: cwd-канал больше не фолбэк. Привязку
-          // воркспейса подаёт пресет (канал startupEnvironment).
+          // воркспейса подаёт доставка (канал startupEnvironment).
           // ZCODE_PROJECT_DIR — имя env-канала юники (хост ZCode), не
           // ZCode-слой контура (снят в Т10) и не зависимость от ZCode:
           // DSH не входит в хосты юники, а из её каналов (per-call meta
@@ -382,7 +349,7 @@ export function mcpRows(
 }
 
 /**
- * Каталоги скиллов пресета.
+ * Каталоги скиллов доставки.
  *
  * Контурные скиллы и три команды живут в пакете контура, вендоренные паки
  * проекта (стиль, bsp) — в раскладке `.dsh/1c/skills`, скиллы Юники —

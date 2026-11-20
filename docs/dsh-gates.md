@@ -3,9 +3,10 @@ node_type: reference
 title: Гейты контура 1С на DSH
 service: _platform
 status: active
-updated: 2026-11-17
+updated: 2026-11-19
 links:
   relates_to: [dsh-install.md, plans/dsh-contour.md]
+  implemented_by: [../src/contract.ts, ../src/index.ts, ../src/gates/, ../tests/parity/corpus.spec.ts]
 ---
 
 # Гейты контура 1С на DSH
@@ -63,7 +64,8 @@ MCP-имена нормализованы под контракт function-name
 Проектные входы — `.dsh/1c/` (порядок чтения: `.dsh/1c` → `.dsh`,
 таблица `LAYOUT_DIRS` в `src/paths.ts`; legacy-раскладки сняты в Т10):
 
-- `contour.json` / `contour.local.json` — правило пересборки, url стенда;
+- `contour.json` / `contour.local.json` — правило пересборки, url стенда,
+  override опасных MCP-инструментов (`mcp_gate.dangerous`);
 - маркер `contour` — прод/тест-контур (fail-closed);
 - `unica-gate-escalations.txt`, `bsl-module-gate-escalations.txt` —
   allowlist'ы эскалаций прямых правок: строка разрешает путь, пока не

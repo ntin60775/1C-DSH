@@ -29,14 +29,14 @@ import { seedBaseLock } from '../helpers/locks.js'
 
 /** Минимальный контекст плагина: запоминает обработчики событий. */
 interface FakeContext {
-  readonly handlers: Map<string, (...args: any[]) => any>
+  readonly handlers: Map<string, ((...args: any[]) => any)[]>
   readonly warnings: string[]
   readonly ctx: unknown
 }
 
 /** Подменить хост: каталог сессии, логгер и подписка на события. */
 function createFakeContext(cwd: string): FakeContext {
-  const handlers = new Map<string, (...args: any[]) => any>()
+  const handlers = new Map<string, ((...args: any[]) => any)[]>()
   const warnings: string[] = []
   const ctx = {
     logger: {
@@ -45,9 +45,14 @@ function createFakeContext(cwd: string): FakeContext {
       debug: () => undefined,
     },
     on: (event: string, handler: (...args: any[]) => any) => {
-      handlers.set(event, handler)
-      return () => handlers.delete(event)
+      const list = handlers.get(event) ?? []
+      list.push(handler)
+      handlers.set(event, list)
+      return () => handlers.set(event, (handlers.get(event) ?? []).filter((item) => item !== handler))
     },
+    // Службы доставки (loader/shellEnv/workingDirectory через ctx.get) в
+    // гейт-тестах отсутствуют: доставка не монтируется, гейты изолированы.
+    get: () => undefined,
     workingDirectory: {
       get: () => cwd,
       ensure: async () => cwd,
@@ -96,16 +101,19 @@ describe('разводка плагина', () => {
     expect(inject).toEqual(['tools', 'workingDirectory'])
   })
 
-  it('подписывается на четыре события контура', () => {
+  it('подписывается на события гейтов и доставки', () => {
     const fixture = createFixture()
     const fake = createFakeContext(fixture.tree)
     apply(fake.ctx as never)
     expect([...fake.handlers.keys()].sort()).toEqual([
       'agent/created',
+      'agent/pre-step',
       'tools/post-execute',
       'tools/pre-execute',
       'tools/result',
     ])
+    // agent/created слушают и гейты (стартовое состояние), и доставка.
+    expect(fake.handlers.get('agent/created')).toHaveLength(2)
     rmSync(fixture.root, { recursive: true, force: true })
   })
 })
@@ -116,7 +124,7 @@ describe('tools/pre-execute', () => {
     const decision = await withStateDir(fixture.stateDir, async () => {
       const fake = createFakeContext(fixture.tree)
       apply(fake.ctx as never)
-      const handler = fake.handlers.get('tools/pre-execute') as (exec: unknown, next: () => unknown) => Promise<any>
+      const handler = fake.handlers.get('tools/pre-execute')![0] as (exec: unknown, next: () => unknown) => Promise<any>
       return handler(exec('write', { file_path: BSL, content: '' }), () => ({ kind: 'allow' }))
     })
     expect(decision.kind).toBe('deny')
@@ -130,7 +138,7 @@ describe('tools/pre-execute', () => {
     const decision = await withStateDir(fixture.stateDir, async () => {
       const fake = createFakeContext(fixture.tree)
       apply(fake.ctx as never)
-      const handler = fake.handlers.get('tools/pre-execute') as (exec: unknown, next: () => unknown) => Promise<any>
+      const handler = fake.handlers.get('tools/pre-execute')![0] as (exec: unknown, next: () => unknown) => Promise<any>
       return handler(exec('write', { file_path: 'docs/readme.md', content: '' }), () => ({ kind: 'allow' }))
     })
     expect(decision).toEqual({ kind: 'allow' })
@@ -154,7 +162,7 @@ describe('tools/post-execute', () => {
     const decision = await withStateDir(fixture.stateDir, async () => {
       const fake = createFakeContext(fixture.tree)
       apply(fake.ctx as never)
-      const handler = fake.handlers.get('tools/post-execute') as (...args: any[]) => Promise<any>
+      const handler = fake.handlers.get('tools/post-execute')![0] as (...args: any[]) => Promise<any>
       return handler(
         exec('mcp__unica__run', { args: { op: 'push', cwd: fixture.tree } }),
         { isError: false, content: [] },
@@ -182,7 +190,7 @@ describe('tools/result', () => {
     await withStateDir(fixture.stateDir, () => {
       const fake = createFakeContext(fixture.tree)
       apply(fake.ctx as never)
-      const handler = fake.handlers.get('tools/result') as (...args: any[]) => unknown
+      const handler = fake.handlers.get('tools/result')![0] as (...args: any[]) => unknown
       handler(exec('bash', { command: 'ls' }, agent), { isError: false, content: [], value: null })
       handler(exec('bash', { command: 'false' }, agent), {
         isError: true,
@@ -200,7 +208,7 @@ describe('tools/result', () => {
     await withStateDir(fixture.stateDir, () => {
       const fake = createFakeContext(fixture.tree)
       apply(fake.ctx as never)
-      const handler = fake.handlers.get('tools/result') as (...args: any[]) => unknown
+      const handler = fake.handlers.get('tools/result')![0] as (...args: any[]) => unknown
       handler(exec('write', { file_path: BSL, content: '' }, agent), {
         isError: true,
         content: [],
@@ -270,7 +278,7 @@ describe('T4: старт сессии и новые гейты', () => {
     await withStateDir(fixture.stateDir, async () => {
       const fake = createFakeContext(fixture.tree)
       apply(fake.ctx as never)
-      const handler = fake.handlers.get('agent/created') as (payload: unknown) => Promise<void>
+      const handler = fake.handlers.get('agent/created')![0] as (payload: unknown) => Promise<void>
       await handler({ agent })
     })
     expect(existsSync(join(fixture.stateDir, 'ib-locks', 'stale.json'))).toBe(false)
@@ -286,7 +294,7 @@ describe('T4: старт сессии и новые гейты', () => {
     const decision = await withStateDir(fixture.stateDir, async () => {
       const fake = createFakeContext(fixture.tree)
       apply(fake.ctx as never)
-      const handler = fake.handlers.get('tools/pre-execute') as (exec: unknown, next: () => unknown) => Promise<any>
+      const handler = fake.handlers.get('tools/pre-execute')![0] as (exec: unknown, next: () => unknown) => Promise<any>
       return handler(exec('bash', { command: 'CONTOUR_ANON=off python3 probe.py' }), () => ({ kind: 'allow' }))
     })
     expect(decision.kind).toBe('deny')
@@ -301,12 +309,12 @@ describe('T4: старт сессии и новые гейты', () => {
     const decision = await withStateDir(fixture.stateDir, async () => {
       const fake = createFakeContext(fixture.tree)
       apply(fake.ctx as never)
-      const result = fake.handlers.get('tools/result') as (...args: any[]) => void
+      const result = fake.handlers.get('tools/result')![0] as (...args: any[]) => void
       // Живая форма bash: ненулевой код приходит не isError, а маркером в хвосте.
       const failed = { isError: false, content: [{ type: 'text', text: '(no output)\n[exit code: 1]' }] }
       result(exec('bash', { command: 'false' }, agent), failed)
       result(exec('bash', { command: 'false' }, agent), failed)
-      const handler = fake.handlers.get('tools/pre-execute') as (exec: unknown, next: () => unknown) => Promise<any>
+      const handler = fake.handlers.get('tools/pre-execute')![0] as (exec: unknown, next: () => unknown) => Promise<any>
       return handler(exec('bash', { command: 'false' }, agent), () => ({ kind: 'allow' }))
     })
     expect(decision.kind).toBe('deny')
@@ -319,7 +327,7 @@ describe('T4: старт сессии и новые гейты', () => {
     const decision = await withStateDir(fixture.stateDir, async () => {
       const fake = createFakeContext(fixture.tree)
       apply(fake.ctx as never)
-      const handler = fake.handlers.get('tools/post-execute') as (...args: any[]) => Promise<any>
+      const handler = fake.handlers.get('tools/post-execute')![0] as (...args: any[]) => Promise<any>
       return handler(
         exec('bash', { command: 'git worktree add wt -b feature' }),
         { isError: false, content: [] },
@@ -344,7 +352,7 @@ describe('T4: старт сессии и новые гейты', () => {
     await withStateDir(fixture.stateDir, async () => {
       const fake = createFakeContext(fixture.tree)
       apply(fake.ctx as never)
-      const handler = fake.handlers.get('agent/created') as (payload: unknown) => Promise<void>
+      const handler = fake.handlers.get('agent/created')![0] as (payload: unknown) => Promise<void>
       await handler({ agent })
     })
     expect(injected).toHaveLength(0)
@@ -371,7 +379,7 @@ describe('T4: старт сессии и новые гейты', () => {
         withStateDir(fixture.stateDir, async () => {
           const fake = createFakeContext(fixture.tree)
           apply(fake.ctx as never)
-          const handler = fake.handlers.get('agent/created') as (payload: unknown) => Promise<void>
+          const handler = fake.handlers.get('agent/created')![0] as (payload: unknown) => Promise<void>
           await handler({ agent })
         }),
       ),

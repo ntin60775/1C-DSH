@@ -1,12 +1,12 @@
 /**
- * Доставка пресета `1c`: проектные входы → каталоги скиллов и MCP-записи.
+ * Доставка контура: проектные входы → каталоги скиллов и MCP-записи.
  *
  * spec: Т5 — «MCP-записи: unica, 1c-testpilot, 1c-db (+ инстансы), 1c-kd;
  * `unica` получает `UNICA_RUNTIME_CACHE_DIR` и привязку к проекту»;
  * «вне 1С-проекта скиллы Юники и `mcp__unica__*` не видны».
  * Инвариант финала 0.15: лаунчер несёт `UNICA_RUNTIME_MANIFEST`, ядро
- * требует хост-контекст — пресет подаёт `ZCODE_PROJECT_DIR` корня.
- * @module tests/unit/preset.spec
+ * требует хост-контекст — доставка подаёт `ZCODE_PROJECT_DIR` корня.
+ * @module tests/unit/delivery.spec
  */
 
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -22,16 +22,14 @@ import {
   kdUrl,
   mcpRows,
   parseDbInstances,
-  PRESET_ID,
-  presetIdSet,
   readProject,
   skillDirs,
-} from '../../src/preset/config.js'
-import { planDelivery, presetOf } from '../../src/preset/index.js'
+} from '../../src/delivery/config.js'
+import { planDelivery } from '../../src/delivery/index.js'
 
 /** Временный каталог с файлами; возвращает корень и уборщик. */
 function tempTree(files: Record<string, string>): { root: string; cleanup: () => void } {
-  const root = mkdtempSync(join(tmpdir(), 'dsh-1c-preset-'))
+  const root = mkdtempSync(join(tmpdir(), 'dsh-1c-delivery-'))
   for (const [name, text] of Object.entries(files)) {
     const path = join(root, name)
     mkdirSync(join(path, '..'), { recursive: true })
@@ -221,66 +219,5 @@ describe('раскладка и скиллы', () => {
     } finally {
       tree.cleanup()
     }
-  })
-})
-
-/**
- * spec: team-profiles «Готово» 4; тикет team-profiles/05 (ntin) и спека
- * team-delivery-preset-ids «Готово» 1–2 — фильтр доставки как набор id.
- */
-describe('presetIdSet', () => {
-  /** Собрать предупреждения набора. */
-  const collect = () => {
-    const warnings: string[] = []
-    return { warnings, warn: (message: string) => { warnings.push(message) } }
-  }
-
-  it('без ключа — ровно дефолт 1c', () => {
-    const seen = collect()
-    const ids = presetIdSet(undefined, seen.warn)
-    expect([...ids]).toEqual([PRESET_ID])
-    expect(seen.warnings).toEqual([])
-  })
-
-  it('стековый набор читается, обрезается и дедуплицируется', () => {
-    const seen = collect()
-    const ids = presetIdSet([' 1c-architect ', '1c-orchestrator', '1c-executor', '1c-architect'], seen.warn)
-    expect([...ids]).toEqual(['1c-architect', '1c-orchestrator', '1c-executor'])
-    expect(seen.warnings).toEqual([])
-  })
-
-  it('пустой, нестроковый и не-массивный набор откатываются к дефолту с логом', () => {
-    for (const value of [[], [''], [42], '1c-executor'] as const) {
-      const seen = collect()
-      const ids = presetIdSet(value as never, seen.warn)
-      expect([...ids]).toEqual([PRESET_ID])
-      expect(seen.warnings).toHaveLength(1)
-      expect(seen.warnings[0]).toMatch(/presetIds/)
-    }
-  })
-
-  it('набор без 1c и без стековых id доставку никому из них не даёт', () => {
-    const ids = presetIdSet(['1c-architect'], () => {})
-    expect(ids.has('1c-executor')).toBe(false)
-    expect(ids.has(PRESET_ID)).toBe(false)
-  })
-})
-
-describe('presetOf', () => {
-  const agent = (preset: string | undefined) => ({
-    session: { header: preset === undefined ? {} : { agentPreset: preset } },
-  }) as never
-
-  it('читает заголовок сессии', () => {
-    expect(presetOf(agent(PRESET_ID), {})).toBe('1c')
-    expect(presetOf(agent('standard'), {})).toBe('standard')
-  })
-
-  it('проекция реестра перекрывает заголовок', () => {
-    expect(presetOf(agent('standard'), { agentPresets: { presetForSession: () => '1c' } })).toBe('1c')
-  })
-
-  it('без пресета — null, доставки нет', () => {
-    expect(presetOf(agent(undefined), {})).toBeNull()
   })
 })

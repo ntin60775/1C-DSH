@@ -2,9 +2,10 @@
 """doctor.py — проверка установки контура 1С на DSH и самого проекта.
 
 Разделы (в `--json` — одноимённые поля):
-  bundle  — пакет `dsh-1c-contour` стоит в профиле DSH, строки его патча
-            (плагин и пресет) применены, сборка `lib/` на месте;
-  preset  — пресет `1c` объявлен в патче bundle и выбран по умолчанию;
+  bundle  — пакет `dsh-1c-contour` стоит в профиле DSH, строка его патча
+            (хост-плагин гейтов и доставки) применена, сборка `lib/` на месте;
+  delivery — доставка хост-плагином поверх любого пресета: пресета-копии
+            `preset-1c` в патче нет; умолчание `1c` — миграционный хвост (WARN);
   skills  — 15 контурных скиллов и 3 команды в пакете, скиллы Юники на
             машине, пользовательских копий-затенений нет;
   mcp     — записи `unica`, `1c-testpilot`, `1c-db` (+ инстансы), `1c-kd`
@@ -54,11 +55,11 @@ from unica_versions import load as load_unica_versions  # noqa: E402
 
 BUNDLE = "dsh-1c-contour"
 PLUGIN_ROW = "1c-contour"
-PRESET_ROW = "preset-1c"
-PRESET_ID = "1c"
+PRESET_ROW = "preset-1c"  # пресет-копия старой архитектуры: её наличие — FAIL
+LEGACY_PRESET = "1c"
 # Версии поставки Юники — unica.yaml в корне пакета (scripts/unica_versions.py).
 
-# Контурные скиллы пакета: состав — доставка пресета (15 скиллов Т5).
+# Контурные скиллы пакета: состав — доставка контура (15 скиллов Т5).
 CONTOUR_SKILLS = {
 	"1c-bsl-review-standards", "1c-contour", "1c-db-data", "1c-ibcmd-delivery",
 	"1c-ibsrv-publish", "1c-kd-rules", "1c-project-bootstrap", "1c-project-layout",
@@ -66,7 +67,7 @@ CONTOUR_SKILLS = {
 	"kd2-exchange-pitfalls", "kd2-rules-build", "kd3-rules",
 }
 CONTOUR_COMMANDS = {"1c-bootstrap", "1c-doctor", "1c-test"}
-SECTION_ORDER = ("bundle", "preset", "skills", "mcp", "layout", "project", "state")
+SECTION_ORDER = ("bundle", "delivery", "skills", "mcp", "layout", "project", "state")
 TAGS = {"ok": "OK  ", "warn": "WARN", "fail": "FAIL"}
 
 
@@ -330,7 +331,7 @@ def check_bundle(report: Report, dsh_home: Path, profile_arg: str):
 		ids = sorted(patch_rows(patch_text))
 		missing = [row_id for row_id in (PLUGIN_ROW,) if row_id not in ids]
 		unbuilt = [str(item.relative_to(package)) for item in
-		           (package / "lib" / "index.js", package / "lib" / "preset" / "index.js")
+		           (package / "lib" / "index.js", package / "lib" / "delivery" / "index.js")
 		           if not item.is_file()]
 		if missing:
 			report.fail("bundle", f"{BUNDLE} {version}: в патче нет строк "
@@ -362,43 +363,34 @@ def check_bundle(report: Report, dsh_home: Path, profile_arg: str):
 	return primary
 
 
-# ── 2. preset ───────────────────────────────────────────────────────────────
+# ── 2. delivery ─────────────────────────────────────────────────────────────
 
-def check_preset(report: Report, dsh_home: Path, bundle: dict):
-	"""Строка пресета в патче bundle и его выбор по умолчанию."""
+def check_delivery(report: Report, dsh_home: Path, bundle: dict):
+	"""Доставка хост-плагином: пресета-копии нет, умолчание не требуется."""
 	if not bundle:
-		report.fail("preset", "пресет не проверен: пакет bundle не найден — "
-		            "сначала установи bundle", code="preset.unchecked")
+		report.fail("delivery", "доставка не проверена: пакет bundle не найден — "
+		            "сначала установи bundle", code="delivery.unchecked")
 		return
-	block = patch_rows(read_text(bundle["patch"]) or "").get(PRESET_ROW)
-	if block is None:
-		report.fail("preset", f"строка {PRESET_ROW} не объявлена в патче bundle — "
-		            "пресета «Контур 1С» не будет в ростере", code="preset.missing")
-		return
-	config = config_block(block)
-	preset_id = scalar(config, "id")
-	name = scalar(config, "name") or "Контур 1С"
-	if preset_id != PRESET_ID:
-		report.fail("preset", f"строка {PRESET_ROW} объявляет пресет "
-		            f"{preset_id or '(без id)'} вместо {PRESET_ID} — сессия не получит "
-		            "доставку контура", code="preset.wrong-id")
+	rows = patch_rows(read_text(bundle["patch"]) or "")
+	if PRESET_ROW in rows:
+		report.fail("delivery", f"патч bundle всё ещё объявляет {PRESET_ROW} — "
+		            "пресет-копия старой архитектуры; поставка host-delivery несёт "
+		            "одну хост-строку 1c-contour (обнови бандл и пересобери lib/)",
+		            code="delivery.preset-copy")
 		return
 	selected = patch_selected_default(dsh_home, bundle["profileDir"])
-	report.sections["preset"].update({
-		"id": preset_id,
-		"name": name,
-		"row": PRESET_ROW,
+	report.sections["delivery"].update({
+		"row": PLUGIN_ROW,
 		"default": selected,
 	})
-	if selected == PRESET_ID:
-		report.ok("preset", f"{preset_id} «{name}» — пресет по умолчанию для новых "
-		          "сессий")
+	if selected == LEGACY_PRESET:
+		report.warn("delivery", f"умолчание профиля {LEGACY_PRESET} — хвост старой "
+		            "архитектуры: доставка теперь хост-плагин поверх любого пресета "
+		            "и умолчания не требует; сними строку agent-preset-registry "
+		            "или верни умолчание профиля", code="delivery.stale-default")
 	else:
-		report.warn("preset", f"{preset_id} «{name}» объявлен, но по умолчанию выбрано "
-		            f"{selected or 'не 1c (умолчание профиля)'}: контур появится в сессии при "
-		            "выборе пресета в композере; doctor видит только умолчание — "
-		            "выбор в открытой сессии живёт в её записи",
-		            code="preset.not-default")
+		report.ok("delivery", "доставка хост-плагином 1c-contour: любой пресет "
+		          "в cwd 1С-проекта получает скиллы и MCP; пресета-копии нет")
 
 
 # ── 3. skills ───────────────────────────────────────────────────────────────
@@ -1422,7 +1414,7 @@ def main() -> int:
 	dsh_home = Path(os.environ.get("DSH_HOME") or Path.home() / ".dsh").expanduser()
 	report = Report(flags["json"])
 	bundle = check_bundle(report, dsh_home, flags["profile"])
-	check_preset(report, dsh_home, bundle)
+	check_delivery(report, dsh_home, bundle)
 	check_skills(report, dsh_home, bundle, root)
 	project = check_mcp(report, root, flags["no_ping"])
 	check_layout(report, root)

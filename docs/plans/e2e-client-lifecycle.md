@@ -1,8 +1,11 @@
 ---
 node_type: plan
 title: "#56: жизненный цикл тест-клиентов e2e — соло-фикстура, гигиена, диагностика"
-status: approved
+service: _platform
+status: active
 updated: 2026-11-06
+links:
+  part_of: [README.md]
 ---
 
 # #56: жизненный цикл тест-клиентов e2e — соло-фикстура, гигиена, диагностика
