@@ -124,8 +124,8 @@ pnpm build        # tsc → lib/
 создаёт перевод проекта, doctor сверяет её с фактом и дописывает свой
 вердикт. Поля пак-шага: `org` — метка конторы (ключ карты `regulations`
 машинного конфига деплоя) и акт регламент-пака `regulations_pack`
-(имя, версия манифеста,
-канал link/copy, дата; для link — коммит чекаута с dirty-маркером);
+(под-ключи `name`, `version`, `channel`, `date`; для link — `commit`
+чекаута с dirty-маркером);
 писатель полей — оркестратор деплоя через `update_registry`
 (`scripts/contour_paths.py`, flock на `projects.json.lock`, атомарная
 запись). Новый проект — `/1c-bootstrap` (профили, contour.json, секция
