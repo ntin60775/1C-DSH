@@ -1,8 +1,12 @@
 /**
- * Контур 1С в DeepSeek Harness: гейты правки исходников на событиях хоста.
+ * Контур 1С в DeepSeek Harness: гейты правки исходников и доставка контура
+ * на событиях хоста.
  *
- * Плагин только переводит события DSH в {@link GateCall} и обратно — вся
- * логика лежит в чистых функциях `gates/*` и сверяется с векторами паритета.
+ * Гейты: плагин только переводит события DSH в {@link GateCall} и обратно —
+ * вся логика лежит в чистых функциях `gates/*` и сверяется с векторами
+ * паритета. Доставка ({@link applyDelivery}) — аддитив к любому пресету
+ * сессии: скиллы, команды и MCP монтируются в область агента, когда каталог
+ * сессии резолвится в проект 1С. Отдельного пресета контура нет.
  *
  * - `agent/created` — состояние агента, уборка состояния, контекст старта и
  *   пробуждение станции kd (побочные эффекты, не чистые гейты; субагентам
@@ -25,6 +29,7 @@ import type { PostToolDecision, PreToolDecision, ToolExecution, ToolExecutionRes
 import type {} from '@deepseek-ai/dsh-working-directory'
 
 import type { ExecutedCall, GateCall, GateState, PostDecision, PreDecision } from './contract.js'
+import { applyDelivery } from './delivery/index.js'
 import { evaluatePre as evaluateAnonPre } from './gates/anon.js'
 import { evaluatePost as evaluateModulePost } from './gates/bsl-module.js'
 import { evaluatePost as evaluateStylePost } from './gates/bsl-style.js'
@@ -216,6 +221,10 @@ export function apply(ctx: Context): void {
     observeResult(sessionStateOf(exec.agent), call, failed, deniedBy(result))
     observeRetryResult(state, call, project, failed, deniedBy(result))
   })
+
+  // Доставка контура — тем же хост-плагином: аддитив к любому пресету,
+  // cwd-гейт проекта 1С (src/delivery).
+  applyDelivery(ctx)
 }
 
 /**

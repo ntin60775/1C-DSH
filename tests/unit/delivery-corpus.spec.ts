@@ -1,11 +1,11 @@
 /**
- * Корпус и пресет: критерии Т5 проверяются на артефактах, не на словах.
+ * Корпус и доставка: критерии Т5 проверяются на артефактах, не на словах.
  *
  * spec: Т5 — «15 скиллов контура», «`whenToUse` во всех 15 `SKILL.md`»,
- * «поставка скиллов в пресет»; Т10 — команд три (/1c-migrate снят вместе
- * с мигратором после перевода парка). Наследие ZCode в поставляемом слое
- * охраняет отдельный инвариант-гард (tests/unit/no-legacy.spec.ts).
- * @module tests/unit/preset-corpus.spec
+ * «поставка скиллов хост-плагином»; Т10 — команд три (/1c-migrate снят
+ * вместе с мигратором после перевода парка). Наследие ZCode в поставляемом
+ * слое охраняет отдельный инвариант-гард (tests/unit/no-legacy.spec.ts).
+ * @module tests/unit/delivery-corpus.spec
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { planDelivery } from '../../src/preset/index.js'
+import { planDelivery } from '../../src/delivery/index.js'
 import type { ContourProject } from '../../src/contract.js'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -97,19 +97,18 @@ describe('корпус без ZCode-слотов', () => {
   })
 })
 
-describe('пресет в поставке', () => {
+describe('доставка в поставке', () => {
   const patch = readFileSync(join(ROOT, 'cordis.patch.yml'), 'utf8')
 
-  it('строка пресета 1c и доставка контура на месте', () => {
-    expect(patch).toMatch(/id:\s*preset-1c/)
-    expect(patch).toMatch(/id:\s*1c\b/)
-    expect(patch).toMatch(/name:\s*'dsh-1c-contour\/preset'/)
-    for (const row of ["id: skill-filesystem", 'id: tool-skill', 'id: tool-bash', 'id: tool-fs']) {
-      expect(patch, row).toContain(row)
-    }
+  it('одна хост-строка контура; пресета-копии и строки доставки в патче нет', () => {
+    expect(patch).toMatch(/id:\s*1c-contour/)
+    expect(patch).toMatch(/name:\s*'dsh-1c-contour'/)
+    expect(patch).not.toMatch(/preset-1c/)
+    expect(patch).not.toContain('dsh-1c-contour/preset')
+    expect(patch).not.toContain('presetIds')
   })
 
-  it('пакет несёт скиллы, команды, скрипты и workflows', () => {
+  it('пакет несёт скиллы, команды, скрипты и workflows; экспорт пресета снят', () => {
     const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
       files: string[]
       exports: Record<string, unknown>
@@ -117,10 +116,11 @@ describe('пресет в поставке', () => {
     for (const entry of ['skills/**', 'commands/**', 'scripts/**', 'workflows/**']) {
       expect(manifest.files, entry).toContain(entry)
     }
-    expect(Object.keys(manifest.exports)).toContain('./preset')
+    expect(Object.keys(manifest.exports)).toContain('.')
+    expect(Object.keys(manifest.exports)).not.toContain('./preset')
   })
 
-  it('доставка реального пресета видит 4 MCP-сервера и четыре корня скиллов', () => {
+  it('доставка реального проекта видит 4 MCP-сервера и четыре корня скиллов', () => {
     const project: ContourProject = { root: ROOT, layout: 'markers', contour: {} }
     const delivery = planDelivery(project, { root: ROOT, home: '/home/tester' })
     expect(delivery.mcp.map((row) => row.config.serverName)).toEqual(['unica', '1c-testpilot', '1c-db', '1c-kd'])

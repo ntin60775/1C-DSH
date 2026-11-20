@@ -152,7 +152,7 @@ python3 "$SKILL_DIR/scripts/scaffold.py" all \
 
 - Контурные конфиги (`.dsh/1c/contour.json`, профили testpilot, секция
   AGENTS.md между маркерами) — навык `1c-project-bootstrap`; гейты и MCP
-  приходят с пресетом `1c`.
+  приходят с хост-плагином контура.
 - Первый источник правды: ИБ есть → выгрузка в `src/cf` (`unica.run`,
   канон в `1c-contour`); с нуля → `build`. Расширения объявляются
   EXTENSION-source-set'ами по мере появления (скиллы юники `cfe-init`).

@@ -1,14 +1,16 @@
 /**
- * Пресет `1c` в доставке: скиллы, команды и MCP только в 1С-сессии.
+ * Доставка контура 1С: скиллы, команды и MCP в сессии 1С-проекта.
  *
- * Плагин монтируется строкой пресета (`preset-1c`), поэтому действует только
- * на сессии своего пресета. Набор id задаёт конфиг строки `presetIds`:
- * без него — ровно `1c`; стековый бандл передаёт свои id. На старте агента
- * он резолвит проект от каталога сессии и, если это проект 1С:
+ * Доставку монтирует хост-плагин `dsh-1c-contour` ({@link applyDelivery}),
+ * поэтому она действует поверх ЛЮБОГО пресета сессии: правило одно — каталог
+ * сессии резолвится в проект 1С. Отдельного пресета контура нет, умолчание
+ * профиля не требуется; вне 1С-проекта доставка не монтирует ничего.
+ *
+ * На старте агента и перед первым шагом:
  *
  * - поднимает провайдер скиллов в области агента — 15 контурных скиллов,
  *   3 команды (`/1c-*`), вендоренные паки проекта (`.dsh/1c/skills`) и
- *   скиллы Юники с машины; вне проекта 1С их нет;
+ *   скиллы Юники с машины;
  * - монтирует MCP-серверы проекта (`unica`, `1c-testpilot`, `1c-db` с
  *   инстансами, `1c-kd`) в области агента: `unica` получает cwd проекта и
  *   глобальный кэш рантаймов, адреса тулкита — из `.dsh/1c`;
@@ -17,7 +19,7 @@
  * Готовые реализации берутся из установки DSH через `ctx.loader.import`:
  * своя копия `@deepseek-ai/dsh-mcp-client` дала бы второй экземпляр
  * `dsh-scope` и потеряла область агента.
- * @module dsh-1c-contour/preset
+ * @module dsh-1c-contour/delivery
  */
 
 import { readFileSync } from 'node:fs'
@@ -33,26 +35,11 @@ import { resolveProject } from '../paths.js'
 import {
   dataDirOf,
   mcpRows,
-  presetIdSet,
   readProject,
   skillDirs,
   type DeliveryEnv,
   type McpRow,
 } from './config.js'
-
-/** Имя плагина в профиле: строка пресета `preset-1c`. */
-export const name = 'dsh-1c-contour/preset'
-
-/**
- * Конфигурация строки `contour-preset`.
- *
- * Стековый бандл объявляет свои пресеты и передаёт их id; без ключа
- * доставка остаётся у пресета `1c` (дефолт).
- */
-export interface Config {
-  /** id пресетов, которым разрешена доставка контура. */
-  readonly presetIds?: readonly string[]
-}
 
 /** Минимальные формы сервисов, которые нужны доставке. */
 interface Services {
@@ -65,7 +52,6 @@ interface Services {
     }) => void
   } | undefined
   readonly workingDirectory: { ensure: (agent: Agent) => Promise<string> } | undefined
-  readonly agentPresets: { presetForSession: (session: Agent['session']) => string | null } | undefined
 }
 
 /** Область агента умеет монтировать дочерние плагины и переживает их до своей уборки. */
@@ -73,7 +59,7 @@ interface AgentScope {
   plugin: (plugin: unknown, config?: unknown) => Promise<unknown> | unknown
 }
 
-/** Корень пакета контура: из `lib/preset/` — на два уровня вверх. */
+/** Корень пакета контура: из `lib/delivery/` — на два уровня вверх. */
 export function packageRoot(): string {
   return fileURLToPath(new URL('../../', import.meta.url))
 }
@@ -85,22 +71,6 @@ function readText(path: string): string | null {
   } catch {
     return null
   }
-}
-
-/**
- * Пресет, под которым реально идёт сессия.
- *
- * Проекция реестра пресетов перекрывает заголовок сессии: пресет могли
- * выбрать в пустой сессии после создания.
- * @param agent - агент сессии.
- * @param services - реестр пресетов, если он есть.
- * @returns идентификатор пресета либо `null`.
- */
-export function presetOf(agent: Agent, services: Services): string | null {
-  const current = services.agentPresets?.presetForSession(agent.session)
-  if (current !== undefined && current !== null && current !== '') return current
-  const header = (agent.session as unknown as { header?: { agentPreset?: string } }).header
-  return header?.agentPreset ?? null
 }
 
 /** Доставка одному агенту: провайдер скиллов и MCP-серверы проекта. */
@@ -159,16 +129,12 @@ async function mount(
 }
 
 /**
- * Подключить доставку пресета к хосту.
- * @param ctx - контекст плагина.
- * @param config - набор пресетов из строки `contour-preset`.
+ * Подключить доставку контура к хосту: аддитив к любому пресету, cwd-гейт.
+ * @param ctx - контекст хост-плагина.
  */
-export function apply(ctx: Context, config: Config = {}): void {
+export function applyDelivery(ctx: Context): void {
   const root = packageRoot()
-  const presetIds = presetIdSet(config.presetIds, (message) => {
-    ctx.logger.warn(`${name}: ${message}`)
-  })
-  // Службы читаются через `ctx.get`: у пресета их может не быть (SDK, тесты),
+  // Службы читаются через `ctx.get`: в тестах и SDK их может не быть,
   // а Cordis запрещает трогать незаявленную службу как свойство.
   const service = (key: keyof Services): Services[keyof Services] =>
     (ctx.get(key) as Services[keyof Services])
@@ -176,7 +142,6 @@ export function apply(ctx: Context, config: Config = {}): void {
     get loader() { return service('loader') as Services['loader'] },
     get shellEnv() { return service('shellEnv') as Services['shellEnv'] },
     get workingDirectory() { return service('workingDirectory') as Services['workingDirectory'] },
-    get agentPresets() { return service('agentPresets') as Services['agentPresets'] },
   }
   const shellEnv = services.shellEnv
   if (shellEnv !== undefined) {
@@ -191,7 +156,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
   }
 
-  /** Доставка ровно один раз на агента: пресет могли выбрать в пустой сессии. */
+  /** Доставка ровно один раз на агента. */
   const delivered = new WeakSet<Agent>()
   const pending = new WeakMap<Agent, Promise<void>>()
   const ensure = (agent: Agent): Promise<void> => {
@@ -204,8 +169,6 @@ export function apply(ctx: Context, config: Config = {}): void {
   }
   const deliver = async (agent: Agent): Promise<void> => {
     if (delivered.has(agent)) return
-    const preset = presetOf(agent, services)
-    if (preset === null || !presetIds.has(preset)) return
     const directory = services.workingDirectory
     if (directory === undefined) return
     let cwd: string
@@ -231,34 +194,15 @@ export function apply(ctx: Context, config: Config = {}): void {
     }
   }
 
-  const agents = new Map<string, Agent>()
-  // Событие создания агента идёт в области агента, а пресет живёт своей
-  // областью: без `global` подписка не увидит ни одной сессии.
+  // Создание агента не ждёт MCP: ожидание — на первом шаге (pre-step),
+  // иначе недоступная станция держит старт сессии десятки секунд.
   ctx.on('agent/created', ({ agent }) => {
-    agents.set(agent.id, agent)
-    // Создание агента не ждёт MCP: ожидание — на первом шаге (pre-step),
-    // иначе недоступная станция держит старт сессии десятки секунд.
     void ensure(agent).catch(() => undefined)
     return undefined
   }, { global: true })
-  ctx.on('agent/disposed', ({ agent }) => { agents.delete(agent.id) }, { global: true })
-  // Пресет, выбранный в пустой сессии, агента не создаёт: сессия уже была
-  // под пресетом по умолчанию, а выбор лишь пересобирает композицию. Реестр
-  // объявляет выбор host-событием — по нему доставка и догоняет, до первого
-  // запроса модели, иначе каталог инструментов успевает собраться без MCP.
-  interface PresetSelection {
-    on: (name: string, listener: (id: string, preset: string) => void, options: { global: boolean }) => void
-  }
-  ;(ctx as unknown as PresetSelection).on('agent-preset/selected', (sessionId, preset) => {
-    if (!presetIds.has(preset)) return
-    const agent = agents.get(sessionId)
-    if (agent !== undefined) void ensure(agent)
-  }, { global: true })
-  // Пресет, выбранный в пустой сессии, не создаёт агента заново: доставка
-  // догоняет на первом шаге. `prepend` ставит её раньше публикатора каталога
-  // скиллов, иначе первый запрос уйдёт без контурных скиллов и MCP.
+  // `prepend` ставит доставку раньше публикатора каталога скиллов, иначе
+  // первый запрос уйдёт без контурных скиллов и MCP.
   ctx.on('agent/pre-step', async ({ agent }, next) => {
-    agents.set(agent.id, agent)
     await ensure(agent)
     return next()
   }, { global: true, prepend: true })

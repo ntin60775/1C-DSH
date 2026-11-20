@@ -3,8 +3,8 @@
 
 Цели (правило качества — .agents/skills/testing/references/quality-rule.md):
   spec: tickets/dsh-contour/T7-doctor.md, «Критерии приёмки» — exit 0 на
-        проекте с bundle и пресетом, три фикстуры поломки с разными
-        причинами, `--json` с полями bundle/preset/skills/mcp/layout/project,
+        проекте с bundle и хост-доставкой, три фикстуры поломки с разными
+        причинами, `--json` с полями bundle/delivery/skills/mcp/layout/project,
         тест зелёный без deploy_recon;
   spec: tickets/dsh-contour/T8-pilot.md — запись в реестре проектов есть и
         совпадает с фактом; doctor сверяет её и дописывает свой вердикт
@@ -18,8 +18,11 @@
         профилей testpilot: битый — FAIL `mcp.testpilot-base` с резолвом,
         серверные и профили без base — не FAIL, нечитаемый файл — WARN;
   target: bundle.rows не считает вложенные `- id:` внутри `config:`
-        пресета — реальный дефект разбора патча (тикет, «Границы и
-        расхождения»: 34 строки вместо двух).
+        пресета-копии — реальный дефект разбора патча (тикет, «Границы и
+        расхождения»: 34 строки вместо двух);
+  invariant: host-delivery — пресета-копии `preset-1c` в патче нет (FAIL
+        delivery.preset-copy), умолчание `1c` — миграционный хвост
+        (WARN delivery.stale-default), здоровая установка — одна хост-строка.
 
 Сеть: фикстуры пробуют только заведомо закрытый 127.0.0.1:1, поэтому проба
 `1c-db` даёт WARN, а не FAIL. Запуск: python3 tests/test_doctor.py
@@ -120,7 +123,7 @@ def make_testpilot(fx: Fixture) -> Path:
 	return path
 
 
-def make_package(base: Path, *, preset: bool = True, skills: bool = True) -> Path:
+def make_package(base: Path, *, legacy_preset: bool = False, skills: bool = True) -> Path:
 	"""Пакет контура: патч, сборка и корпус скиллов.
 
 	Корпус скиллов и команд — ссылки на настоящий репозиторий: тест
@@ -128,16 +131,16 @@ def make_package(base: Path, *, preset: bool = True, skills: bool = True) -> Pat
 	чтобы тест не зависел от шага сборки.
 	"""
 	package = base / "pkg"
-	(package / "lib" / "preset").mkdir(parents=True)
+	(package / "lib" / "delivery").mkdir(parents=True)
 	(package / "lib" / "index.js").write_text("// stub\n", encoding="utf-8")
-	(package / "lib" / "preset" / "index.js").write_text("// stub\n", encoding="utf-8")
+	(package / "lib" / "delivery" / "index.js").write_text("// stub\n", encoding="utf-8")
 	(package / "package.json").write_text(json.dumps({
 		"name": BUNDLE,
 		"version": "9.9.9",
 		"dsh": {"bundle": {"patch": "./cordis.patch.yml"}},
 	}), encoding="utf-8")
 	rows = "- insert:\n    - id: 1c-contour\n      name: 'dsh-1c-contour'\n"
-	if preset:
+	if legacy_preset:
 		rows += PRESET_ROW
 	(package / "cordis.patch.yml").write_text(rows, encoding="utf-8")
 	if skills:
@@ -149,7 +152,7 @@ def make_package(base: Path, *, preset: bool = True, skills: bool = True) -> Pat
 	return package
 
 
-def write_install(fx: Fixture, package: Path, *, selected: str = "1c",
+def write_install(fx: Fixture, package: Path, *, selected: str = "standard",
                   bundle: bool = True) -> None:
 	profile = fx.dsh / "profiles" / "web"
 	(profile / "node_modules").mkdir(parents=True)
@@ -223,7 +226,7 @@ def write_project(fx: Fixture, *, contour=None,
 def failing(report: dict) -> list:
 	"""Разделы в FAIL и их коды."""
 	return sorted((name, report[name]["code"]) for name in
-	              ("bundle", "preset", "skills", "mcp", "layout", "project", "state")
+	              ("bundle", "delivery", "skills", "mcp", "layout", "project", "state")
 	              if report[name]["status"] == "fail")
 
 
@@ -258,14 +261,15 @@ def main() -> int:
 		check("здоровая установка — exit 0", r.returncode == 0, r.stdout[-600:])
 		check("--json валиден и без человеческих строк",
 		      r.stdout.lstrip().startswith("{") and isinstance(data, dict), r.stdout[:200])
-		for field in ("bundle", "preset", "skills", "mcp", "layout", "project"):
+		for field in ("bundle", "delivery", "skills", "mcp", "layout", "project"):
 			check(f"--json содержит поле {field}", field in data, sorted(data))
-		check("--json: bundle ok с профилем и строками",
+		check("--json: bundle ok с профилем и одной хост-строкой",
 		      data["bundle"]["status"] == "ok" and data["bundle"]["profile"] == "web"
-		      and data["bundle"]["rows"] == ["1c-contour", "preset-1c"], json.dumps(data["bundle"]))
-		check("--json: preset 1c выбран по умолчанию",
-		      data["preset"]["status"] == "ok" and data["preset"]["id"] == "1c"
-		      and data["preset"]["default"] == "1c", json.dumps(data["preset"]))
+		      and data["bundle"]["rows"] == ["1c-contour"], json.dumps(data["bundle"]))
+		check("--json: доставка хостом, умолчание standard не требуется",
+		      data["delivery"]["status"] == "ok"
+		      and data["delivery"]["row"] == "1c-contour"
+		      and data["delivery"]["default"] == "standard", json.dumps(data["delivery"]))
 		check("--json: скиллов 15 из 15", data["skills"]["found"] == 15
 		      and data["skills"]["expected"] == 15, json.dumps(data["skills"]))
 		check("--json: раскладка .dsh/1c", data["layout"]["dir"] == ".dsh/1c",
@@ -395,25 +399,28 @@ def main() -> int:
 		      and "1c-ssl-skills" in bsp_report["result"].stdout,
 		      bsp_report["result"].stdout[-800:])
 
-		# ── 2. Фикстура «нет пресета»: свой код и своя причина ──
-		fx_preset = Fixture(Path(tmp) / "no-preset")
+		# ── 2. Фикстура «пресет-копия в патче»: свой код и своя причина ──
+		fx_preset = Fixture(Path(tmp) / "preset-copy")
 		make_launcher(fx_preset)
 		make_testpilot(fx_preset)
-		write_install(fx_preset, make_package(Path(tmp) / "no-preset" / "pkgsrc",
-		                                      preset=False))
+		write_install(fx_preset, make_package(Path(tmp) / "preset-copy" / "pkgsrc",
+		                                      legacy_preset=True))
 		write_project(fx_preset)
 		broken_preset = fx_preset.report()
-		check("нет пресета — exit 1", broken_preset["result"].returncode == 1,
+		check("пресет-копия — exit 1", broken_preset["result"].returncode == 1,
 		      broken_preset["result"].stdout[-400:])
-		check("нет пресета — код preset.missing",
-		      broken_preset["data"]["preset"]["code"] == "preset.missing",
-		      json.dumps(broken_preset["data"]["preset"]))
-		check("нет пресета — FAIL только в разделе preset",
-		      [name for name, _ in failing(broken_preset["data"])] == ["preset"],
+		check("пресет-копия — код delivery.preset-copy",
+		      broken_preset["data"]["delivery"]["code"] == "delivery.preset-copy",
+		      json.dumps(broken_preset["data"]["delivery"]))
+		check("пресет-копия — FAIL только в разделе delivery",
+		      [name for name, _ in failing(broken_preset["data"])] == ["delivery"],
 		      failing(broken_preset["data"]))
+		check("пресет-копия — bundle.rows не считает вложенные id конфига",
+		      broken_preset["data"]["bundle"]["rows"] == ["1c-contour", "preset-1c"],
+		      json.dumps(broken_preset["data"]["bundle"]))
 		human = fx_preset.run()
-		check("нет пресета — причина в человеческом выводе",
-		      "FAIL preset:" in human.stdout and "preset-1c" in human.stdout,
+		check("пресет-копия — причина в человеческом выводе",
+		      "FAIL delivery:" in human.stdout and "preset-1c" in human.stdout,
 		      human.stdout[-500:])
 
 		# ── 3. Фикстура «MCP не поднялся»: нет команды 1c-testpilot ──
@@ -460,29 +467,29 @@ def main() -> int:
 		      and "контурных скиллов нет" in skills_human.stdout,
 		      skills_human.stdout[-500:])
 
-		codes = {broken_preset["data"]["preset"]["code"],
+		codes = {broken_preset["data"]["delivery"]["code"],
 		         broken_mcp["data"]["mcp"]["code"],
 		         broken_skills["data"]["skills"]["code"]}
 		check("три фикстуры — три разных кода причин", len(codes) == 3, sorted(codes))
 
-		# ── 5. Пресет объявлен, но не выбран: WARN, exit 0 ──
-		fx_default = Fixture(Path(tmp) / "other-default")
+		# ── 5. Умолчание 1c — миграционный хвост: WARN, exit 0 ──
+		fx_default = Fixture(Path(tmp) / "stale-default")
 		make_launcher(fx_default)
 		make_testpilot(fx_default)
-		write_install(fx_default, make_package(Path(tmp) / "other-default" / "pkgsrc"),
-		              selected="standard")
+		write_install(fx_default, make_package(Path(tmp) / "stale-default" / "pkgsrc"),
+		              selected="1c")
 		write_project(fx_default)
 		other = fx_default.report()
-		check("пресет не по умолчанию — exit 0 (WARN, не FAIL)",
+		check("умолчание 1c — exit 0 (WARN, не FAIL)",
 		      other["result"].returncode == 0, other["result"].stdout[-400:])
-		check("пресет не по умолчанию — код preset.not-default",
-		      other["data"]["preset"]["status"] == "warn"
-		      and other["data"]["preset"]["code"] == "preset.not-default",
-		      json.dumps(other["data"]["preset"]))
+		check("умолчание 1c — код delivery.stale-default",
+		      other["data"]["delivery"]["status"] == "warn"
+		      and other["data"]["delivery"]["code"] == "delivery.stale-default",
+		      json.dumps(other["data"]["delivery"]))
 
 		# ── 5b. Порядок слоёв selectedDefault: home применяется последним ──
-		# spec: тикет Т7, «preset» — умолчание читается из patch-документа
-		# профиля и home-слоя; DSH применяет home последним.
+		# умолчание читается из patch-документа профиля и home-слоя;
+		# DSH применяет home последним; для delivery это только WARN-хвост.
 		fx_layers = Fixture(Path(tmp) / "layers")
 		make_launcher(fx_layers)
 		make_testpilot(fx_layers)
@@ -494,9 +501,9 @@ def main() -> int:
 			encoding="utf-8")
 		home_wins = fx_layers.report()
 		check("home-слой перекрывает профиль: selectedDefault 1c",
-		      home_wins["data"]["preset"]["status"] == "ok"
-		      and home_wins["data"]["preset"]["default"] == "1c",
-		      json.dumps(home_wins["data"]["preset"])[:400])
+		      home_wins["data"]["delivery"]["status"] == "warn"
+		      and home_wins["data"]["delivery"]["default"] == "1c",
+		      json.dumps(home_wins["data"]["delivery"])[:400])
 		(fx_layers.dsh / "cordis.patch.yml").write_text(
 			"- id: agent-preset-registry\n  config:\n    selectedDefault: 'standard'\n",
 			encoding="utf-8")
@@ -504,10 +511,10 @@ def main() -> int:
 			"- id: agent-preset-registry\n  config:\n    selectedDefault: '1c'\n",
 			encoding="utf-8")
 		profile_loses = fx_layers.report()
-		check("профильный слой не перебивает home: WARN, default standard",
-		      profile_loses["data"]["preset"]["status"] == "warn"
-		      and profile_loses["data"]["preset"]["default"] == "standard",
-		      json.dumps(profile_loses["data"]["preset"])[:400])
+		check("профильный слой не перебивает home: ok, default standard",
+		      profile_loses["data"]["delivery"]["status"] == "ok"
+		      and profile_loses["data"]["delivery"]["default"] == "standard",
+		      json.dumps(profile_loses["data"]["delivery"])[:400])
 
 		# ── 5c. CLI: пробельная форма --profile, чужой флаг — exit 2 ──
 		# invariant: незнакомый флаг не глотается.
