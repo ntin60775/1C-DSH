@@ -14,7 +14,9 @@
  * - монтирует MCP-серверы проекта (`unica`, `1c-testpilot`, `1c-db` с
  *   инстансами, `1c-kd`) в области агента: `unica` получает cwd проекта и
  *   глобальный кэш рантаймов, адреса тулкита — из `.dsh/1c`;
- * - публикует `DSH_1C_ROOT` — путь к пакету контура для скриптов команд.
+ * - публикует `DSH_1C_ROOT` — путь к пакету контура для скриптов команд;
+ *   регистрация реактивная (`ctx.inject(['shellEnv'])`): сервис может
+ *   подняться позже плагина, жёсткой зависимости нет.
  *
  * Готовые реализации берутся из установки DSH через `ctx.loader.import`:
  * своя копия `@deepseek-ai/dsh-mcp-client` дала бы второй экземпляр
@@ -44,7 +46,7 @@ import {
 /** Минимальные формы сервисов, которые нужны доставке. */
 interface Services {
   readonly loader: { import: (specifier: string) => Promise<unknown> } | undefined
-  readonly shellEnv: {
+  readonly shellEnv?: {
     register: (contributor: {
       readonly name: string
       readonly variables: Record<string, { readonly description: string }>
@@ -140,11 +142,14 @@ export function applyDelivery(ctx: Context): void {
     (ctx.get(key) as Services[keyof Services])
   const services: Services = {
     get loader() { return service('loader') as Services['loader'] },
-    get shellEnv() { return service('shellEnv') as Services['shellEnv'] },
     get workingDirectory() { return service('workingDirectory') as Services['workingDirectory'] },
   }
-  const shellEnv = services.shellEnv
-  if (shellEnv !== undefined) {
+  // shellEnv может подняться позже плагина контура (порядок бандлов):
+  // реактивная регистрация — ctx.inject ждёт сервис и переживает его
+  // перезапуск; жёсткой зависимости нет (SDK/тесты без shellEnv живут).
+  ctx.inject(['shellEnv'], (inner) => {
+    const shellEnv = inner.get('shellEnv') as Services['shellEnv']
+    if (shellEnv === undefined) return
     try {
       shellEnv.register({
         name: 'dsh-1c-contour',
@@ -152,9 +157,9 @@ export function applyDelivery(ctx: Context): void {
         resolve: () => ({ DSH_1C_ROOT: root }),
       })
     } catch (error: unknown) {
-      ctx.logger.warn(`dsh-1c-contour: DSH_1C_ROOT не объявлен: ${String(error)}`)
+      inner.logger.warn(`dsh-1c-contour: DSH_1C_ROOT не объявлен: ${String(error)}`)
     }
-  }
+  })
 
   /** Доставка ровно один раз на агента. */
   const delivered = new WeakSet<Agent>()
