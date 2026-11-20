@@ -632,7 +632,8 @@ def check_unica_artifacts(report: Report) -> None:
 	if applicable and good == applicable:
 		report.ok("mcp", f"артефакты манифеста Юники на месте ({good} из {applicable}, "
 		          f"{target})")
-	if (runtimes / ".partial").is_dir():
+	partial = runtimes / ".partial"
+	if partial.is_dir() and any(item.is_file() for item in partial.rglob("*")):
 		report.warn("mcp", "в кэше рантаймов остался .partial — след оборванной "
 		            "закачки; сам не мешает, но говорит, что закачка не работает "
 		            "(скилл 1c-unica-artifacts)", code="mcp.unica-partial")

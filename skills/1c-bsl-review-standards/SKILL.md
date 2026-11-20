@@ -91,7 +91,7 @@ whenToUse: "Перед отчётом о завершении любой BSL-п�
 6. **Раскрытие и компиляционная сверка** (живые находки домена B):
    `unica.docs` по std-id — требование и платформенный эквивалент
    (`platform-help` / `development-standard`; `configuration-documentation`
-   в 0.15 отвечает `unsupported_source`). Каждая подсказка «используйте
+   отвечает `unsupported_source`). Каждая подсказка «используйте
    X.Y» сверяется с метаданными (`unica.view main:CommonModule.X`,
    `unica.search`). Буквальный поиск идёт страницами до последнего
    совпадения, первая страница несёт `data.totals`: пока есть `cursor`,

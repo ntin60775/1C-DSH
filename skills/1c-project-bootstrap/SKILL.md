@@ -66,7 +66,7 @@ whenToUse: "Проект 1С подключается к контуру (впе�
    `contour.local.json` и `profiles.yaml` остаются вне git.
 6. **Признак контура**: тестовое дерево — файл `.dsh/1c/contour` со словом
    `test` (прод по умолчанию, fail-closed). Ключ `contour:` в
-   `v8project.local.yaml` не писать: v8-runner 0.15 отвергает незнакомый
+   `v8project.local.yaml` не писать: раннер отвергает незнакомый
    верхнеуровневый ключ local-слоя, и `unica.run` падает с `bad_value`.
 7. **Носитель состояния инфраструктуры** — `.agents/contour-status.md`
    (в git): запись по факту приёмки (формат и правила — раздел

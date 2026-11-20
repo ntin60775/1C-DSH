@@ -23,8 +23,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Юника 0.15 обслуживает только 2025-06-18, 2025-11-25 и 2026-07-28.
-# 2025-11-25 — обычная сессия с полным tools/list (без страниц каталога).
+# Ядро Юники обслуживает ревизии 2025-06-18, 2025-11-25 и 2026-07-28:
+# на 2026-07-28 каталог — восемь инструментов (без task.*), вызов сам
+# дожидается итога. Контур всегда договаривается на 2025-11-25 —
+# полный каталог из 11 инструментов.
 HANDSHAKE = (
 	'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"1c-dsh-doctor","version":"0"}}}\n'
 	'{"jsonrpc":"2.0","method":"notifications/initialized"}\n'

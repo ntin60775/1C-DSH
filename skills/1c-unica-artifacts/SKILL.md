@@ -11,9 +11,9 @@ whenToUse: "bsl_diagnostics/bsl_index не оживает или провайд�
 командой или перенос из копии кэша на той же машине. Разовый чек рассинхрона —
 `/1c-doctor` (сверка манифеста с кэшем артефактов).
 
-Контракт 0.15 (манифест schema 2): три артефакта — `unica`, `v8-runner`,
+Контракт поставки (манифест schema 2): три артефакта — `unica`, `v8-runner`,
 `bsl-analyzer`; ожидаемые версии — `unica.yaml` в корне контура, сверка —
-`/1c-doctor`. `rlm-tools-bsl` в манифесте 0.15 нет — не требовать и не искать.
+`/1c-doctor`. `rlm-tools-bsl` в манифесте нет — не требовать и не искать.
 
 Установка одна на машину: каталог плагина — `~/.local/share/unica/<версия>/`
 (версия — ключ `unica` из `unica.yaml`), кэш артефактов —
@@ -21,7 +21,7 @@ whenToUse: "bsl_diagnostics/bsl_index не оживает или провайд�
 (`UNICA_GLOBAL_ROOT`, `UNICA_GLOBAL_VERSION`). Корень кэша переопределяет
 `UNICA_RUNTIME_CACHE_DIR`.
 
-## Как Unica резолвит артефакты (0.15)
+## Как Unica резолвит артефакты
 
 - Контракт — `runtime-manifest.json` в каталоге установленной версии
   плагина (`~/.local/share/unica/<версия>/`): `artifacts` → имя → `version`
@@ -76,7 +76,7 @@ export UNICA_RUNTIME_CACHE_DIR="${UNICA_RUNTIME_CACHE_DIR:-$HOME/.local/share/un
 "$PLUGIN_ROOT/bootstrap/bin/linux-x64/unica-bootstrap" prefetch --plugin-root "$PLUGIN_ROOT"
 ```
 
-`UNICA_RUNTIME_CACHE_DIR` обязателен: без него bootstrap 0.15 выбирает кэш
+`UNICA_RUNTIME_CACHE_DIR` обязателен: без него bootstrap выбирает кэш
 по цепочке хостов (например `~/.codex/unica/runtimes`), и контурный лаунчер
 артефакты не найдёт.
 

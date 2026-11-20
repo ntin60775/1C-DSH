@@ -206,6 +206,35 @@ links:
 - Стык ibsrv ↔ `push` — факт в канон и выход (гасить публикацию на время
   сборки либо публиковать после), без автоматики в скриптах.
 
+## Выполненное (20.11)
+
+1. `unica.yaml`: `tag: v0.16.0`, `unica: 0.16.0`, `bsl-analyzer: 0.4.6`,
+   `v8-runner: 0.18.1`, `min: 0.16.0`.
+2. `install_unica_runtime.py` (без `--prune`): манифест schema 2 собран
+   упаковщиком тега, bootstrap из исходников, prefetch 3 артефактов,
+   лаунчер пишет `unica 0.16.0`.
+3. Скиллы Юники: 50 шт., тег `v0.16.0`, коммит `56c240682880`.
+4. Живые пробы: handshake `2025-11-25` → `serverInfo 0.16.0`, 11 глаголов;
+   `unica.run {}` → 10 операций, `support.adapter: v8-runner/0.18.1`;
+   `unica.view main:Configuration` → `synonym` строкой НСтр (факт 0.16).
+5. Doctor на пилоте: exit 0, артефакты 3/3, скиллы 0.16.0; ложный WARN о
+   пустом `.partial` снят в `scripts/doctor.py`.
+6. Канон: `docs/UNICA.md` (поверхность, адресация, НСтр, `ifRev`/`conflict`,
+   раннер, границы, траблшутинг), `templates/agents-section.md`
+   (НСтр, `ifRev`, `ibsrv`↔`infobase_busy`, окна `launch`), `skills/1c-contour`,
+   `1c-project-layout` (+`references/v8project.md`: стенды на Linux,
+   `web.managed`, `apache.path`, содержимое `localPath`/`workPath`,
+   `untracked_base` у кластера), `1c-unica-worktree`, `1c-ibcmd-delivery`,
+   `1c-ibsrv-publish`, `1c-unica-artifacts`, `1c-project-bootstrap`,
+   `1c-test-contour`, `1c-bsl-review-standards`, комментарий
+   `scripts/unica_ping.py`. Заголовки поверхности де-версионированы.
+7. Проверки: `pnpm test` 339/339, `pnpm typecheck` зелёный, python-набор
+   30/30, линт скиллов 18/18 и 11/11, KB lint 0 ERR.
+
+Осталось: живые пробы записи (НСтр-план, `code.replace` с `ifRev`), стык
+`ibsrv`↔`push` на живом стенде, `/1c-bootstrap` по парку (команда
+оператора), `--prune` (решение оператора).
+
 ## Границы и риски
 
 - НСтр — единственный класс отказа, на который агент наткнётся в первой же
