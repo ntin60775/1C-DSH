@@ -16,6 +16,10 @@ updated: 2026-11-19
 
 ## Открытые
 
+- [dap-debugging.md](dap-debugging.md) — станция `1c-dap`: отладка BSL из
+  сессии агента (точки, стек, локальные переменные) поверх `unica dap` и
+  `debug-server` раннера; сценарий — e2e-прогон, клиент поднимает
+  testpilot. План-гейт 20.11 пройден; дальше critic и нарезка.
 - [team-delivery-preset-ids.md](team-delivery-preset-ids.md) — шов
   доставки контура для стековых пресетов 1С (юнит `team-profiles`
   ntin, тикет 05): T1 принят 14.11; живая GUI-проба — ntin
