@@ -53,6 +53,7 @@ function createFakeContext(cwd: string): FakeContext {
     // Службы доставки (loader/shellEnv/workingDirectory через ctx.get) в
     // гейт-тестах отсутствуют: доставка не монтируется, гейты изолированы.
     get: () => undefined,
+    inject: (_deps: string[], callback: (inner: unknown) => void) => callback(ctx),
     workingDirectory: {
       get: () => cwd,
       ensure: async () => cwd,

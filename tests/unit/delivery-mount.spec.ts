@@ -33,6 +33,7 @@ function harness(options: { cwd: string; services?: Record<string, unknown> }) {
     shellEnv: { register: (contributor: unknown) => { registered.push(contributor) } },
     ...options.services,
   }
+  const injections: ((inner: unknown) => void)[] = []
   const ctx = {
     on(name: string, listener: (...args: never[]) => unknown) {
       const list = listeners.get(name) ?? []
@@ -40,9 +41,14 @@ function harness(options: { cwd: string; services?: Record<string, unknown> }) {
       listeners.set(name, list)
     },
     get(key: string) { return services[key] },
+    inject(deps: string[], callback: (inner: unknown) => void) {
+      if (deps.every((dep) => services[dep] !== undefined)) callback(ctx)
+      else injections.push(callback)
+    },
     logger: { warn() {} },
   }
   applyDelivery(ctx as never)
+  const fireInjections = () => { for (const callback of injections) callback(ctx) }
   const emit = async (name: string, ...args: unknown[]): Promise<void> => {
     for (const listener of listeners.get(name) ?? []) {
       await (listener as (...values: unknown[]) => Promise<unknown>)(...args, async () => ({ kind: 'continue' }))
@@ -57,7 +63,7 @@ function harness(options: { cwd: string; services?: Record<string, unknown> }) {
       },
     },
   })
-  return { mounts, registered, emit, agent, services }
+  return { mounts, registered, emit, agent, services, fireInjections }
 }
 
 /** Дождаться асинхронной доставки, запущенной без await (событие создания). */
@@ -159,6 +165,19 @@ describe('доставка контура', () => {
       const stand = harness({ cwd: tree.root })
       await stand.emit('agent/pre-step', { agent: stand.agent('s1', 'standard') })
       expect(stand.mounts).toHaveLength(5)
+    } finally {
+      tree.cleanup()
+    }
+  })
+
+  it('DSH_1C_ROOT регистрируется, когда shellEnv поднимается позже', async () => {
+    const tree = projectTree()
+    try {
+      const stand = harness({ cwd: tree.root, services: { shellEnv: undefined } })
+      expect(stand.registered).toHaveLength(0)
+      stand.services['shellEnv'] = { register: (contributor: unknown) => { stand.registered.push(contributor) } }
+      stand.fireInjections()
+      expect(stand.registered).toHaveLength(1)
     } finally {
       tree.cleanup()
     }
