@@ -1,0 +1,7 @@
+provenance: 2026-11-20T17:51:19+02:00; base contour-deploy main d5feec1 (git archive main в /tmp/t1-base) + новый tests/test_install.py из worktree
+команда: cd /tmp/t1-base && python3 tests/test_install.py
+ожидание: красный — pack-deploy нет в SKILLS установщика и нет skills/pack-deploy/SKILL.md
+----------------------------------------------------------------------
+Ran 10 tests in 0.340s
+
+FAILED (failures=3, errors=3)

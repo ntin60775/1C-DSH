@@ -334,7 +334,9 @@ bootstrap» слит и принят оператором 16.11 — тикет �
 Критик — один прогон на юнит до первого
 ship (записи: DSH — 09.11 в спеке, #62 — 08.11, #56 — 06.11,
 org-regulations-delivery — 20.11 в tickets/org-regulations-delivery/critic-triage.md);
-ревью-панель перед merge — скилл `ship`.
+ревью-панель перед merge — скилл `ship`. Юнит org-regulations-delivery:
+Т1 слит и принят 20.11 (contour-deploy `cd57c98`), Т4 слит и принят
+20.11 (1C-DSH `5a109f1`); следующий — Т2.
 
 ## Что осталось
 
@@ -344,9 +346,13 @@ org-regulations-delivery — 20.11 в tickets/org-regulations-delivery/critic-tr
   решение оператора: архив+замена copy без ask); нарезка 20.11 —
   Т1–Т5 приняты оператором, трекер
   [tickets/org-regulations-delivery/](../../tickets/org-regulations-delivery/).
-  Порядок: Т1 → Т2 → Т5; Т3 после Т1, Т4 независим. Следующий — Т1
-  (`ship`). Цели: contour-deploy (Т1, Т2), орг-репо
-  `org-dev-regulations` (Т3), 1C-DSH (Т2 канон схемы, Т4 инвариант).
+  **Т1 принят 20.11** (contour-deploy `cd57c98`, push; pack-deploy
+  доставлен глобально, 4 скилла check ok; панель 4 роли, P1/P2 закрыты,
+  исполнение прозы передано Т5 C4). **Т4 принят 20.11** (1C-DSH
+  `5a109f1`, push; инвариант src/ без .agents, мутация и fail-closed
+  пробы краснят, 340 тестов). Порядок: Т2 → Т5; Т3 после Т1 (разблокирован).
+  Следующий — Т2 (`ship`). Цели: contour-deploy (Т2), орг-репо
+  `org-dev-regulations` (Т3), 1C-DSH (Т2 канон схемы, Т5 отчёт репетиции).
   Реальный парк — отдельной командой оператора после приёмки Т5.
 - Юнит «Отладка BSL из сессии агента» (`dap-debugging`): draft-спека
   [docs/plans/dap-debugging.md](../plans/dap-debugging.md), открыта 20.11;

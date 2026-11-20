@@ -1,0 +1,23 @@
+provenance: 2026-11-20T17:53:35+02:00; worktree t4-invariant 5a109f1; base 1C-DSH main 29424b7
+== независимая сверка слоя ==
+файлов: 23, вхождений .agents: 0 (ожидание 0)
+== зелёный прогон (ожидание: 1 passed) ==
+ ✓ tests/unit/no-agents-packs.spec.ts (1 test) 7ms
+      Tests  1 passed (1)
+== мутация: резолв пути в src/gates/anon.ts (фрагмент) ==
+import { join } from 'node:path'
+export const packsRoot = join('.agents', 'packs')
+команда: DSH_1C_GUARD_ROOT=/tmp/t4probe npx vitest run tests/unit/no-agents-packs.spec.ts
+   × инвариант Т4: src/ контура без литерала .agents > ни одного вхождения .agents в src/ 13ms
+     → литерал .agents найден в 1 файл(ах): expected [ 'src/gates/anon.ts' ] to deeply equal []
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+== возврат мутации (ожидание: зелёный) ==
+      Tests  1 passed (1)
+== fail-closed проба: нечитаемый каталог с нарушением (ожидание: красный) ==
+   × инвариант Т4: src/ контура без литерала .agents > ни одного вхождения .agents в src/ 5ms
+     → EACCES: permission denied, scandir '/tmp/t4probe/src/hidden'
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+== полный набор + typecheck ==
+ Test Files  21 passed (21)
+      Tests  340 passed (340)
+tsc: ok

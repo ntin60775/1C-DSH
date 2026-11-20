@@ -3,7 +3,7 @@ node_type: index
 title: Спеки юнитов контура
 service: _platform
 status: active
-updated: 2026-11-19
+updated: 2026-11-20
 ---
 
 # Спеки юнитов
