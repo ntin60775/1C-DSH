@@ -31,3 +31,12 @@ level = "xhigh"
 [agents.curator]
 model = "qwen-token-plan-deepseek/deepseek-v4.1-flash-1017"
 level = "high"
+
+# Пул flash для проекционной валидации (скилл critic). Маршруты и уровни
+# сверены с живым каталогом 20.11; решение оператора 20.11 — стандартная
+# раскладка. Модель под срез выбирает основная сессия с причиной в отчёте.
+[validation]
+pool = [
+  { model = "deepseek-account/deepseek-flash", level = "max" },
+  { model = "qwen-token-plan/qwen3.8-flash", level = "xhigh" },
+]

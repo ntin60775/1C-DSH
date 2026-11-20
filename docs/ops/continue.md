@@ -3,7 +3,7 @@ node_type: runbook
 title: Продолжение работы над проектом
 service: _platform
 status: active
-updated: 2026-11-19
+updated: 2026-11-20
 links:
   part_of: [README.md]
 ---
@@ -332,11 +332,22 @@ bootstrap» слит и принят оператором 16.11 — тикет �
 приняты (Т10 — 16.11), протокол опубликован комментом в #56,
 `https://github.com/ntin60775/1c-zcode/issues/56#issuecomment-6916217699`.
 Критик — один прогон на юнит до первого
-ship (записи: DSH — 09.11 в спеке, #62 — 08.11, #56 — 06.11); ревью-панель
-перед merge — скилл `ship`.
+ship (записи: DSH — 09.11 в спеке, #62 — 08.11, #56 — 06.11,
+org-regulations-delivery — 20.11 в tickets/org-regulations-delivery/critic-triage.md);
+ревью-панель перед merge — скилл `ship`.
 
 ## Что осталось
 
+- Юнит «Поставка орг-регламентов» (`org-regulations-delivery`): спека
+  [docs/plans/org-regulations-delivery.md](../plans/org-regulations-delivery.md),
+  план-гейт и гейт проекций 20.11 (27 находок T1–T27 внесены, T8 —
+  решение оператора: архив+замена copy без ask); нарезка 20.11 —
+  Т1–Т5 приняты оператором, трекер
+  [tickets/org-regulations-delivery/](../../tickets/org-regulations-delivery/).
+  Порядок: Т1 → Т2 → Т5; Т3 после Т1, Т4 независим. Следующий — Т1
+  (`ship`). Цели: contour-deploy (Т1, Т2), орг-репо
+  `org-dev-regulations` (Т3), 1C-DSH (Т2 канон схемы, Т4 инвариант).
+  Реальный парк — отдельной командой оператора после приёмки Т5.
 - Юнит «Отладка BSL из сессии агента» (`dap-debugging`): draft-спека
   [docs/plans/dap-debugging.md](../plans/dap-debugging.md), открыта 20.11;
   план-гейт пройден 20.11, дальше `critic` и нарезка. Зависимость —
