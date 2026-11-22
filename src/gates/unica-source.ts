@@ -258,7 +258,7 @@ export function bashWritesToSource(command: string, cwd: string): string | null 
 }
 
 /**
- * Подсказка, как выразить правку файла через поверхность Unica 0.15.
+ * Подсказка, как выразить правку файла через поверхность Unica.
  * @param rel - путь файла относительно корня дерева.
  * @returns подсказка инструмента и операции.
  */
@@ -360,7 +360,7 @@ function blockMessage(
     `Файл: ${rel}`,
     `Как выразить: ${suggestion}`,
     '',
-    'Поверхность Unica 0.15 (глаголы, не инструменты-на-файл):',
+    'Поверхность Unica (глаголы, не инструменты-на-файл):',
     '  unica.view / unica.search  — чтение/поиск (страницы по cursor)',
     '  unica.resolve {paths}      — пути/строки → логические адреса',
     '  unica.apply                — правка кода и структуры (ops из view.can)',
