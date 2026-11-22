@@ -230,7 +230,7 @@ updated: <дата>
    | роль | `model` | `level` |
    |---|---|---|
    | `reviewer-spec`, `reviewer-tests`, `reviewer-code`, `reviewer-kb` | `qwen-token-plan-deepseek/deepseek-v4.1-flash-1017` | `max` |
-   | `critic` | `qwen-token-plan-max/qwen4-max-preview` | `xhigh` |
+   | `critic` | `qwen-token-plan-max/qwen4-max` | `xhigh` |
    | `curator` | `qwen-token-plan-deepseek/deepseek-v4.1-flash-1017` | `high` |
 
    Сверь её с живым каталогом: все шесть маршрутов и их уровни доступны —

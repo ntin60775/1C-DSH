@@ -2,7 +2,8 @@
 # One [agents.<name>] section per role; `model` is required.
 # 16.11: ревью-панель и куратор — qwen-token-plan-deepseek
 # (deepseek-v4.1-flash-1017), критик — qwen-token-plan-max
-# (qwen4-max-preview): критик отличается от модели сессии.
+# (qwen4-max): критик отличается от модели сессии; 22.11 preview снят
+# из каталога — маршрут приведён к канону init.
 # `level` is the role's reasoning level, written verbatim into the definition;
 # with the key absent the launch-time check falls back to the maximum
 # available (onto-doc decisions 3 and 4) — the generator only omits the line.
@@ -25,7 +26,7 @@ model = "qwen-token-plan-deepseek/deepseek-v4.1-flash-1017"
 level = "max"
 
 [agents.critic]
-model = "qwen-token-plan-max/qwen4-max-preview"
+model = "qwen-token-plan-max/qwen4-max"
 level = "xhigh"
 
 [agents.curator]
