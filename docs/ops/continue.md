@@ -371,10 +371,10 @@ tickets/org-regulations-delivery/evidence/); юнит завершён.
   regulations/org (пак-шаг).
   Followups юнита: дефект продюсера OntoShip — `install.sh --copy --pack`
   тащит `.git` орг-репо в копию пака (вложенный репозиторий в проекте);
-  вне рамок юнита, issue продюсера при gh-доступе. Канон-проход:
-  `1c-contour-deploy/SKILL.md` несёт «кейс erp-mini 2026-11-20»
-  (имя проекта + дата, TEXT-STYLE §1) — было до юнита, чистится
-  следующим проходом канона.
+  ишью оформлен: ntin60775/ontoship-ntin#4 (22.11). Канон-проход:
+  хроника «кейс erp-mini» в `1c-contour-deploy/SKILL.md` убрана
+  (contour-deploy, 22.11, решение оператора); прочих имён проектов
+  и дат в скиллах contour-deploy нет (grep 0).
 - Юнит «Отладка BSL из сессии агента» (`dap-debugging`): draft-спека
   [docs/plans/dap-debugging.md](../plans/dap-debugging.md), открыта 20.11;
   план-гейт пройден 20.11, дальше `critic` и нарезка. Зависимость —
