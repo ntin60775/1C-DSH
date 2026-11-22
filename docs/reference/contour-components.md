@@ -33,12 +33,12 @@ links:
 | Маркер | Носитель | Охранник |
 |---|---|---|
 | Гейты — события Cordis, не хуки | `src/index.ts` (адаптер), `src/contract.ts` (чистые функции) | векторы `tests/parity/`, юнит-тесты |
-| Пресет — полная копия `standard` + доставка | `cordis.patch.yml`, `src/preset/` | `tests/unit/preset*.spec.ts` |
+| Доставка — аддитив к любому пресету, отдельного пресета нет | `src/delivery/` (`planDelivery`, `mount`), `cordis.patch.yml` | `tests/unit/delivery*.spec.ts`, doctor (раздел bundle) |
 | Скиллы — слоты DSH (`name`, `description`, `whenToUse`, `license`, `metadata`, invocation) | frontmatter `skills/`, `commands/` | `scripts/lint_skill_frontmatter.py` |
-| Проектные паки — вендоринг в `.dsh/1c/skills`, подъём пресетом | `src/preset/config.ts` (`skillDirs`), канон `1c-project-bootstrap` | `tests/unit/preset.spec.ts`, doctor (`project.style-missing`, `project.bsp-missing`) |
+| Проектные паки — вендоринг в `.dsh/1c/skills`, подъём доставкой | `src/delivery/config.ts` (`skillDirs`), канон `1c-project-bootstrap` | `tests/unit/delivery.spec.ts`, doctor (`project.style-missing`, `project.bsp-missing`) |
 | Раскладка проекта — `.dsh/1c` → `.dsh`, fail-closed | `src/paths.ts` (`LAYOUT_DIRS`), `scripts/contour_paths.py` | `tests/unit/layout-t6.spec.ts`, `tests/test_contour_paths.py` |
 | Состояние — `DSH_1C_STATE_DIR` | `src/state.ts`, `src/lock.ts`, `scripts/ib_lock.py` | `tests/test_ib_lock.py`, формат замка — литералы в обоих наборах |
-| MCP — записи поднимает пресет на уровне проекта | `src/preset/config.ts` (`mcpRows`) | `tests/unit/preset.spec.ts`, doctor (раздел mcp) |
+| MCP — записи поднимает доставка на уровне проекта | `src/delivery/config.ts`, `src/delivery/index.ts` | `tests/unit/delivery-mount.spec.ts`, doctor (раздел mcp) |
 | Поставка — bundle DSH (`dsh.bundle.patch`, `files`) | `package.json`, `cordis.patch.yml` | doctor (раздел bundle) |
 | Нет наследия ZCode в поставляемом слое | весь поставляемый слой | `tests/unit/no-legacy.spec.ts` |
 
@@ -53,7 +53,7 @@ links:
 | Носитель | Роль |
 |---|---|
 | `package.json` | манифест `dsh-1c-contour`, `dsh.bundle.patch`, состав `files` |
-| `cordis.patch.yml` | строки профиля `1c-contour` (плагин) и `preset-1c` (пресет «Контур 1С») |
+| `cordis.patch.yml` | одна строка профиля `1c-contour` (плагин контура) |
 | `unica.yaml` | пин поставки Юники: тег скиллов, ядро, `bsl-analyzer`, `v8-runner`, минимальное ядро |
 | `locale/`, `icon.svg` | локаль и иконка бандла |
 | `src/` → `lib/` | сборка TS; живая сессия держит загруженное поколение модулей |
@@ -141,10 +141,10 @@ Python — stdlib без зависимостей; bash — стартеры и 
 
 | Компонент | Куда ставится | Интерфейс контура |
 |---|---|---|
-| `1c-bsl-code-style` (пак стиля) | вендор в `.dsh/1c/skills/1c-bsl-code-style` | подъём пресетом; чекер гейта `bsl-style-gate` резолвится из `contour.json → style.pack`; приоритет пака над стандартами и стат-анализом; doctor `project.style-missing` |
-| `1c-ssl-skills` (скилл `bsp`, зеркало, MIT) | вендор `install.sh --skill bsp` в `.dsh/1c/skills/bsp` | подъём пресетом; doctor `project.bsp-missing`; канон вендоринга — `1c-project-bootstrap`; синк зеркала — его `UPSTREAM.md` |
-| Unica (внешний плагин) | глобально на машину: рантаймы, лаунчер, скиллы | MCP-запись `unica` пресета; пин — `unica.yaml`; скрипты `install_unica_*`; [UNICA.md](../UNICA.md) |
-| `1c-testpilot` (AGPL, тексты не заимствуются) | команда глобально на машину, venv | MCP-запись `1c-testpilot` пресета: абсолютный путь установки, подмена `DSH_1C_TESTPILOT`; `install_testpilot.sh`; профили — `.dsh/1c/testpilot/profiles.yaml` |
+| `1c-bsl-code-style` (пак стиля) | вендор в `.dsh/1c/skills/1c-bsl-code-style` | подъём доставкой контура; чекер гейта `bsl-style-gate` резолвится из `contour.json → style.pack`; приоритет пака над стандартами и стат-анализом; doctor `project.style-missing` |
+| `1c-ssl-skills` (скилл `bsp`, зеркало, MIT) | вендор `install.sh --skill bsp` в `.dsh/1c/skills/bsp` | подъём доставкой контура; doctor `project.bsp-missing`; канон вендоринга — `1c-project-bootstrap`; синк зеркала — его `UPSTREAM.md` |
+| Unica (внешний плагин) | глобально на машину: рантаймы, лаунчер, скиллы | MCP-запись `unica` доставки; пин — `unica.yaml`; скрипты `install_unica_*`; [UNICA.md](../UNICA.md) |
+| `1c-testpilot` (AGPL, тексты не заимствуются) | команда глобально на машину, venv | MCP-запись `1c-testpilot` доставки: абсолютный путь установки, подмена `DSH_1C_TESTPILOT`; `install_testpilot.sh`; профили — `.dsh/1c/testpilot/profiles.yaml` |
 | `1c-mcp-toolkit` (GPL, тексты не заимствуются) | станция: venv прокси на машину | MCP-запись `1c-db` (+ инстансы из `db-instances.yaml`); на Linux сервер живёт в python-прокси, клиент 1С ходит long-poll'ом; `install_1c_mcp_proxy.sh`, `start_1c_db.sh` |
 | `kd-rules-mcp` (MIT) | станция на машину из `vendor/` | MCP-запись `1c-kd`; [KD-RULES.md](../KD-RULES.md) |
 | `ontoship-team-1c` (стековый бандл) | профиль DSH | потребитель доставки: объявляет свои пресеты и передаёт id в `presetIds` строки `contour-preset`; плагин доставки не копирует |
@@ -161,8 +161,8 @@ Python — stdlib без зависимостей; bash — стартеры и 
   (`ib-locks/`, файл на sha1-ключ подключения, TTL, права 0600, атомарно),
   stand-замок (`stand-locks/`, pid-владелец без TTL), журнал гейтов
   `logs/rule-audit.jsonl`, реестр парка `projects.json`.
-- Профиль `$DSH_HOME/profiles/<имя>`: строки патча `1c-contour` и `preset-1c`,
-  установленный бандл, умолчание пресета.
+- Профиль `$DSH_HOME/profiles/<имя>`: строка патча `1c-contour`, установленный
+  бандл.
 - Проект `.dsh/1c/`: входы гейтов (`contour.json`, `contour.local.json`,
   `db-instances.yaml`, маркер `contour`, эскалации
   `unica-gate-escalations.txt` и `bsl-module-gate-escalations.txt`,
@@ -175,19 +175,19 @@ Python — stdlib без зависимостей; bash — стартеры и 
 
 | Канал | Роль | Носитель |
 |---|---|---|
-| `DSH_1C_ROOT` | корень пакета контура для скриптов и скиллов; пресет публикует как переменную промпта | `src/preset/index.ts` |
+| `DSH_1C_ROOT` | корень пакета контура для скриптов и скиллов; доставка публикует как переменную промпта | `src/delivery/index.ts` |
 | `DSH_1C_STATE_DIR` | корень состояния, умолчание `~/.dsh/state/1c` | `src/state.ts`, скрипты |
-| `DSH_1C_TESTPILOT` | подмена команды 1c-testpilot; умолчание — абсолютный путь глобальной установки | `src/preset/config.ts`, `scripts/doctor.py` |
-| `UNICA_LAUNCHER` | подмена лаунчера Юники; умолчание — `~/.local/bin/unica` | `src/preset/config.ts` |
+| `DSH_1C_TESTPILOT` | подмена команды 1c-testpilot; умолчание — абсолютный путь глобальной установки | `src/delivery/config.ts`, `scripts/doctor.py` |
+| `UNICA_LAUNCHER` | подмена лаунчера Юники; умолчание — `~/.local/bin/unica` | `src/delivery/config.ts` |
 | `UNICA_GLOBAL_ROOT` | корень глобальной установки Юники при установке рантайма | `scripts/install_unica_runtime.py` |
-| `UNICA_RUNTIME_CACHE_DIR` | корень кэша рантаймов: пресет отдаёт его записи `unica`, читают скрипты | `src/preset/config.ts`, `scripts/unica_ping.py` |
+| `UNICA_RUNTIME_CACHE_DIR` | корень кэша рантаймов: доставка отдаёт его записи `unica`, читают скрипты | `src/delivery/config.ts`, `scripts/unica_ping.py` |
 | `1C_STYLE_ENGINE` | подмена движка стиля; порядок резолва — переменная → `bsl-style-engine` в PATH → скрипт пака | `src/style-checker.ts` |
 | `KD_RULES_STATION` | путь станции КД; умолчание — `~/.local/share/1c-dsh/kd-rules-mcp` | `src/gates/kd-session-start.ts`, `scripts/install_kd_rules.sh` |
 | `KD_START_SCRIPT` | подмена скрипта старта станции КД (тестовый шов и нестандартная поставка) | `src/gates/kd-session-start.ts` |
 | `KD_RULES_PYTHON` | интерпретатор с pyyaml для станции КД; умолчание — venv станции | `scripts/kd_register_project.py` |
 | `ONEC_MCP_TOOLKIT_DIR` | путь чекаута тулкита при установке прокси 1c-db | `scripts/install_1c_mcp_proxy.sh`, `scripts/start_1c_db.sh` |
 | `ONEC_DB_URL` | перекрытие адреса 1c-db для скриптов и прогонов из ворктри | `scripts/db_status.py`, `scripts/e2e_sweep.py` |
-| `ZCODE_PROJECT_DIR` | env-канал привязки воркспейса Юники — не наследие (раздел «Границы парадигмы») | `src/preset/config.ts` |
+| `ZCODE_PROJECT_DIR` | env-канал привязки воркспейса Юники — не наследие (раздел «Границы парадигмы») | `src/delivery/config.ts` |
 
 ## Процессный слой (не поставляется)
 
@@ -207,7 +207,7 @@ Python — stdlib без зависимостей; bash — стартеры и 
 | Набор | Что охраняет |
 |---|---|
 | `tests/parity/` + `tests/vectors/` | паритет гейтов: оракул — векторы, без python |
-| `tests/unit/` | контракт гейтов (t3–t5), пресета и раскладки, замки, состав поставки, no-legacy |
+| `tests/unit/` | контракт гейтов (t3–t5), доставки и раскладки, замки, состав поставки, no-legacy |
 | `tests/test_*.py` | скрипты контура: doctor, замки и их выметка, стартеры и остановка баз, публикация, e2e, вендоринг; док-инварианты KB и процессные скиллы |
 | `scripts/lint_skill_frontmatter.py` | слоты DSH контурных и процессных скиллов |
 | `.agents/skills/kb-search/gitmark.py lint --strict` | инварианты KB |
@@ -221,14 +221,14 @@ Python — stdlib без зависимостей; bash — стартеры и 
   В поставляемом слое наследия нет; критерий охраняет
   [no-legacy.spec.ts](../../tests/unit/no-legacy.spec.ts). История порта —
   [migration-map.md](../migration-map.md) (архив).
-- **`ZCODE_PROJECT_DIR` в пресете — не наследие**: env-канал привязки
+- **`ZCODE_PROJECT_DIR` в доставке — не наследие**: env-канал привязки
   воркспейса Юники (имя провода, решение оператора). Гард no-legacy его
   не ловит сознательно.
-- **Пресет — копия, не наследование**: полный список детей `standard` плюс
-  доставка. Обновление web-app сверяется с апстримным `standard.patch.yml`;
-  расхождения копии (например `tool-office`) — решение при обновлении.
+- **Отдельного пресета контура нет**: доставка — аддитив к любому пресету
+  сессии, каталог резолвится в проект 1С по маркеру `.dsh/1c`. Пресет `1c`
+  снят в 0.2.0; миграция записанных сессий — `scripts/migrate_preset_sessions.py`.
 - **Внешние паки адаптированы на уровне интерфейса**: вендоринг в раскладку
-  проекта, подъём пресетом, проверка doctor. Содержимое паков и их
+  проекта, подъём доставкой контура, проверка doctor. Содержимое паков и их
   frontmatter — зона их репо; контур читает слоты DSH, которые пак несёт.
 
 ## Проверка состава

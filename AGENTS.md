@@ -1,7 +1,7 @@
 # 1C-DSH — вход для агента
 
 Контур 1С-разработки на DeepSeek Harness: нативный Host-плагин
-`dsh-1c-contour` (гейты, пресет `1c`, скиллы, команды, MCP). Спека юнита —
+`dsh-1c-contour` (гейты, доставка контура, скиллы, команды, MCP). Спека юнита —
 [docs/plans/dsh-contour.md](docs/plans/dsh-contour.md), тикеты —
 [tickets/dsh-contour/](tickets/dsh-contour/), состояние работы —
 [docs/ops/continue.md](docs/ops/continue.md). Установка —
@@ -38,11 +38,13 @@
 - **Раскладка проекта — `.dsh/1c/` для всех входов гейтов.** Порядок
   чтения: `.dsh/1c` → `.dsh` (одна таблица `LAYOUT_DIRS`); legacy-раскладки
   ZCode сняты в Т10. Нечитаемый вход канона останавливает поиск (fail-closed).
-- **Бандл:** `package.json` (`dsh.bundle.patch`), `cordis.patch.yml`
-  (строки `1c-contour` и `preset-1c`), локаль, иконка; сборка TS → `lib/`.
+- **Бандл:** `package.json` (`dsh.bundle.patch`), `cordis.patch.yml` (одна
+  строка `1c-contour`), локаль, иконка; сборка TS → `lib/`. Пресета контура
+  нет: доставка — аддитив к любому пресету, каталог сессии резолвится в
+  проект 1С по маркеру `.dsh/1c`.
   В поставку (`files`) идут `lib/`, скиллы, команды, скрипты, шаблоны,
-  workflows, патч, локаль, иконка; тесты и `.agents/` не поставляются. Пресет — копия
-  `standard`, наследования нет: обновление web-app сверять с апстримом.
+  workflows, патч, локаль, иконка; тесты и `.agents/` не поставляются.
+  Обновление web-app сверять с апстримом.
 - **Прозу правил omp сюда не копировать как есть.** Всегда-загружаемое —
   секция AGENTS.md целевого проекта между маркерами BEGIN/END 1C CONTOUR
   (`templates/agents-section.md`), остальное — навыки с честным description.

@@ -13,6 +13,8 @@ DSH читает фронтматтер скилла так: обязатель�
   - name обязателен; у каталога совпадает с именем каталога, у плоского
     файла — с именем файла без .md;
   - description обязательна и ≤ 1024 символов (длиннее каталог режет);
+    значение берётся в том виде, в каком его видит DSH: double-quoted
+    YAML-скаляр декодируется (`\\u`-эскейпы), прочее — как есть;
   - whenToUse обязателен: без него маршрутизация теряет триггер;
   - у плоской команды из `commands/` обязателен
     `disable-model-invocation: true` — команда живёт только для человека.
@@ -21,6 +23,7 @@ DSH читает фронтматтер скилла так: обязатель�
         (по умолчанию `skills/` и `commands/`)
 Exit: 0 — чисто, 1 — есть ошибки.
 """
+import json
 import re
 import sys
 from pathlib import Path
@@ -53,6 +56,25 @@ def parse_frontmatter(text: str):
 	return fields, []
 
 
+def field_text(fields: dict, key: str) -> str:
+	"""Значение поля в том виде, в каком его видит DSH.
+
+	Double-quoted YAML-скаляр декодируется (`\\u`-эскейпы и управляющие
+	последовательности), иначе остаётся как есть. DSH читает фронтматтер
+	парсером `yaml`, поэтому лимит длины и триггерные слова считаются по
+	декодированному значению, а не по сырым эскейпам.
+	"""
+	raw = fields.get(key, "")
+	if len(raw) >= 2 and raw.startswith('"') and raw.endswith('"'):
+		try:
+			value = json.loads(raw)
+		except ValueError:
+			return raw
+		if isinstance(value, str):
+			return value
+	return raw
+
+
 def lint_fields(label: str, fields: dict, expected_name: str, command: bool) -> list:
 	"""Общие правила фронтматтера; `label` — как называть файл в отчёте."""
 	issues = []
@@ -66,15 +88,16 @@ def lint_fields(label: str, fields: dict, expected_name: str, command: bool) -> 
 		issues.append(f"{label}: нет name (скилл не загрузится)")
 	elif name != expected_name:
 		issues.append(f"{label}: name '{name}' != '{expected_name}'")
-	description = fields.get("description", "")
+	description = field_text(fields, "description")
+	when_to_use = field_text(fields, "whenToUse")
 	if not description:
 		issues.append(f"{label}: нет description (скилл не триггерится)")
 	elif len(description) > DESCRIPTION_LIMIT:
 		issues.append(f"{label}: description {len(description)} > {DESCRIPTION_LIMIT}")
-	elif not fields.get("whenToUse") and len(description) > FRONTLOAD_LIMIT \
+	elif not when_to_use and len(description) > FRONTLOAD_LIMIT \
 			and not re.search(r"[аЯa-zA-Z]", description[:FRONTLOAD_LIMIT]):
 		issues.append(f"{label}: первые {FRONTLOAD_LIMIT} символов description без триггерных слов")
-	if not fields.get("whenToUse"):
+	if not when_to_use:
 		issues.append(f"{label}: нет whenToUse (DSH не увидит триггер)")
 	if command and fields.get(COMMAND_FLAG) != "true":
 		issues.append(f"{label}: команда без '{COMMAND_FLAG}: true' попадёт в каталог модели")

@@ -320,6 +320,17 @@ stand-замка) и границу `--stop --base` на общей базе; `e
 
 ## Порядок тикетов
 
+Юнит `bsp-v017-contour` (граница БСП v0.17 в контуре) выполнен 22.11
+(коммит `feat(contour)` в main); спека
+[bsp-v017-contour.md](../plans/bsp-v017-contour.md). Скоуп — только
+1C-DSH: линтер слотов судит по декодированному значению, граница v0.17
+названа в `1c-contour` и `1c-bsl-review-standards`, док-гниль снятого
+пресета `1c` убрана. Гейты: `pnpm test` 340/340, `pnpm typecheck`,
+32 python-теста, линт 18/18 и 11/11, KB чист. Отдельный проход (не
+этот юнит): мерж зеркала `1c-ssl-skills` на v0.17, тег `v0.17.1`,
+re-vendor в 4 проекта — материал и находки в
+[tickets/bsp-v017-sync/critic-triage.md](../../tickets/bsp-v017-sync/critic-triage.md).
+
 Кросс-репо шов `team-profiles-1c` (адрес изменения для ntin
 `tickets/team-profiles/05`): T1 «Конфигурируемый набор пресетов
 доставки» слит 13.11 (`0c94691` + правки панели `4fc1c17`), принят
