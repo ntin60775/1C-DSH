@@ -370,8 +370,12 @@ tickets/org-regulations-delivery/evidence/); юнит завершён.
   парк — командой «деплой/обнови 1С контур» после настройки
   regulations/org (пак-шаг).
   Followups юнита: дефект продюсера OntoShip — `install.sh --copy --pack`
-  тащит `.git` орг-репо в копию пака (вложенный репозиторий в проекте);
-  ишью оформлен: ntin60775/ontoship-ntin#4 (22.11). Канон-проход:
+  тащил `.git` орг-репо в копию пака — ИСПРАВЛЕН продюсером
+  (ntin60775/ontoship-ntin#4 закрыт 22.11, чекаут `1f2b1d0` = origin):
+  копия и сравнение без `.git`, проверено воспроизводством (пустой
+  коммит → unchanged pack; контент-правка → copy differs; полный
+  copy-цикл сошёлся, снимок без `.git`); оговорки pack-deploy
+  обновлены (contour-deploy, 22.11). Канон-проход:
   хроника «кейс erp-mini» в `1c-contour-deploy/SKILL.md` убрана
   (contour-deploy, 22.11, решение оператора); прочих имён проектов
   и дат в скиллах contour-deploy нет (grep 0).
