@@ -1092,8 +1092,9 @@ def check_v8project(report: Report, v8text: str, local_text: str) -> None:
 	elif missing:
 		report.warn("project", "v8project.local.yaml: нет пинов ibcmd "
 		            f"providers.{', providers.'.join(missing)} — исполнитель "
-		            "выберется цепочкой раннера (агент/конфигуратор); добавь "
-		            "пины по шаблону 1c-project-layout",
+		            "выберется цепочкой раннера (агент/конфигуратор); дописывает "
+		            "механически: python3 $DSH_1C_ROOT/scripts/topology_fix.py "
+		            "<проект> (шаблон — 1c-project-layout)",
 		            code="project.providers-pins")
 	elif pins:
 		report.ok("project", "run-операции запинены на ibcmd (канон контура)")
@@ -1190,8 +1191,10 @@ def check_build_out(report: Report, root: Path) -> None:
 	if foreign:
 		shown = ", ".join(foreign[:8]) + (", …" if len(foreign) > 8 else "")
 		report.warn("project", f"build/out: вне канонных каталогов ({len(foreign)}): "
-		            f"{shown} — правило: {'/'.join(sorted(canon))}; чужое снести или "
-		            "перенести (скилл 1c-project-layout)", code="project.build-out")
+		            f"{shown} — правило: {'/'.join(sorted(canon))}; раскладывает "
+		            "python3 $DSH_1C_ROOT/scripts/topology_fix.py <проект> "
+		            "(запись со ссылкой в коде — вручную, скилл 1c-project-layout)",
+		            code="project.build-out")
 
 
 def check_style(report: Report, root: Path) -> None:
@@ -1343,7 +1346,8 @@ def check_state(report: Report) -> None:
 	if locks or stand_locks:
 		report.warn("state", f"замков инфобаз: {len(locks)}, замков стендов: "
 		            f"{len(stand_locks)} — просроченные снимает session_clean на "
-		            "старте", code="state.locks")
+		            "старте; мёртвые замки стендов — topology_fix.py",
+		            code="state.locks")
 	else:
 		report.ok("state", f"замков инфобаз и стендов нет (состояние: {root}, {source})")
 	audit = root / "logs" / "rule-audit.jsonl"

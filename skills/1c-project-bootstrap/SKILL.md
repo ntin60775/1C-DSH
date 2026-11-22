@@ -264,9 +264,11 @@ doctor сверяет наличие обоих паков (раздел project
   починка рантайма — скилл `1c-unica-artifacts`. Машинный слой (testpilot,
   прокси 1c-db, xvfb) — см. «Машинный слой» выше, это машина, не проект.
 - Не трогает `v8project.yaml` (внешний контракт v8-runner/unica).
-  Доставка и сборка пинятся на ibcmd (scaffold пишет блок `providers`);
-  если блока `providers` нет, а ИБ серверная — напомни владельцу про
-  каркас `infobases.origin.dbms` в local (`kind`/`server`/`name`/
-  `user`/`password`): без него ibcmd-путь не поднять (скилл
+  Доставка и сборка пинятся на ibcmd: недостающие пины `providers.*`
+  дописывает механический шаг `python3 $DSH_1C_ROOT/scripts/topology_fix.py
+  <проект>` (идемпотентен, ask не нужен; чужое значение провайдера не
+  перетирается — конфликт в отчёт). Серверная ИБ требует ещё каркас
+  `infobases.origin.dbms` в local (`kind`/`server`/`name`/`user`/
+  `password`) — без него ibcmd-путь не поднять (скилл
   `1c-ibcmd-delivery`).
 - Не пишет креды никуда, кроме поля `password` в profiles.yaml (вне git).
