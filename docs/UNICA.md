@@ -224,6 +224,11 @@ ntin60775/deepseek-harness#1). Воркспейс Юники фиксирует�
   трогается, файлы набора заменяются. `source.reexport` и полный `pull`
   возвращают `warnings` об исчезнувших настройках выбора (`ChoiceList`,
   `ChoiceParameterLinks`, до 20 примеров): молчаливой потери нет.
+- **Длительность `pull`.** Полный `pull` большого набора (сотни тысяч
+  файлов) не влезает в MCP-таймаут (~2 мин): вызов возвращает
+  `REQUEST_TIMEOUT`, недописанный stage остаётся в `build/stage`, файлы
+  набора не заменяются. Выгрузка исходников — `ibcmd config export`
+  (навык `1c-ibcmd-delivery`), не `pull`.
 - **`unica.docs`.** Источники — `platform-help` и `development-standard`;
   `configuration-documentation` отвечает `unsupported_source` (#939).
   `query` принимает `documentId`, выданный инструментом; адрес справки
