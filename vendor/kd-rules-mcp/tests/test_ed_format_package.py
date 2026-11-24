@@ -497,6 +497,21 @@ def test_package_normalization_ignores_prefixes_not_structure():
     assert normalized_package_xml(raw) != normalized_package_xml(etree.tostring(root))
 
 
+def test_package_members_follow_schema_order():
+    """valueType идут до objectType: платформа отвергает обратный порядок членов."""
+    model = sample_model()
+    shuffled = replace(model, types=tuple(reversed(model.types)))
+    root = etree.fromstring(
+        render_format_package(shuffled)["XDTOPackages/fmt_Package/Ext/Package.bin"]
+    )
+    members = [
+        etree.QName(child).localname for child in root if etree.QName(child).localname != "import"
+    ]
+    assert "valueType" in members and "objectType" in members
+    assert members == sorted(members, key=lambda tag: tag == "objectType")
+    assert len(members) == len(model.types)
+
+
 @pytest.mark.parametrize(
     ("failure", "result", "mismatch", "expected", "count"),
     [

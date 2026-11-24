@@ -482,7 +482,11 @@ def _xdto_xml(model: FormatPackage) -> bytes:
             if prop.inline_type:
                 render_type(item, prop.inline_type, depth + 2, True)
 
-    for typ in model.types:
+    # Порядок членов пакета задаёт XSD: import*, valueType*, objectType*. Платформа
+    # отвергает файл с нарушенным порядком («Проверка свойства 'valueType' … Нарушен
+    # порядок следования значений свойств»), поэтому простые типы идут первыми
+    # независимо от порядка объявления в модели.
+    for typ in sorted(model.types, key=lambda item: item.role not in VALUE_ROLES):
         render_type(root, typ, 2)
     etree.indent(root, space="\t")
     return etree.tostring(root, encoding="UTF-8") + b"\n"

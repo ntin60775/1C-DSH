@@ -3,7 +3,7 @@ node_type: runbook
 title: Ежедневное слежение за апстримами контура
 service: _platform
 status: active
-updated: 2026-11-19
+updated: 2026-11-24
 links:
   part_of: [README.md]
   depends_on:
@@ -30,7 +30,7 @@ links:
 |---|---|---|
 | IngvarConsulting/unica | tag/unica | `unica.yaml` |
 | IngvarConsulting/v8-runner-rust | v8-runner | `unica.yaml` |
-| itrous/bsl-analyzer | bsl-analyzer | `unica.yaml` |
+| itrous/bsl-analyzer | версия внутри поставки юники | `unica.yaml` — отражает поставку, не отдельный выбор |
 | ROCTUP/1c-testpilot | TESTPILOT_PIN | `scripts/install_testpilot.sh` |
 | ntin60775/1c-onec-db | ONEC_DB_PIN | `scripts/install_testpilot.sh` |
 | egordoronchenko/kd-rules-mcp | KD_PIN | `scripts/install_kd_rules.sh` |
@@ -76,6 +76,11 @@ Exit `unica_ping.py`: 0 — жив и совместим, 1 — не старт�
    `vendor/kd-rules-mcp/UPSTREAM.md` / синк зеркала
    `1c-ssl-skills/UPSTREAM.md` (merge апстрима, линт, тег зеркала,
    re-vendor в проекты), не автоматическое действие.
+   Исключение — `itrous/bsl-analyzer`: движок поставляет юника вместе с
+   артефактами, отдельного апгрейда по пину не бывает. Сверять релизы с
+   пином не нужно; следить за содержимым репо как предвестником будущей
+   поставки: контракты `EMBEDDING_*`, схемы MCP-инструментов, доки
+   эмбеддингов и central-postgres-search.
 2. **Наши ишью** (author ntin60775) в каждом апстрим-репо: смена
    state, новые комментарии, закрытие. Открытые наши ишью — в каждом
    докладе до закрытия.
@@ -93,19 +98,16 @@ Exit `unica_ping.py`: 0 — жив и совместим, 1 — не старт�
 5. **Semantic-роль**: `crates/unica-daemon/src/infrastructure/daemon/v13_service.rs`,
    функция `selected_role_engine` ветки main — `ProviderRole::Semantic`
    подключён к движку или по-прежнему `None`. Подключение (закрытие
-   #2512) — событие для возврата semantic в `unica.search` и снятия
-   обходного канала `1c-bsl-search`.
-6. **Особый контроль #2512**: решение оператора от 17.11 — ждать
-   апстрим до 24.11. Любое движение — сразу в доклад; после 24.11 без
-   подвижек — пункт решения «неделя без подвижек по #2512 — оператор
-   решает вопрос своего канала 1c-bsl-search».
-7. **Каталог инструментов по протоколу.** Контур договаривается на
+   #2512) — событие для возврата semantic в `unica.search`: роль тогда
+   доступна глаголами юники, своего обходного канала
+   `1c-bsl-search` не заводить (решение оператора).
+6. **Каталог инструментов по протоколу.** Контур договаривается на
    `2025-11-25` (11 инструментов). Клиент `2026-07-28` через
    `server/discover` видит восемь без `task.*`, а вызов сам ждёт итога.
    Наблюдать `LATEST_PROTOCOL_VERSION` в MCP-SDK хоста DSH: смена версии
    у хоста меняет и ожидания скиллов (появится `needsHuman` там, где
    ждали `task.result`) — это находка доклада, не правка на бегу.
-8. **Ишью контура** (ntin60775/1C-DSH): открытые — напоминанием в
+7. **Ишью контура** (ntin60775/1C-DSH): открытые — напоминанием в
    докладе; пустой список — так и назвать.
 
 ## Снимок и журнал
