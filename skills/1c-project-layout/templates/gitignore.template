@@ -28,6 +28,10 @@ v8project.local.yaml
 .dsh/1c/contour.local.json
 .dsh/1c/contour.local.json.tmp
 
+# Маркер тестового дерева (признак контура для гейта mcp) — машино-локальный:
+# закоммиченный «test» включил бы тест-режим во всех клонах.
+.dsh/1c/contour
+
 # Артефакты e2e-прогонов и байткод pytest (run_e2e.sh, junit/сводки).
 test-results/
 __pycache__/

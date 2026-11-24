@@ -61,11 +61,18 @@ whenToUse: "Проект 1С подключается к контуру (впе�
    `tools/va-env.local.json`, `v8project.local.yaml`, `build/`,
    `.dsh/1c/db-instances.yaml` (креды инстансов 1c-db),
    `.dsh/1c/contour.local.json` (локальный оверлей контура),
-   `.dsh/1c/contour` (если помечаешь деревья по месту). Сама раскладка
+   `.dsh/1c/contour` (маркер тестового дерева). Сама раскладка
    `.dsh/1c` — только contour.json и шаблоны; `db-instances.yaml`,
-   `contour.local.json` и `profiles.yaml` остаются вне git.
-6. **Признак контура**: тестовое дерево — файл `.dsh/1c/contour` со словом
-   `test` (прод по умолчанию, fail-closed). Ключ `contour:` в
+   `contour.local.json`, `profiles.yaml` и `contour` остаются вне git.
+6. **Тип дерева — объяви явно; это шаг, а не опция.** Прод по умолчанию
+   (fail-closed): файла `.dsh/1c/contour` нет, изменяющие инструменты
+   тест-контура (`1c-db`, `1c-testpilot`) блокируются. Тестовое дерево:
+   создай файл со словом `test` (`printf 'test\n' > .dsh/1c/contour`) и
+   убедись, что строка `.dsh/1c/contour` есть в `.gitignore` — файл
+   машино-локальный, закоммиченный маркер включит тест-режим во всех
+   клонах. Проект с заведомо тестовой базой без маркера — недоделанный
+   bootstrap: агент упрётся в гейт на первом же `execute_code`, а созданный
+   руками маркер останется untracked. Ключ `contour:` в
    `v8project.local.yaml` не писать: раннер отвергает незнакомый
    верхнеуровневый ключ local-слоя, и `unica.run` падает с `bad_value`.
 7. **Носитель состояния инфраструктуры** — `.agents/contour-status.md`

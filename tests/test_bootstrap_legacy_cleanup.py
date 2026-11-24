@@ -72,6 +72,8 @@ def main() -> int:
 	check("1: шаблон .gitignore держит профили вне git",
 	      ".dsh/1c/testpilot/profiles.yaml" in tpl
 	      and "пароль" in flat(tpl), flat(tpl)[:200])
+	check("1: шаблон .gitignore держит маркер тестового дерева вне git",
+	      "\n.dsh/1c/contour\n" in tpl, flat(tpl)[:200])
 
 	# ── критерий 2: команда и install-док ведут в раздел
 	check("2: команда 1c-bootstrap ведёт в раздел",
