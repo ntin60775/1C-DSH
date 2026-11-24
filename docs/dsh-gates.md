@@ -3,7 +3,7 @@ node_type: reference
 title: Гейты контура 1С на DSH
 service: _platform
 status: active
-updated: 2026-11-19
+updated: 2026-11-24
 links:
   relates_to: [dsh-install.md, plans/dsh-contour.md]
   implemented_by: [../src/contract.ts, ../src/index.ts, ../src/gates/, ../tests/parity/corpus.spec.ts]
@@ -11,11 +11,11 @@ links:
 
 # Гейты контура 1С на DSH
 
-Одиннадцать гейтов нативного плагина `dsh-1c-contour`. Гейт — чистая
+Двенадцать гейтов нативного плагина `dsh-1c-contour`. Гейт — чистая
 функция над вызовом инструмента (`src/contract.ts`): решение и класс
 причины, без знания о Cordis и событиях. Адаптер `src/index.ts` переводит
 событие хоста в вызов гейта и решение обратно. Регрессия — машиночитаемые
-векторы `tests/vectors/` (11 гейтов, оракул без python); покрытие охраняет
+векторы `tests/vectors/` (12 гейтов, оракул без python); покрытие охраняет
 `tests/parity/corpus.spec.ts`.
 
 ## События
@@ -38,6 +38,7 @@ MCP-имена нормализованы под контракт function-name
 | `unica_source_gate` | `unica-source-gate` | pre + post | правка исходников 1С (`src/{cf,cfe}`, `tests/epf`) только через Unica; внешние `src/epf`/`src/erf` вне гейта (каркас — файлами по `epf-init`/`erf-init`, спека `external-epf-loop`): прямая запись — deny `source-edit`, bash-запись — deny `source-bash`; ворктри без инициализации — deny `worktree-uninit`; правило пересборки из `contour.json` — deny `rebuild-rule`; инфобаза занята другим деревом — deny `ib-lock`; путь-разрешение строкой allowlist'а эскалаций (действует, пока строка не убрана) — allow `escalation-granted` |
 | `doc_gate` | `docs-before-design` | pre + post | авторская мутация метаданных/кода (операции `verify_ops`) без сверки с документацией платформы — deny `docs-unverified`; сверка (`unica.docs`) ведёт флаг сессии, структурная мутация флаг сбрасывает. Критерий списка — решение агента о платформенной семантике; opaque-данные (`infobase.restore/dump/create`) вне doc-гейта: их риск — потеря данных, его несут замок ИБ и подтверждение человека |
 | `mcp_gate` | `mcp-unsafe-gate`, `stand-lock` | pre | изменяющий вызов тест-контура в прод-контуре — deny `mcp-unsafe` (fail-closed: нечитаемый маркер контура = прод); тест-контур — allow; stand-замок базы — deny `stand-lock`; REST-вызовы через bash распознаются |
+| `no_designer` | `no-designer` | pre | Конфигуратор агенту запрещён: прямой `1cv8 DESIGNER` (включая обёртки env/timeout/distrobox и `bash -c`), `v8-runner make`/`artifacts`, `unica.run {op: make}`, `launch designer` — deny `designer-launch`/`designer-make`; именованные исключения — batch-проверка `unica.check` внутри раннера и внутренние проверки станции КД; эскалаций нет |
 | `bsl_style_gate` | `bsl-style-gate` | post | чекер пака `1c-bsl-code-style`: нарушения в изменённых строках — block `bsl-style` («исправь и повтори»); фоновые нарушения вне правки — заметка (не блокируют); пред-чек плана `unica.apply` до записи — advisory; приоритет пака над стандартами и стат-анализом |
 | `bsl_module_gate` | `bsl-module-gate` | post | контракт носителя 1С-кода — block `bsl-module`; строка эскалации в allowlist'е снимает блок, пока не убрана |
 | `anon_gate` | `anon-gate` | pre | отключение анонимизации канала 1c-db (raw-режим, API деанонимизации) — deny `anon-raw`, исключений нет |
@@ -49,7 +50,7 @@ MCP-имена нормализованы под контракт function-name
 
 Колонка «Правило в журнале» — значение поля `rule` в
 `logs/rule-audit.jsonl` (`RULE` в модуле гейта). Имя модуля и имя правила
-расходятся у трёх гейтов; диагностика по журналу ищет правило, а не гейт.
+расходятся у четырёх гейтов; диагностика по журналу ищет правило, а не гейт.
 Прочерк — гейт журнал не ведёт.
 
 Граница списков исходников (Т5, решение оператора): охранный

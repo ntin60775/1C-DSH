@@ -105,6 +105,11 @@ SSH-шлюз. У файловой базы полные операции (каж
 причину: `reason: whole|by_changes`. Переопределение строгое: назначенный
 ключом исполнитель не готов — отказ, на умолчание раннер не откатывается.
 
+`make` раннер исполняет только пакетным Конфигуратором (designer
+backend), пин `make` не читается (dry-run: `origin: default`). Контур
+запрещает make агенту (гейт `no-designer`): сборка epf/erf —
+ibcmd-скрипты `epf-load.sh`/`epf-dump.sh`, `.cfe` — `config save`.
+
 Команды `sessions`, `web`, `debug-server` — CLI раннера, в словарь
 `unica.run` не входят; у `clone --source-dir` умолчание — `src/cf`.
 

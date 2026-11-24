@@ -17,13 +17,14 @@ import { evaluatePost as modulePost } from '../../src/gates/bsl-module.js'
 import { evaluatePost as stylePost } from '../../src/gates/bsl-style.js'
 import { evaluatePost as docPost, evaluatePre as docPre } from '../../src/gates/doc.js'
 import { evaluatePre as mcpPre } from '../../src/gates/mcp.js'
+import { evaluatePre as designerPre } from '../../src/gates/no-designer.js'
 import { resolveProject } from '../../src/paths.js'
 import { createGateState } from '../../src/state.js'
 import type { StyleCheckerPort } from '../../src/contract.js'
 import { createFixture, type Fixture } from '../helpers/fixture.js'
 
 /** Гейт корпуса. */
-export type GateName = 'doc' | 'mcp' | 'bsl-style' | 'bsl-module'
+export type GateName = 'doc' | 'mcp' | 'bsl-style' | 'bsl-module' | 'no-designer'
 
 /** Шаг сценария. */
 export interface ScenarioStep {
@@ -147,7 +148,9 @@ export async function stepTs(
     resultText: step.result?.text ?? '',
   }
   if (step.phase === 'pre') {
-    const decision = gate === 'mcp' ? mcpPre(call, runtime.project, runtime.state) : docPre(call, runtime.project, runtime.state)
+    const decision = gate === 'no-designer'
+      ? designerPre(call, runtime.project, runtime.state)
+      : gate === 'mcp' ? mcpPre(call, runtime.project, runtime.state) : docPre(call, runtime.project, runtime.state)
     if (decision.kind === 'deny') return { decision: 'deny', code: decision.code, text: decision.reason }
     return { decision: 'allow', code: decision.code, text: '' }
   }

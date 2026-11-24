@@ -49,7 +49,7 @@ def build_share(raw: Path, target: str) -> Path:
         json.dumps(manifest), encoding="utf-8")
     for name in ("0.15.0", "provider-state", "skills"):
         (share / name).mkdir()
-    (share / "provider-state" / "erp-demo.json").write_text("{}", encoding="utf-8")
+    (share / "provider-state" / "project-a.json").write_text("{}", encoding="utf-8")
     runtime = share / "runtimes" / "unica"
     (runtime / f"{version}--{'a' * 64}").mkdir(parents=True)
     (runtime / f"0.15.0--{'b' * 64}" / "linux-x64").mkdir(parents=True)
@@ -66,7 +66,7 @@ def main() -> int:
         check("прежняя версия снесена", not (share / "0.15.0").exists(), "")
         check("текущая версия на месте", (share / "0.16.0").is_dir(), "")
         check("состояние провайдеров не тронуто",
-              (share / "provider-state" / "erp-demo.json").is_file(), "")
+              (share / "provider-state" / "project-a.json").is_file(), "")
         check("скиллы не тронуты", (share / "skills").is_dir(), "")
         artifact = share / "runtimes" / "unica"
         check("прежний артефакт снесён",

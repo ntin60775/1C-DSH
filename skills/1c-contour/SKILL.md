@@ -1,6 +1,6 @@
 ---
 name: 1c-contour
-description: "Карта контура 1С-разработки под DSH поверх Unica (unica.view/search/apply/check/docs/diff/run): исходники src/cf, src/cfe и tests/epf правятся только через unica.apply (план→запись), внешние epf/erf — каркас файлами по epf-init/erf-init, правка узлов unica.apply; мутации требуют сверки с unica.docs (гейт), прод-контур fail-closed, стиль BSL — пак 1c-bsl-code-style. Применяй при любой работе с исходниками 1С (src/cf, src/cfe, src/epf, src/erf)."
+description: "Карта контура 1С-разработки под DSH поверх Unica (unica.view/search/apply/check/docs/diff/run): исходники src/cf, src/cfe и tests/epf правятся только через unica.apply (план→запись), внешние epf/erf — каркас файлами по epf-init/erf-init, правка узлов unica.apply, сборка/разбор — ibcmd-скрипты epf-load/epf-dump (make запрещён: только Конфигуратор, гейт no-designer); мутации требуют сверки с unica.docs (гейт), прод-контур fail-closed, стиль BSL — пак 1c-bsl-code-style. Применяй при любой работе с исходниками 1С (src/cf, src/cfe, src/epf, src/erf)."
 whenToUse: "Любая работа в проекте 1С с Unica: чтение/правка метаданных и кода, сборка и загрузка, работа с базой, e2e-тесты, вопросы стиля/стандартов БСП/проектирования API."
 ---
 
@@ -21,7 +21,7 @@ whenToUse: "Любая работа в проекте 1С с Unica: чтение
 | `unica.docs` | чтение | документация: `platform-help` и `development-standard`; `configuration-documentation` отвечает `unsupported_source` (#939) — встроенная справка конфы читается напрямую из `Ext/Help/<локаль>.html` набора/объекта/формы/подсистемы. Длинная страница — страницами, задача — через `task.result` |
 | `unica.apply` | **план → запись** | ВСЕ правки: свойства, реквизиты, формы, BSL-код, роли, СКД, макеты, подсистемы, XDTO, поддержка поставщика. Операции — `panels.set`, `homePage.set`, `attribute.copy`, `dimension.set`, `property.rename`, `props.set` на корне/форме; состав — из `can`. Старый формат выгрузки — отказ `invalid_source`, лечение `source.reexport`; конфигурация на поддержке — `configurationReadOnly`, правка в расширениях. Локализованные значения (`synonym`, `toolTip`, заголовки форм и СКД) — строка НСтр `ru = '…'; en = '…'`, плейн-строка отвергается |
 | `unica.check` | чтение | валидация: `check {at}` — находки узла страницами; `check {}` — вердикт workspace и группы диагностик страницами; на большом дереве — async-задача |
-| `unica.run {op, args, dryRun}` | действие | сборка/ИБ: `push` (force, full), `pull` (force), `make`, `launch`, `download`, `infobase.create/dump/restore`, `extensions.list/set`. Аргументы операции — ВЛОЖЕННО в `args` (плоская форма отвергается); `dryRun: true\|false` обязателен явно; платформенные операции — async: ответ = задача, результат через `unica.task.result` (waitMs ≤ 7000). `upload`, `apply`, `reset` недоступны (#1246) — загрузка `.cf`/`.cfe` через ibcmd. Верхнеуровневый `infobase` — только `origin` |
+| `unica.run {op, args, dryRun}` | действие | сборка/ИБ: `push` (force, full), `pull` (force), `launch`, `download`, `infobase.create/dump/restore`, `extensions.list/set`; `make` запрещён (инвариант 9). Аргументы операции — ВЛОЖЕННО в `args` (плоская форма отвергается); `dryRun: true\|false` обязателен явно; платформенные операции — async: ответ = задача, результат через `unica.task.result` (waitMs ≤ 7000). `upload`, `apply`, `reset` недоступны (#1246) — загрузка `.cf`/`.cfe` через ibcmd. Верхнеуровневый `infobase` — только `origin` |
 | `unica.task.*` | — | durable-задачи: get/result/cancel (долгие вызовы) |
 
 Канон правки (сценарий S159): `search → view → apply (план) → apply (запись) →
@@ -88,11 +88,21 @@ view/check/diff (перепроверка)`. План `apply` не меняет 
    исполняет ibcmd — пины `providers` в `v8project.local.yaml`
    (`push`, `pull`, `download`, `make`, `infobase.create`,
    `infobase.dump`, `infobase.restore`, `extensions`); scaffold пишет
-   их, doctor сверяет. Конфигуратор и агент платформы контур не
-   использует; сценарии, не выражаемые поверхностью run, — напрямую
-   ibcmd (скилл `1c-ibcmd-delivery`). `launch` не пинится: единственный
-   исполнитель — клиент платформы. Пин строгий: не готов ibcmd — отказ
-   раннера, исполнитель не гадает.
+   их, doctor сверяет. Пин `make` раннер не читает (единственный
+   исполнитель make — пакетный Конфигуратор): make агенту запрещён
+   (инвариант 9), сборка epf/erf — ibcmd-скрипты. `launch` не пинится:
+   единственный исполнитель — клиент платформы. Пин строгий: не готов
+   ibcmd — отказ раннера, исполнитель не гадает.
+9. **Конфигуратор агенту запрещён** (гейт `no-designer`): прямой
+   `1cv8 DESIGNER` (включая обёртки env/timeout/distrobox и `bash -c`),
+   `v8-runner make`, `unica.run {op: make}`, `launch designer` — отказ
+   без эскалаций. Маршрут сборки: epf/erf из XML — `epf-load.sh`/
+   `epf-dump.sh` (ibcmd, без ИБ), `.cfe` — `config save` из базы,
+   поставка — цикл ibcmd (скилл `1c-ibcmd-delivery`). Именованные
+   инфраструктурные исключения: batch-проверка `unica.check` внутри
+   раннера и внутренние проверки станции КД — не запуск агентом.
+   Инструкция «собрать через make» в скиллах юники `epf-init`/`erf-init`
+   перекрыта этим запретом: каркас — по ним, сборка — ibcmd-скрипты.
 
 Все вызовы Unica несут `cwd` корня проекта (или ворктри) — на него смотрят
 гейты; воркспейс самой юники привязан к экземпляру сервера и cwd вызова не
@@ -143,6 +153,19 @@ view/check/diff (перепроверка)`. План `apply` не меняет 
   отказывают: `infobase_busy` — если `ibsrv` запущен с `--db-path`; публикация
   контура (`--data`/`--config`) не опознаётся, отказ приходит от ibcmd.
   Публикацию гасить на время сборки.
+
+## Маршрутизация сборки и поставки
+
+| Задача | Куда |
+|---|---|
+| Каркас внешней epf/erf | файлами по скиллам юники `epf-init`/`erf-init` |
+| Правка узлов внешней epf/erf | `unica.apply` |
+| Сборка epf/erf из XML | `scripts/epf-load.sh` (ibcmd `config import --out`, без ИБ) |
+| Разбор epf/erf в XML | `scripts/epf-dump.sh` (ibcmd `config export --file`) |
+| Сборка `.cfe` | `ibcmd config save --extension=<имя>` из базы |
+| Поставка исходников | цикл ibcmd import → apply → export (`1c-ibcmd-delivery`) |
+| `unica.run make` | запрещён: единственный исполнитель — Конфигуратор (гейт `no-designer`) |
+| Проверка конфигурации | `unica.check` (batch-проверка раннера — именованное исключение) |
 
 ## Маршрутизация качества кода (приоритет сверху вниз)
 

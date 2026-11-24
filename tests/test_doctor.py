@@ -23,6 +23,11 @@
   invariant: host-delivery — пресета-копии `preset-1c` в патче нет (FAIL
         delivery.preset-copy), умолчание `1c` — миграционный хвост
         (WARN delivery.stale-default), здоровая установка — одна хост-строка.
+  spec: решение оператора «doctor --fix» — механическая конвергенция к эталону
+        чистой установки: недостающие пины ibcmd дописываются, повтор идемпотентен,
+        чужой провайдер не перетирается (конфликт), без --fix файлы не меняются,
+        просроченный замок ИБ убран / живой остался; отбор DESIGNER-процессов —
+        чистая функция (чужой путь и ENTERPRISE не отбираются).
 
 Сеть: фикстуры пробуют только заведомо закрытый 127.0.0.1:1, поэтому проба
 `1c-db` даёт WARN, а не FAIL. Запуск: python3 tests/test_doctor.py
@@ -768,6 +773,127 @@ def main() -> int:
 		check("скиллы Юники прежней версии — WARN skills.unica-version",
 		      live_data.get("skills", {}).get("code") == "skills.unica-version",
 		      json.dumps(live_data.get("skills", {}))[:400])
+
+		# ── 14. --fix: механическая конвергенция к эталону чистой установки ──
+		# spec: решение оператора — doctor --fix закрывает мешающее состояние
+		#       в границах проекта; без --fix read-only (обратная совместимость).
+		import time
+		sys.path.insert(0, str(REPO / "scripts"))
+		import doctor
+
+		# invariant: отбор процессов — чистая функция, чужое не трогается.
+		procs = [
+			(101, ["/opt/1cv8/x86_64/8.3.24/1cv8", "DESIGNER", "File=/proj/build/ib"]),
+			(102, ["/opt/1cv8/1cv8", "DESIGNER", "File=/other/build/ib"]),
+			(103, ["/opt/1cv8/1cv8", "ENTERPRISE", "File=/proj/build/ib"]),
+			(104, ["/opt/1cv8/1cv8", "DESIGNER", "File=build/ib"]),
+			(105, ["/usr/bin/python3", "DESIGNER", "File=/proj/build/ib"]),
+		]
+		got = doctor.select_designer_pids(procs, ["/proj/build"])
+		check("отбор: DESIGNER с путём проекта отобран", 101 in got, got)
+		check("отбор: чужой путь не отобран", 102 not in got, got)
+		check("отбор: ENTERPRISE не отобран", 103 not in got, got)
+		check("отбор: относительный File= не утверждается", 104 not in got, got)
+		check("отбор: не-1cv8 не отобран", 105 not in got, got)
+		got_origin = doctor.select_designer_pids(
+			[(201, ["/opt/1cv8/1cv8", "DESIGNER", "File=/data/origin_ib"])],
+			["/data/origin_ib"])
+		check("отбор: база origin вне build отобрана", got_origin == [201], got_origin)
+
+		# --fix дописывает недостающие пины (фикстура как в test_topology_fix).
+		fx_fix = Fixture(Path(tmp) / "fix-pins")
+		make_launcher(fx_fix)
+		make_testpilot(fx_fix)
+		write_install(fx_fix, make_package(Path(tmp) / "fix-pins" / "pkgsrc"))
+		write_project(fx_fix, v8local="infobases:\n  origin:\n    connection: 'File=build/ib'\n")
+		write_registry(fx_fix)
+		local_file = fx_fix.project / "v8project.local.yaml"
+		rep = fx_fix.report("--fix")
+		fixed_text = local_file.read_text(encoding="utf-8")
+		check("--fix дописывает недостающие пины ibcmd",
+		      "push: ibcmd" in fixed_text and "extensions: ibcmd" in fixed_text,
+		      fixed_text[-200:])
+		fix_actions = rep["data"]["fix"]["actions"] or []
+		check("--fix действие fix.providers названо",
+		      any(a["code"] == "fix.providers" for a in fix_actions), fix_actions)
+		check("--fix rc 0 (недостающие пины были WARN)",
+		      rep["result"].returncode == 0, rep["result"].stdout[-300:])
+
+		# Второй прогон идемпотентен: нечего делать, файл не меняется.
+		rep2 = fx_fix.report("--fix")
+		check("--fix повтор идемпотентен (actions пусты)",
+		      (rep2["data"]["fix"]["actions"] or []) == [],
+		      rep2["data"]["fix"]["actions"])
+		check("--fix повтор не меняет файл",
+		      local_file.read_text(encoding="utf-8") == fixed_text, "файл изменился")
+
+		# Чужой провайдер не перетирается, конфликт назван, rc 1.
+		fx_conf = Fixture(Path(tmp) / "fix-conflict")
+		make_launcher(fx_conf)
+		make_testpilot(fx_conf)
+		write_install(fx_conf, make_package(Path(tmp) / "fix-conflict" / "pkgsrc"))
+		write_project(fx_conf, v8local=V8LOCAL.replace("push: ibcmd", "push: designer"))
+		write_registry(fx_conf)
+		conf_file = fx_conf.project / "v8project.local.yaml"
+		repc = fx_conf.report("--fix")
+		check("--fix чужой провайдер не перетирается",
+		      "push: designer" in conf_file.read_text(encoding="utf-8"),
+		      conf_file.read_text(encoding="utf-8")[:200])
+		check("--fix конфликт назван (код и conflicts)",
+		      any(a["code"] == "fix.providers-conflict"
+		          for a in (repc["data"]["fix"]["actions"] or []))
+		      and any("push=designer" in item
+		              for item in (repc["data"]["fix"]["conflicts"] or [])),
+		      json.dumps(repc["data"]["fix"], ensure_ascii=False)[:400])
+		check("--fix конфликт даёт rc 1", repc["result"].returncode == 1,
+		      repc["result"].stdout[-300:])
+
+		# Без --fix файлы не меняются и поля fix нет (read-only).
+		fx_ro = Fixture(Path(tmp) / "fix-readonly")
+		make_launcher(fx_ro)
+		make_testpilot(fx_ro)
+		write_install(fx_ro, make_package(Path(tmp) / "fix-readonly" / "pkgsrc"))
+		write_project(fx_ro, v8local="infobases:\n  origin:\n    connection: 'File=build/ib'\n")
+		ro_file = fx_ro.project / "v8project.local.yaml"
+		ro_before = ro_file.read_text(encoding="utf-8")
+		rep_ro = fx_ro.report()
+		check("без --fix файлы не меняются",
+		      ro_file.read_text(encoding="utf-8") == ro_before, "файл изменился")
+		check("без --fix поля fix нет", "fix" not in rep_ro["data"],
+		      sorted(rep_ro["data"]))
+
+		# Просроченный замок ИБ убран, живой остался.
+		fx_lock = Fixture(Path(tmp) / "fix-locks")
+		make_launcher(fx_lock)
+		make_testpilot(fx_lock)
+		write_install(fx_lock, make_package(Path(tmp) / "fix-locks" / "pkgsrc"))
+		write_project(fx_lock)
+		write_registry(fx_lock)
+		lock_dir = fx_lock.home / ".dsh" / "state" / "1c" / "ib-locks"
+		lock_dir.mkdir(parents=True, exist_ok=True)
+		stale = lock_dir / "stale.json"
+		stale.write_text(json.dumps({"connection": "File=build/ib",
+		                             "tree": str(fx_lock.project), "session_id": "s",
+		                             "operation": "build", "started_at": "x",
+		                             "expires_ts": time.time() - 100}), encoding="utf-8")
+		live = lock_dir / "live.json"
+		live.write_text(json.dumps({"connection": "File=build/ib",
+		                            "tree": str(fx_lock.project), "session_id": "s",
+		                            "operation": "build", "started_at": "x",
+		                            "expires_ts": time.time() + 1000}), encoding="utf-8")
+		repl = fx_lock.report("--fix")
+		check("--fix просроченный замок убран", not stale.exists(), "замок остался")
+		check("--fix живой замок остался", live.exists(), "замок снят")
+		check("--fix действие fix.ib-locks названо",
+		      any(a["code"] == "fix.ib-locks"
+		          for a in (repl["data"]["fix"]["actions"] or [])),
+		      repl["data"]["fix"]["actions"])
+
+		# Справка показывает --fix.
+		help_res = fx_fix.run_argv("--help")
+		check("--help показывает --fix",
+		      help_res.returncode == 0 and "--fix" in help_res.stdout,
+		      help_res.stdout[:200])
 
 		return summary()
 

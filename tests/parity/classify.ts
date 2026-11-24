@@ -29,6 +29,8 @@ export const MARKERS: readonly { readonly marker: string; readonly code: Exclude
   { marker: 'нарушает контракт носителя', code: 'bsl-module' },
   { marker: 'отключение анонимизации', code: 'anon-raw' },
   { marker: 'Третий идентичный повтор', code: 'retry-discipline' },
+  { marker: 'Прямой запуск Конфигуратора запрещён', code: 'designer-launch' },
+  { marker: 'make — только Конфигуратор', code: 'designer-make' },
 ]
 
 /**

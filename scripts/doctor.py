@@ -15,6 +15,11 @@
             `build/out`, движок стиля, скилл bsp, запись в реестре проектов;
   state   — корень состояния контура, замки инфобаз, журнал гейтов.
 
+С `--fix` после проверок применяется механическая конвергенция проекта к
+эталону чистой установки (раздел `fix`): пины ibcmd, раскладка build/out,
+просроченные замки, остановка дизайнер-агентов и осиротевших DESIGNER в
+границах проекта, публикация ibsrv. Без `--fix` doctor read-only.
+
 Реестр проектов (`projects.json` в корне состояния) ведётся при переводе
 парка; doctor сверяет запись с фактом и дописывает в неё свой результат.
 
@@ -23,12 +28,14 @@
 (`bundle.missing`, `mcp.db-down` и т. п.) — по ним проверка машинная.
 
 Запуск: python3 doctor.py [project-root] [--json] [--no-ping] [--profile NAME]
+        [--fix]
 """
 import json
 import os
 import platform
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import urllib.error
@@ -52,6 +59,8 @@ from contour_paths import (  # noqa: E402
 	update_registry,
 )
 from unica_versions import load as load_unica_versions  # noqa: E402
+import ib_lock  # noqa: E402
+import topology_fix  # noqa: E402
 
 BUNDLE = "dsh-1c-contour"
 PLUGIN_ROW = "1c-contour"
@@ -130,9 +139,16 @@ class Report:
 	def fail(self, name: str, message: str, code=None, **fields):
 		self._add("fail", name, message, code, **fields)
 
+	def _names(self):
+		"""Разделы отчёта: `fix` добавляется только прогоном с --fix."""
+		names = list(SECTION_ORDER)
+		if "fix" in self.sections:
+			names.append("fix")
+		return names
+
 	def verdict(self):
 		"""`(status, exit)` по разделам: FAIL старше WARN, WARN старше ok."""
-		statuses = [self.sections[name]["status"] for name in SECTION_ORDER]
+		statuses = [self.sections[name]["status"] for name in self._names()]
 		if "fail" in statuses:
 			return "fail", 1
 		if "warn" in statuses:
@@ -142,7 +158,8 @@ class Report:
 	def finish(self, root: Path, dsh_home: Path) -> int:
 		status, code = self.verdict()
 		self.status = status
-		statuses = [self.sections[name]["status"] for name in SECTION_ORDER]
+		names = self._names()
+		statuses = [self.sections[name]["status"] for name in names]
 		failed = sum(1 for item in statuses if item == "fail")
 		warned = sum(1 for item in statuses if item == "warn")
 		if self.as_json:
@@ -151,7 +168,7 @@ class Report:
 				"dshHome": str(dsh_home),
 				"status": status,
 				"exit": code,
-				**{name: self.sections[name] for name in SECTION_ORDER},
+				**{name: self.sections[name] for name in names},
 			}
 			print(json.dumps(payload, ensure_ascii=False, indent=2))
 		else:
@@ -1371,16 +1388,259 @@ def check_state(report: Report) -> None:
 	report.sections["state"].update(data)
 
 
+# ── 8. fix: механическая конвергенция (--fix) ───────────────────────────────
+# Только механические идемпотентные действия в границах проекта. Чужое
+# значение providers и tracked-файлы не перетираются — их решает владелец.
+# Без --fix этот блок не вызывается: doctor остаётся read-only.
+
+
+def _cmdline_file_paths(argv: list) -> list:
+	"""Пути файловых баз из cmdline процесса: `File=` и флаг `/F`."""
+	paths = []
+	for arg in argv:
+		for match in re.finditer(r"(?i)\bfile=([^;]+)", arg):
+			paths.append(match.group(1).strip().strip("'\""))
+		match = re.match(r"^/F(.+)$", arg)
+		if match:
+			paths.append(match.group(1).strip().strip("'\""))
+	return paths
+
+
+def select_designer_pids(processes: list, base_dirs) -> list:
+	"""Отобрать pid осиротевших `1cv8 DESIGNER` на базы проекта (чистая функция).
+
+	@param processes: список `(pid, argv)` — argv как из /proc/<pid>/cmdline.
+	@param base_dirs: абсолютные каталоги баз ЭТОГО проекта.
+	@return: pid процессов DESIGNER (не ENTERPRISE), чей абсолютный `File=`
+	         лежит внутри баз проекта. Чужие пути не отбираются никогда;
+	         относительный `File=` чужого cwd не утверждается (как db_status).
+	Юнит-тестируется без реальных процессов и убийств.
+	"""
+	bases = [Path(os.path.realpath(str(base))) for base in base_dirs]
+	selected = []
+	for pid, argv in processes:
+		if not argv or not Path(argv[0]).name.startswith("1cv8"):
+			continue
+		modes = {arg.upper() for arg in argv[1:]}
+		if "DESIGNER" not in modes or "ENTERPRISE" in modes:
+			continue
+		for raw in _cmdline_file_paths(argv):
+			if not raw.startswith("/"):
+				continue
+			path = Path(os.path.realpath(raw))
+			if any(path == base or base in path.parents for base in bases):
+				selected.append(pid)
+				break
+	return selected
+
+
+def _project_base_dirs(root: Path) -> set:
+	"""Каталоги баз проекта: build/ и файловая привязка infobases.origin."""
+	bases = {Path(os.path.realpath(str(root / "build")))}
+	conn = ib_lock.resolve_infobase_connection(str(root)) or ""
+	for part in ib_lock.split_connection(conn):
+		stripped = part.strip()
+		if stripped.lower().startswith("file="):
+			value = stripped[5:].strip().strip("'\"")
+			if value:
+				full = value if value.startswith("/") else str(root / value)
+				bases.add(Path(os.path.realpath(full)))
+	return bases
+
+
+def _live_processes() -> list:
+	"""`(pid, argv)` живых процессов из /proc — тонкий слой над отбором."""
+	procs = []
+	for name in os.listdir("/proc"):
+		if not name.isdigit():
+			continue
+		try:
+			raw = Path(f"/proc/{name}/cmdline").read_bytes()
+		except OSError:
+			continue
+		argv = [arg.decode("utf-8", "replace") for arg in raw.split(b"\0") if arg]
+		if argv:
+			procs.append((int(name), argv))
+	return procs
+
+
+def _resolve_runner():
+	"""Бинарник v8-runner из кэша рантаймов Юники по версии unica.yaml."""
+	try:
+		version = load_unica_versions()["v8-runner"]
+	except RuntimeError:
+		return None
+	target = unica_target()
+	if not target:
+		return None
+	runtimes = Path.home() / ".local" / "share" / "unica" / "runtimes" / "v8-runner"
+	for path in sorted(runtimes.glob(f"{version}--*/{target}/*/v8-runner")):
+		if path.is_file() and os.access(str(path), os.X_OK):
+			return path
+	return None
+
+
+def _purge_ib_locks() -> list:
+	"""Снять просроченные замки ИБ (TTL истёк) — логика ib_lock/session_clean."""
+	directory = ib_lock.session_state_dir("ib-locks")
+	if not directory.is_dir():
+		return []
+	removed = []
+	for path in sorted(directory.glob("*.json")):
+		if ib_lock._is_stale(ib_lock._read_lock(path) or {}):
+			try:
+				path.unlink()
+				removed.append(path.name)
+			except OSError:
+				pass
+	return removed
+
+
+def _fix_runner(root: Path, report: Report, act) -> None:
+	"""Остановить живые дизайнер-агенты раннера этого проекта."""
+	runner = _resolve_runner()
+	if runner is None:
+		report.warn("fix", "v8-runner не найден в кэше рантаймов — остановка "
+		            "дизайнер-агентов пропущена", code="fix.runner-missing")
+		return
+	command = [str(runner), "agent", "stop", "--json-message", "--workdir", str(root)]
+	try:
+		done = subprocess.run(command, capture_output=True, text=True,
+		                      timeout=120, cwd=str(root))
+	except (OSError, subprocess.TimeoutExpired) as error:
+		report.warn("fix", f"v8-runner agent stop не отработал "
+		            f"({type(error).__name__})", code="fix.runner-stop")
+		return
+	try:
+		envelope = json.loads(done.stdout or "{}")
+	except json.JSONDecodeError:
+		envelope = {}
+	data = envelope.get("data") or {}
+	stopped = data.get("stopped") or []
+	refused = data.get("refused") or []
+	if stopped:
+		act("ok", "fix.runner-stop", "остановлены дизайнер-агенты раннера: "
+		    + ", ".join(str(item) for item in stopped))
+	if refused:
+		act("warn", "fix.runner-stop", "агенты отказали в остановке: "
+		    + ", ".join(str(item) for item in refused))
+	if done.returncode != 0:
+		report.warn("fix", f"v8-runner agent stop exit {done.returncode} — "
+		            "проверь вручную", code="fix.runner-stop")
+
+
+def _fix_designers(root: Path, report: Report, act) -> None:
+	"""SIGTERM осиротевшим 1cv8 DESIGNER на базы проекта; pid в отчёт."""
+	pids = select_designer_pids(_live_processes(), _project_base_dirs(root))
+	for pid in pids:
+		try:
+			os.kill(pid, signal.SIGTERM)
+			act("ok", "fix.designer-kill",
+			    f"SIGTERM осиротевшему 1cv8 DESIGNER (pid {pid})")
+		except OSError as error:
+			report.warn("fix", f"pid {pid}: SIGTERM не доставлен ({error})",
+			            code="fix.designer-kill")
+
+
+def _fix_ibsrv(root: Path, report: Report, act) -> None:
+	"""Погасить публикацию ibsrv, держащую файловую базу проекта."""
+	build = Path(os.path.realpath(str(root / "build")))
+	work_dirs = set()
+	for _pid, argv in _live_processes():
+		for arg in argv:
+			if not arg.startswith("--config="):
+				continue
+			cfg = Path(os.path.realpath(arg[len("--config="):]))
+			parent = cfg.parent
+			if cfg.name == "ibases.json" and (parent == build or build in parent.parents):
+				work_dirs.add(parent)
+	if not work_dirs:
+		return
+	script = Path(__file__).resolve().parent / "publish_ib.sh"
+	for work_dir in sorted(work_dirs):
+		instance = work_dir.name[len(".ibsrv-"):] \
+			if work_dir.name.startswith(".ibsrv-") else ""
+		command = ["bash", str(script), "stop"]
+		if instance:
+			command += ["--instance", instance]
+		try:
+			done = subprocess.run(command, capture_output=True, text=True,
+			                      timeout=120, cwd=str(root))
+			rc = done.returncode
+		except (OSError, subprocess.TimeoutExpired):
+			rc = 1
+		if rc == 0:
+			act("ok", "fix.ibsrv-stop", f"погашена публикация ibsrv ({work_dir.name})")
+		else:
+			report.warn("fix", "публикация ibsrv не погашена скриптом — лечение: "
+			            + " ".join(command), code="fix.ibsrv-manual")
+
+
+def apply_fix(report: Report, root: Path) -> None:
+	"""Механическая конвергенция проекта к эталону чистой установки.
+
+	Каждое действие печатается и попадает в раздел `fix` (перечень действий
+	с кодами). Идемпотентно: повторный прогон ничего не меняет.
+	"""
+	report.sections.setdefault(
+		"fix", {"status": "ok", "code": "fix.ok", "message": "", "messages": []})
+	actions, conflicts = [], []
+
+	def act(level, code, message):
+		actions.append({"code": code, "message": message})
+		getattr(report, level)("fix", message, code=code)
+
+	# a. пины providers: недостающие ibcmd дописываются, чужое — конфликт.
+	added, prov_conflicts = topology_fix.fix_providers(root, False)
+	if added:
+		act("ok", "fix.providers", "дописаны пины ibcmd: " + ", ".join(added))
+	for item in prov_conflicts:
+		conflicts.append(item)
+		act("fail", "fix.providers-conflict",
+		    f"чужой исполнитель {item} — не перетирается, решает владелец")
+
+	# b. топология build/out.
+	moved, skipped = topology_fix.fix_build_out(root, False)
+	if moved:
+		act("ok", "fix.build-out", "разложено build/out: " + "; ".join(moved))
+	for item in skipped:
+		act("warn", "fix.build-out-skip", f"build/out пропущено: {item}")
+
+	# c. просроченные замки ИБ и мёртвые замки стендов.
+	removed_ib = _purge_ib_locks()
+	if removed_ib:
+		act("ok", "fix.ib-locks", "сняты просроченные замки ИБ: "
+		    + ", ".join(removed_ib))
+	removed_stand = topology_fix.fix_stand_locks(False)
+	if removed_stand:
+		act("ok", "fix.stand-locks", "сняты мёртвые замки стендов: "
+		    + "; ".join(removed_stand))
+
+	# d. живое состояние строго в границах проекта.
+	_fix_runner(root, report, act)
+	_fix_designers(root, report, act)
+	_fix_ibsrv(root, report, act)
+
+	report.sections["fix"]["actions"] = actions
+	report.sections["fix"]["conflicts"] = conflicts
+	if not actions:
+		report.ok("fix", "конвергенция: чисто — нечего делать")
+
+
 # ── вход ────────────────────────────────────────────────────────────────────
 
 USAGE = ("Запуск: python3 doctor.py [project-root] [--json] [--no-ping] "
-         "[--profile NAME]")
+         "[--profile NAME] [--fix]\n"
+         "  --fix  механическая конвергенция проекта к эталону чистой установки:\n"
+         "         пины ibcmd, раскладка build/out, просроченные замки, остановка\n"
+         "         дизайнер-агентов и осиротевших DESIGNER в границах проекта,\n"
+         "         публикация ibsrv. Без --fix read-only.")
 
 
 def parse_args(argv):
 	"""Разбор аргументов; `(flags, ошибка)` — неизвестный флаг не глотается."""
 	flags = {"json": False, "no_ping": False, "profile": "", "root": "",
-	         "help": False}
+	         "help": False, "fix": False}
 	index = 0
 	while index < len(argv):
 		argument = argv[index]
@@ -1390,6 +1650,8 @@ def parse_args(argv):
 			flags["json"] = True
 		elif argument == "--no-ping":
 			flags["no_ping"] = True
+		elif argument == "--fix":
+			flags["fix"] = True
 		elif argument == "--profile":
 			index += 1
 			if index >= len(argv):
@@ -1425,6 +1687,8 @@ def main() -> int:
 	check_layout(report, root)
 	check_project(report, root, project)
 	check_state(report)
+	if flags["fix"]:
+		apply_fix(report, root)
 	code = report.finish(root, dsh_home)
 	record_doctor(root, report.status)
 	return code

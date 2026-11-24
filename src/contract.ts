@@ -38,6 +38,10 @@ export type ReasonCode =
   | 'anon-raw'
   /** Третий идентичный повтор упавшей команды. */
   | 'retry-discipline'
+  /** Прямой запуск Конфигуратора агентом (1cv8 DESIGNER, launch designer). */
+  | 'designer-launch'
+  /** make: единственный исполнитель раннера — Конфигуратор. */
+  | 'designer-make'
 
 /** Один вызов инструмента так, как его видит гейт. */
 export interface GateCall {

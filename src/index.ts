@@ -36,6 +36,7 @@ import { evaluatePost as evaluateStylePost } from './gates/bsl-style.js'
 import { evaluatePost as evaluateDocPost, evaluatePre as evaluateDocPre } from './gates/doc.js'
 import { ensureKdStation } from './gates/kd-session-start.js'
 import { evaluatePre as evaluateMcpPre } from './gates/mcp.js'
+import { evaluatePre as evaluateDesignerPre } from './gates/no-designer.js'
 import { evaluatePre as evaluateRetryPre, observeResult as observeRetryResult } from './gates/retry.js'
 import { cleanSessionState } from './gates/session-clean.js'
 import { sessionContext } from './gates/session-context.js'
@@ -158,6 +159,7 @@ export function apply(ctx: Context): void {
     const call = gateCall(exec, cwd)
     const decisions: PreDecision[] = [
       evaluateSourcePre(call, project, state),
+      evaluateDesignerPre(call, project, state),
       evaluateMcpPre(call, project, state),
       evaluateDocPre(call, project, state),
       evaluateAnonPre(call, state),

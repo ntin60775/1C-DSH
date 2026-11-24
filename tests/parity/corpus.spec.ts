@@ -3,7 +3,8 @@
  *
  * spec: Т8 — «векторы `tests/vectors/` покрывают 11 гейтов»; после снятия
  * python-эталона векторы — единственный носитель регрессии, и молчаливо
- * потерянный корпус означал бы молчаливо потерянную регрессию.
+ * потерянный корпус означал бы молчаливо потерянную регрессию. no-designer
+ * добавлен решением оператора (запрет Конфигуратора).
  * @module tests/parity/corpus.spec
  */
 
@@ -14,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-/** Одиннадцать гейтов контура — состав спеки (решение 11). */
+/** Двенадцать гейтов контура — состав спеки (решение 11) + no-designer. */
 const GATES: readonly string[] = [
   'unica-source',
   'doc',
@@ -27,13 +28,14 @@ const GATES: readonly string[] = [
   'session-clean',
   'session-context',
   'kd-session-start',
+  'no-designer',
 ]
 
 const VECTORS_DIR = new URL('../vectors/', import.meta.url)
 const GATES_DIR = new URL('../../src/gates/', import.meta.url)
 
 describe('покрытие корпуса векторами', () => {
-  it('каждый из 11 гейтов имеет непустой корпус', () => {
+  it('каждый из 12 гейтов имеет непустой корпус', () => {
     for (const gate of GATES) {
       const url = new URL(`${gate}.json`, VECTORS_DIR)
       const corpus = JSON.parse(readFileSync(url, 'utf8')) as unknown[]
@@ -63,6 +65,7 @@ describe('покрытие корпуса векторами', () => {
       'source-edit', 'source-bash', 'worktree-uninit', 'ib-lock',
       'docs-unverified', 'mcp-unsafe', 'stand-lock', 'bsl-style',
       'bsl-module', 'anon-raw', 'retry-discipline',
+      'designer-launch', 'designer-make',
     ]
     const marked = new Set(MARKERS.map((entry) => entry.code))
     for (const code of blockClasses) {

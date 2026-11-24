@@ -15,8 +15,8 @@ XML-выгрузки внешних отчётов. На каждый отчёт
   source-set'ах — по тексту `epf-init` (form-edit/form-events), живьём
   не проверена.
 - Сборка и разбор — `$DSH_1C_ROOT/scripts/epf-load.sh` и `epf-dump.sh`
-  (скилл `1c-ibcmd-delivery`); `unica.run op=make` — альтернатива той же
-  сборки через раннер.
+  (ibcmd, без ИБ; скилл `1c-ibcmd-delivery`). `unica.run op=make`
+  запрещён: единственный исполнитель — Конфигуратор (гейт `no-designer`).
 
 ## Канон разметки формы
 - Секция элементов формы — `<ChildItems>`; порядок верхнего уровня:

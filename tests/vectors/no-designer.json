@@ -1,0 +1,267 @@
+[
+  {
+    "id": "nd-plain-designer",
+    "describe": "прямой 1cv8 DESIGNER блокируется",
+    "gate": "no-designer",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "1cv8 DESIGNER /F /tmp/ib /DumpConfigToFiles /tmp/out" } },
+        "expect": { "decision": "deny", "code": "designer-launch", "reasonIncludes": ["Прямой запуск Конфигуратора запрещён", "epf-load.sh"] }
+      }
+    ]
+  },
+  {
+    "id": "nd-path-designer",
+    "describe": "1cv8 DESIGNER по полному пути блокируется",
+    "gate": "no-designer",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "/opt/1cv8/x86_64/8.3.27.1859/1cv8 DESIGNER /F /tmp/ib" } },
+        "expect": { "decision": "deny", "code": "designer-launch" }
+      }
+    ]
+  },
+  {
+    "id": "nd-env-wrapper",
+    "describe": "env-обёртка Wayland не скрывает запуск Конфигуратора",
+    "gate": "no-designer",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "env -u WAYLAND_DISPLAY GDK_BACKEND=x11 1cv8 DESIGNER /F /tmp/ib" } },
+        "expect": { "decision": "deny", "code": "designer-launch" }
+      }
+    ]
+  },
+  {
+    "id": "nd-distrobox",
+    "describe": "distrobox enter не скрывает запуск Конфигуратора",
+    "gate": "no-designer",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "distrobox enter 1c -- 1cv8 DESIGNER /F /tmp/ib" } },
+        "expect": { "decision": "deny", "code": "designer-launch" }
+      }
+    ]
+  },
+  {
+    "id": "nd-timeout",
+    "describe": "timeout-обёртка не скрывает запуск Конфигуратора",
+    "gate": "no-designer",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "timeout 120 1cv8 DESIGNER /F /tmp/ib" } },
+        "expect": { "decision": "deny", "code": "designer-launch" }
+      }
+    ]
+  },
+  {
+    "id": "nd-bash-c",
+    "describe": "bash -c с запуском Конфигуратора блокируется",
+    "gate": "no-designer",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "bash -c '1cv8 DESIGNER /F /tmp/ib'" } },
+        "expect": { "decision": "deny", "code": "designer-launch" }
+      }
+    ]
+  },
+  {
+    "id": "nd-second-segment",
+    "describe": "запуск Конфигуратора во втором сегменте && блокируется",
+    "gate": "no-designer",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "cd /tmp && 1cv8 DESIGNER /F ib" } },
+        "expect": { "decision": "deny", "code": "designer-launch" }
+      }
+    ]
+  },
+  {
+    "id": "nd-runner-launch-designer",
+    "describe": "v8-runner launch designer блокируется",
+    "gate": "no-designer",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "v8-runner launch designer" } },
+        "expect": { "decision": "deny", "code": "designer-launch" }
+      }
+    ]
+  },
+  {
+    "id": "nd-mcp-launch-designer",
+    "describe": "unica.run launch с клиентом designer блокируется",
+    "gate": "no-designer",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "mcp__unica__unica_run_0123456789ab", "args": { "op": "launch", "args": { "client": "designer" }, "dryRun": false } },
+        "expect": { "decision": "deny", "code": "designer-launch" }
+      }
+    ]
+  },
+  {
+    "id": "nd-runner-make",
+    "describe": "v8-runner make блокируется: исполнитель только Конфигуратор",
+    "gate": "no-designer",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "v8-runner make ПФ --output build/out/epf" } },
+        "expect": { "decision": "deny", "code": "designer-make", "reasonIncludes": ["make — только Конфигуратор", "epf-load.sh"] }
+      }
+    ]
+  },
+  {
+    "id": "nd-runner-make-path",
+    "describe": "make раннера по полному пути блокируется",
+    "gate": "no-designer",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "$HOME/.local/share/unica/runtimes/v8-runner/0.18.1--abc/linux-x64/v8-runner-linux-x86_64-musl/v8-runner make ПФ --output build/out/epf" } },
+        "expect": { "decision": "deny", "code": "designer-make" }
+      }
+    ]
+  },
+  {
+    "id": "nd-mcp-make",
+    "describe": "unica.run op=make блокируется",
+    "gate": "no-designer",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "mcp__unica__run", "args": { "op": "make", "args": { "sourceSet": "ПФ", "output": "build/out/epf" }, "dryRun": false } },
+        "expect": { "decision": "deny", "code": "designer-make" }
+      }
+    ]
+  },
+  {
+    "id": "nd-enterprise-allowed",
+    "describe": "1cv8 ENTERPRISE не блокируется",
+    "gate": "no-designer",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "1cv8 ENTERPRISE /F /tmp/ib /Execute x.epf" } },
+        "expect": { "decision": "allow" }
+      }
+    ]
+  },
+  {
+    "id": "nd-ibcmd-allowed",
+    "describe": "ibcmd-сборка epf не блокируется",
+    "gate": "no-designer",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "ibcmd config import src/epf/ПФ/ПФ.xml --out=build/out/epf/ПФ.epf" } },
+        "expect": { "decision": "allow" }
+      }
+    ]
+  },
+  {
+    "id": "nd-grep-designer-allowed",
+    "describe": "grep DESIGNER по файлу не блокируется",
+    "gate": "no-designer",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "grep -n DESIGNER v8project.yaml" } },
+        "expect": { "decision": "allow" }
+      }
+    ]
+  },
+  {
+    "id": "nd-strings-pipe-allowed",
+    "describe": "чтение бинарника strings через пайп не блокируется",
+    "gate": "no-designer",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "strings /opt/1cv8/x86_64/8.3.27.1859/1cv8 | grep DESIGNER" } },
+        "expect": { "decision": "allow" }
+      }
+    ]
+  },
+  {
+    "id": "nd-echo-allowed",
+    "describe": "echo строки 1cv8 DESIGNER не блокируется",
+    "gate": "no-designer",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "echo '1cv8 DESIGNER'" } },
+        "expect": { "decision": "allow" }
+      }
+    ]
+  },
+  {
+    "id": "nd-unica-check-allowed",
+    "describe": "unica.check — именованное исключение, не блокируется",
+    "gate": "no-designer",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "mcp__unica__unica_check_0123456789ab", "args": { "at": "Catalog.Товары" } },
+        "expect": { "decision": "allow" }
+      }
+    ]
+  },
+  {
+    "id": "nd-runner-push-allowed",
+    "describe": "v8-runner push не блокируется",
+    "gate": "no-designer",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "v8-runner push main" } },
+        "expect": { "decision": "allow" }
+      }
+    ]
+  },
+  {
+    "id": "nd-launch-thin-allowed",
+    "describe": "v8-runner launch thin не блокируется",
+    "gate": "no-designer",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "v8-runner launch thin" } },
+        "expect": { "decision": "allow" }
+      }
+    ]
+  },
+  {
+    "id": "nd-write-format-allowed",
+    "describe": "write format: DESIGNER в yaml не блокируется",
+    "gate": "no-designer",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "write", "args": { "file_path": "v8project.yaml", "content": "format: DESIGNER\n" } },
+        "expect": { "decision": "allow" }
+      }
+    ]
+  },
+  {
+    "id": "nd-outside-project-allowed",
+    "describe": "вне 1С-проекта гейт молчит",
+    "gate": "no-designer",
+    "cwd": ".",
+    "steps": [
+      {
+        "phase": "pre",
+        "call": { "tool": "bash", "args": { "command": "1cv8 DESIGNER /F /tmp/ib" } },
+        "expect": { "decision": "allow" }
+      }
+    ]
+  }
+]

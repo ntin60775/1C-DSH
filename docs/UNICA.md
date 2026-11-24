@@ -3,7 +3,7 @@ node_type: reference
 title: Unica: установка, версии, скиллы и MCP
 service: _platform
 status: active
-updated: 2026-11-20
+updated: 2026-11-24
 links:
   relates_to: [dsh-install.md, dsh-gates.md]
   implemented_by: [../unica.yaml, ../scripts/install_unica_runtime.py, ../scripts/install_unica_skills.py, ../scripts/unica_ping.py]
@@ -216,7 +216,9 @@ ntin60775/deepseek-harness#1). Воркспейс Юники фиксирует�
   `support.state: limited` допустимо только `support.supportedArgs`.
   Состав словаря: `push` (включая `delete:<имя>` — удаление расширения
   с данными, вопрос человеку), `pull`, `infobase.create/restore/dump`,
-  `source.reexport`, `make`, `download`, `launch`, `extensions.list/set`.
+  `source.reexport`, `make` (запрещён агенту: единственный исполнитель —
+  Конфигуратор, гейт `no-designer`), `download`, `launch`,
+  `extensions.list/set`.
 - **Переэкспорт набора.** `unica.run {op: source.reexport, args:
   {sourceSet, format}}` полностью переэкспортирует набор в записываемый
   формат через временную файловую базу: 2.20 пишет 8.3.27, 2.21 — 8.5.1,
@@ -280,11 +282,14 @@ ntin60775/deepseek-harness#1). Воркспейс Юники фиксирует�
   `push`/`pull`/`infobase.create`/`upload`/`download`.
 - `upload`, `apply`, `reset` как операции `unica.run` недоступны (#1246).
   Загрузка `.cf`/`.cfe` — ibcmd, не раннер. `unica.apply` (MCP) — другое,
-  он правит исходники. Сборка `.cfe` — два пути: `unica make` (из
-  исходников, расширение должно стоять в ИБ) и `ibcmd config save
-  --extension=<имя>` (из базы) — скилл `1c-ibcmd-delivery`. Успех apply не
-  равен донесённой версии: критерий — поколение расширения, не строка
-  «успешно» и не `generation-id` основной конфигурации.
+  он правит исходники. Сборка `.cfe` — `ibcmd config save
+  --extension=<имя>` (из базы); `unica make` запрещён: раннер
+  исполняет make только пакетным Конфигуратором (пин `make: ibcmd` не
+  читается), гейт `no-designer`. Сборка epf/erf — ibcmd-скрипты
+  `epf-load.sh`/`epf-dump.sh` (без ИБ) — скилл `1c-ibcmd-delivery`.
+  Успех apply не равен донесённой версии: критерий — поколение
+  расширения, не строка «успешно» и не `generation-id` основной
+  конфигурации.
 - Файловая база принадлежит рабочей копии. Запись из второй копии раннер
   предупреждает (`infobase_of_another_copy`), юника спрашивает человека
   (`infobase.another_copy`: продолжить или своя база); клиент без

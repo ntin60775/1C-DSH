@@ -1,8 +1,10 @@
 #!/bin/sh
-# Сборка внешней обработки/отчёта (.epf/.erf) из XML-исходников — формат
-# выгрузки тот же, что ждут скиллы юники epf-init/erf-init. Пустую файловую
-# базу-контекст создаёт ibcmd и гасит сам; бинарник платформы ищется в PATH,
-# затем в /opt/1cv8/x86_64/*/. Linux с платформой в distrobox — запуск через
+# Сборка внешней обработки/отчёта (.epf/.erf) из XML-исходников — чистый
+# ibcmd: config import <корневой.xml> --out=<файл>. Информационная база и
+# Конфигуратор не участвуют (проверено на 8.3.27.1859, epf и erf с СКД).
+# Формат выгрузки иерархический — тот же, что ждут скиллы юники
+# epf-init/erf-init. Бинарник платформы ищется в PATH, затем в
+# /opt/1cv8/x86_64/*/. Linux с платформой в distrobox — запуск через
 # `distrobox enter <имя> --` (скилл 1c-ibcmd-delivery, раздел «Хост Linux»).
 # Употребление: epf-load.sh <корневой.xml> <файл.epf|.erf>
 set -eu
@@ -20,21 +22,17 @@ plat_bin() {
 	return 1
 }
 IBCMD=$(plat_bin ibcmd)
-ONECV8=$(plat_bin 1cv8)
 
-work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT HUP INT TERM
 mkdir -p "$(dirname "$out")"
-log=$work/protocol.log
-
-"$IBCMD" infobase create --db-path="$work/ib" >/dev/null
+log=$(mktemp)
+trap 'rm -f "$log"' EXIT HUP INT TERM
 
 rc=0
-"$ONECV8" DESIGNER /F "$work/ib" \
-	/LoadExternalDataProcessorOrReportFromFiles "$src" "$out" /Out "$log" || rc=$?
+"$IBCMD" config import "$src" --out="$out" >"$log" 2>&1 || rc=$?
 cat "$log"
-grep -qiE '(завершена|completed)' "$log" || {
+grep -qiE '(заверш[её]н|completed)' "$log" || {
 	echo "в протоколе нет отметки завершения — операция не доказана, не доверяй коду возврата" >&2
 	rc=1
 }
+[ -s "$out" ] || { echo "выходной файл пуст или не создан: $out" >&2; rc=1; }
 exit $rc
