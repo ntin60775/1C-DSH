@@ -16,6 +16,11 @@ infobases:
     # user: <пользователь ИБ>       # пароль — не в git, не в чат
     # password: <через env или этот файл, но не в общий v8project.yaml>
 providers:
+  # Кластерная база (connection: 'Srvr=...'): ibcmd не реализует
+  # push/pull/download/dump/restore/extensions (валидатор раннера:
+  # implemented agent, designer), infobase.create не пинится —
+  # ставь agent на эти шесть и make: ibcmd. Поставка исходников —
+  # прямыми командами ibcmd (скилл 1c-ibcmd-delivery).
   push: ibcmd
   pull: ibcmd
   download: ibcmd

@@ -1095,26 +1095,34 @@ def check_v8project(report: Report, v8text: str, local_text: str) -> None:
 		report.ok("project", "привязка базы в local-слое (канон 0.15)")
 	# Канон маршрутизации: run-операции исполняет только ibcmd (инвариант 8
 	# навыка 1c-contour). Пины живут в local-слое; launch не пинится.
-	required_pins = ("push", "pull", "download", "make", "infobase.create",
-	                 "infobase.dump", "infobase.restore", "extensions")
+	# Канон маршрутизации зависит от типа ИБ: ibcmd не реализует
+	# push/pull/download/dump/restore/extensions на кластерной базе
+	# (валидация раннера), у infobase.create там единственный
+	# исполнитель пина нет.
+	expected = topology_fix.expected_pins(local_text or "")
 	pins = section_values(local_text, "providers") if local_text else {}
-	missing = [key for key in required_pins if key not in pins]
+	missing = [key for key in expected if key not in pins]
 	foreign = sorted(f"{key}={pins[key]}" for key in pins
-	                 if key in required_pins and pins[key] != "ibcmd")
+	                 if key in expected and pins[key] != expected[key])
 	if foreign:
 		report.fail("project", "v8project.local.yaml: providers "
-		            f"{', '.join(foreign)} — канон контура: run-операции "
-		            "исполняет только ibcmd, конфигуратор и агент не используются",
+		            f"{', '.join(foreign)} — канон контура: "
+		            f"{', '.join(f'{key}={value}' for key, value in sorted(expected.items()))}",
 		            code="project.providers-policy")
 	elif missing:
-		report.warn("project", "v8project.local.yaml: нет пинов ibcmd "
-		            f"providers.{', providers.'.join(missing)} — исполнитель "
-		            "выберется цепочкой раннера (агент/конфигуратор); дописывает "
-		            "механически: python3 $DSH_1C_ROOT/scripts/topology_fix.py "
-		            "<проект> (шаблон — 1c-project-layout)",
+		report.warn("project", "v8project.local.yaml: нет пинов providers "
+		            f"{', '.join(missing)} — исполнитель выберется цепочкой "
+		            "раннера; дописывает механически: python3 "
+		            "$DSH_1C_ROOT/scripts/topology_fix.py <проект> "
+		            "(шаблон — 1c-project-layout)",
 		            code="project.providers-pins")
 	elif pins:
-		report.ok("project", "run-операции запинены на ibcmd (канон контура)")
+		if topology_fix.is_cluster_infobase(local_text or ""):
+			report.ok("project", "run-операции запинены каноном кластерной ИБ "
+			          "(agent на push/pull/download/dump/restore/extensions, "
+			          "make — ibcmd, без infobase.create)")
+		else:
+			report.ok("project", "run-операции запинены на ibcmd (канон контура)")
 
 
 def check_platform(report: Report, root: Path, v8text: str, local_text: str,
@@ -1503,7 +1511,10 @@ def _fix_runner(root: Path, report: Report, act) -> None:
 		report.warn("fix", "v8-runner не найден в кэше рантаймов — остановка "
 		            "дизайнер-агентов пропущена", code="fix.runner-missing")
 		return
-	command = [str(runner), "agent", "stop", "--json-message", "--workdir", str(root)]
+	# cwd проекта уже root: `--workdir` заставляет раннер пересчитать
+	# localPath от корня и упасть на «localPath overlaps workPath»
+	# («agent stop» — exit 2, конвергенция не работает).
+	command = [str(runner), "agent", "stop", "--json-message"]
 	try:
 		done = subprocess.run(command, capture_output=True, text=True,
 		                      timeout=120, cwd=str(root))
@@ -1591,9 +1602,12 @@ def apply_fix(report: Report, root: Path) -> None:
 		getattr(report, level)("fix", message, code=code)
 
 	# a. пины providers: недостающие ibcmd дописываются, чужое — конфликт.
-	added, prov_conflicts = topology_fix.fix_providers(root, False)
+	added, prov_conflicts, removed = topology_fix.fix_providers(root, False)
 	if added:
 		act("ok", "fix.providers", "дописаны пины ibcmd: " + ", ".join(added))
+	for item in removed:
+		act("ok", "fix.providers-cluster",
+		    f"{item} снят: на кластерной ИБ у операции единственный исполнитель")
 	for item in prov_conflicts:
 		conflicts.append(item)
 		act("fail", "fix.providers-conflict",

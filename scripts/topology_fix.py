@@ -35,6 +35,12 @@ CANON_DIRS = {"cf", "cfe", "epf", "erf", "reports", "tmp"}
 PROVIDER_PINS = ("push", "pull", "download", "make", "infobase.create",
                  "infobase.dump", "infobase.restore", "extensions")
 PIN_VALUE = "ibcmd"
+# Кластерная ИБ: ibcmd не реализует push/pull/download/dump/restore/extensions
+# (валидация раннера: implemented agent, designer); make — ibcmd;
+# у infobase.create единственный исполнитель, пин отвергается.
+CLUSTER_PINS = (("push", "agent"), ("pull", "agent"), ("download", "agent"),
+                ("make", "ibcmd"), ("infobase.dump", "agent"),
+                ("infobase.restore", "agent"), ("extensions", "agent"))
 LOCAL_FILE = "v8project.local.yaml"
 REPORT_DIRS = {"allure", "cucumber", "screenshots", "junit", "logs",
                "yaxunit", "va", "yax", "reports"}
@@ -46,6 +52,16 @@ SCAN_EXT = {".py", ".sh", ".bash", ".yaml", ".yml", ".json", ".md", ".ts",
 SKIP_DIRS = {"build", ".git", ".scratch", "node_modules", ".venv", "venv",
              "__pycache__", ".dsh", ".agents", "vendor", "src"}
 MAX_SCAN_BYTES = 2 * 1024 * 1024
+
+
+def is_cluster_infobase(text):
+	"""Кластерная ИБ (`Srvr=`) — у `infobase.create` единственный исполнитель,
+	пин запрещён валидацией раннера."""
+	for line in text.splitlines():
+		stripped = line.strip()
+		if stripped.startswith("connection:") and "Srvr=" in stripped:
+			return True
+	return False
 
 
 def _top_level_section(lines, name):
@@ -71,26 +87,34 @@ def _indent_of(lines, start, end):
 	return "  "
 
 
+def expected_pins(text):
+	"""Пины по типу ИБ: файловая — всё ibcmd; кластерная — см. CLUSTER_PINS."""
+	if is_cluster_infobase(text):
+		return dict(CLUSTER_PINS)
+	return {key: PIN_VALUE for key in PROVIDER_PINS}
+
+
 def fix_providers(root, dry_run):
-	"""Дописать недостающие пины ibcmd. Возвращает (changed, conflicts)."""
+	"""Довести пины до канона ИБ. Возвращает (added, conflicts, removed)."""
 	path = root / LOCAL_FILE
 	if not path.is_file():
-		return [], []
+		return [], [], []
 	try:
 		text = path.read_text(encoding="utf-8")
 	except OSError as error:
-		return [], [f"{LOCAL_FILE} не читается: {error}"]
+		return [], [f"{LOCAL_FILE} не читается: {error}"], []
+	pins = expected_pins(text)
 	lines = text.splitlines()
 	bounds = _top_level_section(lines, "providers")
 	if bounds is None:
-		added = list(PROVIDER_PINS)
+		added = list(pins)
 		if lines and lines[-1].strip():
 			lines.append("")
 		lines.append("providers:")
-		lines.extend(f"  {key}: {PIN_VALUE}" for key in added)
+		lines.extend(f"  {key}: {pins[key]}" for key in added)
 		if not dry_run:
 			path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-		return [f"providers.{key}" for key in added], []
+		return [f"providers.{key}" for key in added], [], []
 	start, end = bounds
 	existing = {}
 	for line in lines[start + 1:end]:
@@ -98,17 +122,42 @@ def fix_providers(root, dry_run):
 		if ":" in stripped:
 			key, value = stripped.split(":", 1)
 			existing[key.strip()] = value.strip()
-	conflicts = [f"providers.{key}={existing[key]}" for key in PROVIDER_PINS
-	             if key in existing and existing[key] != PIN_VALUE]
-	missing = [key for key in PROVIDER_PINS if key not in existing]
-	if not missing:
-		return [], conflicts
-	indent = _indent_of(lines, start, end)
-	insert = start + 1 + sum(1 for line in lines[start + 1:end] if line.strip())
-	lines[insert:insert] = [f"{indent}{key}: {PIN_VALUE}" for key in missing]
-	if not dry_run:
-		path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-	return [f"providers.{key}" for key in missing], conflicts
+	conflicts = [f"providers.{key}={existing[key]}" for key in pins
+	             if key in existing and existing[key] != pins[key]
+	             and not is_cluster_infobase(text)]
+	missing = [key for key in pins if key not in existing]
+	removed = []
+	if is_cluster_infobase(text) and "infobase.create" in existing:
+		kept = lines[:start + 1]
+		for line in lines[start + 1:end]:
+			if line.strip().startswith("infobase.create:"):
+				continue
+			kept.append(line)
+		kept.extend(lines[end:])
+		lines = kept
+		removed.append("providers.infobase.create")
+		bounds = _top_level_section(lines, "providers")
+		start, end = bounds if bounds else (start, start + 1)
+	rewritten = []
+	if is_cluster_infobase(text):
+		for i in range(start + 1, min(end, len(lines))):
+			stripped = lines[i].strip()
+			if ":" not in stripped:
+				continue
+			key, value = stripped.split(":", 1)
+			key, value = key.strip(), value.strip()
+			if key in pins and value != pins[key]:
+				indent_key = lines[i][:len(lines[i]) - len(lines[i].lstrip())]
+				lines[i] = f"{indent_key}{key}: {pins[key]}"
+				rewritten.append(f"providers.{key}={pins[key]}")
+	if removed or missing:
+		indent = _indent_of(lines, start, end)
+		insert = start + 1 + sum(1 for line in lines[start + 1:end] if line.strip())
+		lines[insert:insert] = [f"{indent}{key}: {pins[key]}" for key in missing]
+	if removed or missing or rewritten:
+		if not dry_run:
+			path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+	return [f"providers.{key}" for key in missing], conflicts, removed
 
 
 # Ссылка может быть разложена по частям: `ROOT / "build" / "out" / "x"`.
@@ -232,13 +281,14 @@ def main(argv=None):
 	if not root.is_dir():
 		print(f"topology_fix: нет каталога {root}", file=sys.stderr)
 		return 2
-	pins, conflicts = fix_providers(root, args.dry_run)
+	pins, conflicts, removed_pins = fix_providers(root, args.dry_run)
 	moved, skipped = fix_build_out(root, args.dry_run)
 	locks = [] if args.no_locks else fix_stand_locks(args.dry_run)
 	result = {
 		"project": str(root),
 		"dry_run": args.dry_run,
 		"providers_added": pins,
+		"providers_removed": removed_pins,
 		"build_out_moved": moved,
 		"skipped": skipped,
 		"stand_locks_removed": locks,
@@ -247,7 +297,7 @@ def main(argv=None):
 	if args.json:
 		print(json.dumps(result, ensure_ascii=False, indent="\t"))
 	else:
-		for key in ("providers_added", "build_out_moved",
+		for key in ("providers_added", "providers_removed", "build_out_moved",
 		            "stand_locks_removed"):
 			for item in result[key]:
 				print(f"fixed: {item}")
@@ -256,6 +306,7 @@ def main(argv=None):
 		for item in conflicts:
 			print(f"conflict: {item}", file=sys.stderr)
 		if not any(result[key] for key in ("providers_added",
+		                                   "providers_removed",
 		                                   "build_out_moved",
 		                                   "stand_locks_removed",
 		                                   "conflicts")):

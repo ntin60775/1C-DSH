@@ -88,7 +88,15 @@ view/check/diff (перепроверка)`. План `apply` не меняет 
    исполняет ibcmd — пины `providers` в `v8project.local.yaml`
    (`push`, `pull`, `download`, `make`, `infobase.create`,
    `infobase.dump`, `infobase.restore`, `extensions`); scaffold пишет
-   их, doctor сверяет. Пин `make` раннер не читает (единственный
+   их, doctor сверяет. Исключение — кластерная база (`Srvr=`):
+   валидатор раннера не даёт ibcmd ни `push`/`pull`/`download`, ни
+   `infobase.dump`/`restore`/`extensions` (implemented: agent,
+   designer), а у `infobase.create` там единственный исполнитель;
+   канон для неё — `agent` на эти шесть, `make: ibcmd`, пин
+   `infobase.create` не ставится. Поставка исходников на кластерной
+   базе — прямыми командами ibcmd (скилл `1c-ibcmd-delivery`), не
+   `unica.run`: агент на пине выбирает `push` только там, где ibcmd
+   неприменим; `designer` остаётся запрещённым (инвариант 9). Пин `make` раннер не читает (единственный
    исполнитель make — пакетный Конфигуратор): make агенту запрещён
    (инвариант 9), сборка epf/erf — ibcmd-скрипты. `launch` не пинится:
    единственный исполнитель — клиент платформы. Пин строгий: не готов
