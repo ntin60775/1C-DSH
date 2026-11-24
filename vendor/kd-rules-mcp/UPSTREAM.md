@@ -16,7 +16,8 @@
 | Файл | Что |
 |---|---|
 | `UPSTREAM.md` | этот файл |
-| `src/kd_rules_mcp/authoring/ed/format_package.py` | вынужденная правка: `_xdto_xml` рендерит члены пакета в порядке XSD (`import` → `valueType` → `objectType`), иначе платформа отвергает пакет («Проверка свойства 'valueType'… Нарушен порядок следования значений свойств»). Апстрим-ишью — завести, после выхода версии снять правку синком. Регресс-тест — `tests/test_ed_format_package.py::test_package_members_follow_schema_order` |
+| `src/kd_rules_mcp/authoring/ed/format_package.py` | вынужденная правка: `_xdto_xml` рендерит члены пакета в порядке XSD (`import` → `valueType` → `objectType`), иначе платформа отвергает пакет («Проверка свойства 'valueType'… Нарушен порядок следования значений свойств»). Апстрим-ишью — завести, после выхода версии снять правку синком |
+| `tests/test_ed_format_package.py` | регресс-тест правки выше — `test_package_members_follow_schema_order`; отдельный файл нашего слоя, rsync сносит его вместе с правками |
 
 Скиллы апстрима (`.claude/skills/kd2-*`, `kd3-*`) переносятся в `skills/`
 контура копией с дополненным frontmatter (`when_to_use`, `license`) и
@@ -35,9 +36,14 @@
 ```bash
 # 1. Клон/фетч апстрима, проверить тег:
 git -C <клон> fetch --tags && git -C <клон> describe --tags
-# 2. Заменить копию (без .git; UPSTREAM.md — наш файл, --delete
-#    без исключения снесёт его — проверено синком 27.10):
+# 2. Наш слой сохранить патчем: --delete сносит всё, чего нет в апстриме
+#    (UPSTREAM.md, правка format_package.py и её регресс-тест):
+git diff -- vendor/kd-rules-mcp > /tmp/kd-layer.patch
+# 2a. Заменить копию (без .git; UPSTREAM.md исключён, правки файлов
+#    апстрима приезжают как есть):
 rsync -a --delete --exclude .git --exclude UPSTREAM.md <клон>/ vendor/kd-rules-mcp/
+# 2b. Вернуть наш слой (конфликт = апстрим тронул наш файл, решать руками):
+git apply /tmp/kd-layer.patch && diff -rq vendor/kd-rules-mcp <клон> | grep -v UPSTREAM.md
 # 3. Гигиена: имена проектов владельца не утекли в новые тексты апстрима
 #    (grep по .forbidden-names.txt по НОВЫМ файлам vendor; нарицательные
 #    слова апстрима вроде «соглашение имён» на паттерн «Соглашени» —
@@ -62,4 +68,5 @@ rsync -a --delete --exclude .git --exclude UPSTREAM.md <клон>/ vendor/kd-rul
 |---|---|---|---|
 | 2026-10-21 | `f7a7f99` (v1.3.0) | 1.3.0 | создание вендор-копии: install/start-скрипты, разводка 1c-kd, скиллы kd2-*/kd3-* + 1c-kd-rules |
 | 2026-10-27 | v1.9.1 (8 релизов: 1.4.0–1.9.1) | 1.9.1 | rsync + пере-перенос скиллов (слой тот же: frontmatter + 4 замены kd-install); KD_PIN → 1.9.1; start-скрипту задан KD2_REFERENCE_DIR (справка reference_get/search, v1.8.0); в UPSTREAM.md rsync дополнен --exclude UPSTREAM.md (наш файл снесло --delete); гигиена: единственное срабатывание — «Соглашение имён» в docs/workflow.md, ложное (нарицательное апстрима на паттерн «Соглашени»); детали новых инструментов — скилл 1c-kd-rules |
+| 2026-11-24 | `8430d9f` (v1.15.0) | 1.15.0 | rsync + пере-перенос справочников `kd2-rules-build` (`checklist.md`, `live-rules.md`, `tools.md` — правки про загрузку на БСП 3.1.12+; SKILL.md и `start.md`/`mcp-1c.md` нашего слоя не тронуты); KD_PIN → 1.15.0; инструментов и контракта без изменений (73), у `rules_pack` правлен только текст `load_with`; новое в апстриме — расширение `kd2-rules-file-load.cfe` (`extensions/`, сборка `kdbase/extension_build.py`, `tests/test_extension_build.py`), `.cfe` только вложением релиза; наш слой (правка `format_package.py` + её тест) апстрим не тронул, но rsync снёс тест — восстановлен, процедура синка дополнена шагом 2/2b (наши правки вендора сохраняются патчем до rsync) |
 | 2026-11-18 | `5e120a3` (v1.14.0), 1.10.0–1.14.0 | 1.14.0 | rsync + пере-перенос скиллов (слой тот же: frontmatter + замены kd-install → `1c-kd-rules`; абзац `reference/kd2-cfg/…` сохранён, новый справочник `remote.md` приехал из апстрима); KD_PIN → 1.14.0 (ишью #1 просил 1.13.0 — пин на последний релиз); инструментов 68 → 73, снятых нет, контракт не ломался: новые `ed_trace`, `ed_pair_validate`, `live_format_support` (1.10.0), свой пакет формата в проекте менеджера и проверки `ed.format.*` (1.11.0), типы пакета в кандидатах сопоставления (1.12.0), ссылки на файлы `download_link`/`upload_link` (1.13.0), аннотации MCP и `KD2_DISABLE_TOOLS` (1.14.0); скилл 1c-kd-rules дополнен этими возможностями и границей ссылок на петлевой станции; станция перезалита и поднята 18.11 (проект erp-demo подключён заново, проекты erp-mini/retail на месте), живая проба на erp-demo: 73 инструмента, аннотации 43 read/17 destructive, `project_list` видит erp-demo, `structure_load_project` собрал структуру ERP 2.5.27.81 с расширением за 25.7 с, `reference_get protocol` отдаёт справку |

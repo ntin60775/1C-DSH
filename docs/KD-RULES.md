@@ -3,7 +3,7 @@ node_type: reference
 title: Канал правил обмена КД 2/3 (MCP 1c-kd)
 service: _platform
 status: active
-updated: 2026-11-19
+updated: 2026-11-24
 links:
   relates_to: [dsh-install.md, dsh-gates.md]
   implemented_by: [../scripts/install_kd_rules.sh, ../scripts/start_kd_rules.sh, ../scripts/kd_register_project.py, ../src/gates/kd-session-start.ts]
@@ -86,6 +86,13 @@ AGENTS.md вместо .gitkeep» — история правил живёт р�
 1c-project-bootstrap. `kd_register_project.py` подхватывает существующий
 каталог в `rules_dir` станции автоматически — инструменты `rules_save`/
 `handlers_export` пишут правила прямо в git проекта.
+
+Загрузка в базу: `rules_pack` отдаёт ZIP и поле `load_with` — чем его грузить. На
+БСП 3.1.12+ (БП 3.0.207, ЗУП 3.1.38) формы загрузки правил файл не принимают: ZIP из
+трёх файлов грузит расширение `kd2-rules-file-load.cfe` из
+[релиза апстрима](https://github.com/egordoronchenko/kd-rules-mcp/releases/latest/download/kd2-rules-file-load.cfe)
+(в репо только исходники, `extensions/`), пара правил конвертации —
+`live_rules_install` или код `ЗагрузитьПравила`.
 
 ## Синк апстрима
 
