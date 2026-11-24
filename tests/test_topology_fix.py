@@ -76,6 +76,29 @@ def main() -> None:
 	_lib.check("p2 чужое значение цело", "push: agent" in text, text)
 	_lib.check("p2 остальные пины добавлены", "pull: ibcmd" in text)
 
+	# ── 2b. кластерная ИБ: infobase.create не пинится, существующий снимается ──
+	p2b = tmp / "p2b"
+	p2b.mkdir()
+	(p2b / "v8project.local.yaml").write_text(
+		"infobases:\n  origin:\n    connection: 'Srvr=srv;Ref=base'\n"
+		"providers:\n  push: ibcmd\n  infobase.create: ibcmd\n",
+		encoding="utf-8")
+	r = sh(p2b, state_dir=stand)
+	data = json.loads(r.stdout)
+	text = (p2b / "v8project.local.yaml").read_text(encoding="utf-8")
+	_lib.check("p2b infobase.create снят", "infobase.create" not in text, text)
+	_lib.check("p2b снятие названо", data["providers_removed"] ==
+	           ["providers.infobase.create"], data["providers_removed"])
+	_lib.check("p2b push переписан на agent", "push: agent" in text, text)
+	_lib.check("p2b pull добавлен agent", "pull: agent" in text, text)
+	_lib.check("p2b make остался ibcmd", "make: ibcmd" in text, text)
+	_lib.check("p2b dump/restore/extensions agent",
+	           "infobase.dump: agent" in text and "infobase.restore: agent" in text
+	           and "extensions: agent" in text, text)
+	r2 = sh(p2b, state_dir=stand)
+	_lib.check("p2b повтор без правок", json.loads(r2.stdout)["providers_added"] == []
+	           and json.loads(r2.stdout)["providers_removed"] == [])
+
 	# ── 3. build/out: раскладка по типу, ссылка — skip ──
 	p3 = tmp / "p3"
 	(p3 / "build" / "out" / "allure").mkdir(parents=True)
