@@ -16,7 +16,7 @@
 | Файл | Что |
 |---|---|
 | `UPSTREAM.md` | этот файл |
-| `src/kd_rules_mcp/authoring/ed/format_package.py` | вынужденная правка: `_xdto_xml` рендерит члены пакета в порядке XSD (`import` → `valueType` → `objectType`), иначе платформа отвергает пакет («Проверка свойства 'valueType'… Нарушен порядок следования значений свойств»). Апстрим-ишью — завести, после выхода версии снять правку синком. Регресс-тест — `tests/test_ed_format_package.py::test_package_members_follow_schema_order` |
+| `src/kd_rules_mcp/authoring/ed/format_package.py` | вынужденная правка: `_xdto_xml` рендерит члены пакета в порядке XSD (`import` → `valueType` → `objectType`), иначе платформа отвергает пакет («Проверка свойства 'valueType'… Нарушен порядок следования значений свойств»). Апстрим-ишью — egordoronchenko/kd-rules-mcp#90, после выхода версии снять правку синком. Регресс-тест — `tests/test_ed_format_package.py::test_package_members_follow_schema_order` |
 
 Скиллы апстрима (`.claude/skills/kd2-*`, `kd3-*`) переносятся в `skills/`
 контура копией с дополненным frontmatter (`when_to_use`, `license`) и
