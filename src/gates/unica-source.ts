@@ -8,8 +8,10 @@
  *    блокируются; единственный обход — allowlist эскалаций проекта.
  *    Внешние `src/epf` и `src/erf` вне гейта: каркас — файлами по
  *    `epf-init`/`erf-init`, правка узлов — `unica.apply`.
- * 2. `bash` с `sed -i` или перенаправлением в исходник блокируется; sed
- *    разбирается по операндам, правка копии вне исходников проходит.
+ * 2. `bash` с `sed -i`, перенаправлением или командой записи (`cp`, `mv`,
+ *    `install`, `rsync`, `ln`, `tee`, `truncate`, `touch`, `dd`) в исходник
+ *    блокируется; sed разбирается по операндам, правка копии вне исходников
+ *    проходит.
  * 3. Вызовы `mcp__*unica*__*`: неинициализированный ворктри, правила
  *    пересборки проекта, замок инфобазы.
  * 4. Правка allowlist'а эскалаций журналируется — бумажный след обхода.
@@ -51,6 +53,19 @@ const BASH_TOOL = 'bash'
 
 const SED_INPLACE_RE = /sed\s+(-[a-zA-Z]*i[a-zA-Z]*|--in-place)/
 const REDIRECT_RE = />>?\s*([^\s;|&]+)/g
+
+/** Команды оболочки, пишущие в файл-приёмник, и как считать приёмник. */
+const WRITE_COMMANDS: Readonly<Record<string, 'last' | 'all' | 'dd'>> = {
+  cp: 'last',
+  mv: 'last',
+  install: 'last',
+  rsync: 'last',
+  ln: 'last',
+  tee: 'all',
+  truncate: 'all',
+  touch: 'all',
+  dd: 'dd',
+}
 const SHELL_SEPARATORS = new Set(['&&', '||', ';', '|', '&', '>', '<', '(', ')'])
 const PUNCTUATION = new Set('();<>|&'.split(''))
 
@@ -162,6 +177,51 @@ function segments(tokens: readonly string[]): string[][] {
 }
 
 /**
+ * Пути-приёмники записи в сегменте команды.
+ *
+ * Опции пропускаются; `-t`/`--target-directory` задаёт каталог-приёмник,
+ * `dd` пишет через `of=`, `tee`/`touch`/`truncate` — все операнды, у
+ * `cp`/`mv`/`install`/`rsync`/`ln` приёмник последний.
+ * @param segment - слова одного сегмента, `segment[0]` — исполняемый файл.
+ * @param kind - вид команды записи.
+ * @returns пути-приёмники в порядке появления.
+ */
+function writeTargets(segment: readonly string[], kind: 'last' | 'all' | 'dd'): string[] {
+  const operands: string[] = []
+  let targetDir: string | null = null
+  let endOptions = false
+  let index = 1
+  while (index < segment.length) {
+    const token = segment[index] as string
+    if (!endOptions && token === '--') {
+      endOptions = true
+      index += 1
+      continue
+    }
+    if (!endOptions && token.startsWith('-') && token !== '-') {
+      if (token === '-t' || token === '--target-directory') {
+        targetDir = segment[index + 1] ?? null
+        index += 2
+        continue
+      }
+      if (token.startsWith('--target-directory=')) {
+        targetDir = token.slice('--target-directory='.length)
+      }
+      index += 1
+      continue
+    }
+    operands.push(token)
+    index += 1
+  }
+  if (kind === 'dd') {
+    return operands.filter((token) => token.startsWith('of=')).map((token) => token.slice('of='.length))
+  }
+  if (targetDir !== null) return [targetDir]
+  if (kind === 'all') return operands
+  return operands.length > 0 ? [operands[operands.length - 1] as string] : []
+}
+
+/**
  * Операнды `sed`: цели и неразбираемые слова.
  *
  * Скрипт задан флагом `-e`/`-f`/`--expression`/`--file` — все свободные слова
@@ -214,6 +274,25 @@ function sedOperands(segment: readonly string[]): { targets: string[]; unresolve
 }
 
 /**
+ * Приёмник записи лежит в исходниках 1С.
+ *
+ * Путь проверяется как файл и как каталог: `cp файл src/cf` пишет в
+ * каталог, у которого в слове нет завершающего `/`, а префиксы исходников
+ * заданы с ним. Каталог проверяется пробным ребёнком — так форма пути не
+ * расширяется и чужие каталоги не задеты.
+ * @param token - слово-приёмник.
+ * @param cwd - каталог сессии.
+ * @returns истина, когда запись попадёт в исходник.
+ */
+function writeTargetHitsSource(token: string, cwd: string): boolean {
+  const direct = normalizeSourcePath(token, cwd)
+  if (direct !== null) return !isAgentsDoc(direct.rel)
+  const child = token.endsWith('/') ? `${token}probe` : `${token}/probe`
+  const asDirectory = normalizeSourcePath(child, cwd)
+  return asDirectory !== null && !isAgentsDoc(asDirectory.rel)
+}
+
+/**
  * Цель записи в исходники через bash либо `null`.
  *
  * Неразбираемый вызов (незакрытая кавычка, цель-переменная) — fail-closed по
@@ -246,6 +325,17 @@ export function bashWritesToSource(command: string, cwd: string): string | null 
     for (const token of targets) {
       const normalized = normalizeSourcePath(token, cwd)
       if (normalized !== null && !isAgentsDoc(normalized.rel)) return token
+    }
+  }
+  for (const segment of segments(tokens)) {
+    const kind = WRITE_COMMANDS[basename(segment[0] as string)]
+    if (kind === undefined) continue
+    for (const token of writeTargets(segment, kind)) {
+      if (token.includes('$') || token.includes('`')) {
+        if (prefixInCommand) return token
+        continue
+      }
+      if (writeTargetHitsSource(token, cwd)) return token
     }
   }
   for (const match of command.matchAll(REDIRECT_RE)) {

@@ -1,5 +1,6 @@
 /**
- * Разбор bash-записи в исходники: цель через sed и перенаправление.
+ * Разбор bash-записи в исходники: цель через sed, перенаправление и
+ * команды записи (cp/mv/install/rsync/ln/tee/truncate/touch/dd).
  *
  * Ожидания взяты из поведения эталона и спеки bash-write: разбор по
  * операндам, fail-closed на неразбираемом вызове, правка копии вне дерева.
@@ -27,6 +28,19 @@ describe('bashWritesToSource', () => {
     'echo x > tests/epf/Тест.epf',
     'f=src/cf/CommonModules/Модуль.bsl; sed -i \'s/a/b/\' "$f"',
     "sed -i 's/a/b/ /tmp/w.bsl # src/cf/",
+    `cp /tmp/w.bsl ${BSL}`,
+    `cp ${BSL} src/cf/CommonModules/Копия.bsl`,
+    'cp -t src/cf/CommonModules /tmp/w.bsl',
+    'cp --target-directory=src/cf /tmp/w.bsl',
+    'cp /tmp/w.bsl src/cf',
+    `mv /tmp/w.bsl ${BSL}`,
+    'install -m 644 /tmp/w.bsl src/cf/Configuration.xml',
+    'echo x | tee src/cf/CommonModules/Модуль.bsl',
+    'touch src/cf/__probe__.txt',
+    'dd if=/tmp/w.bin of=src/cf/__probe__.bin',
+    `truncate -s 0 ${BSL}`,
+    'f=src/cf/CommonModules/Модуль.bsl; cp /tmp/w.bsl "$f"',
+    'ln -s /tmp/w.bsl src/cf/CommonModules/Модуль.bsl',
   ]
 
   for (const command of hitting) {
@@ -53,6 +67,14 @@ describe('bashWritesToSource', () => {
     // fail-closed legacyHit читает суженный список — упоминание внешнего
     // дерева больше не блокирует (пара к bash-unbalanced-with-src).
     "sed -i 's/a/b/ /tmp/w.bsl # src/epf/",
+    `cp ${BSL} /tmp/w.bsl`,
+    'cp -r src/cfe/Расширение /tmp/backup',
+    `mv ${BSL} /tmp/w.bsl`,
+    `cp ${BSL} /tmp/`,
+    'echo x | tee /tmp/log.txt',
+    'touch /tmp/probe',
+    'dd if=${BSL} of=/tmp/w.bin',
+    'cp /tmp/w.bsl build/out/cf/w.bsl',
   ]
 
   for (const command of passing) {
