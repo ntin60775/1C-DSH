@@ -3,7 +3,7 @@ node_type: runbook
 title: Ежедневное слежение за апстримами контура
 service: _platform
 status: active
-updated: 2026-11-19
+updated: 2026-11-24
 links:
   part_of: [README.md]
   depends_on:
@@ -30,7 +30,7 @@ links:
 |---|---|---|
 | IngvarConsulting/unica | tag/unica | `unica.yaml` |
 | IngvarConsulting/v8-runner-rust | v8-runner | `unica.yaml` |
-| itrous/bsl-analyzer | bsl-analyzer | `unica.yaml` |
+| itrous/bsl-analyzer | версия внутри поставки юники | `unica.yaml` — отражает поставку, не отдельный выбор |
 | ROCTUP/1c-testpilot | TESTPILOT_PIN | `scripts/install_testpilot.sh` |
 | ntin60775/1c-onec-db | ONEC_DB_PIN | `scripts/install_testpilot.sh` |
 | egordoronchenko/kd-rules-mcp | KD_PIN | `scripts/install_kd_rules.sh` |
@@ -76,6 +76,11 @@ Exit `unica_ping.py`: 0 — жив и совместим, 1 — не старт�
    `vendor/kd-rules-mcp/UPSTREAM.md` / синк зеркала
    `1c-ssl-skills/UPSTREAM.md` (merge апстрима, линт, тег зеркала,
    re-vendor в проекты), не автоматическое действие.
+   Исключение — `itrous/bsl-analyzer`: движок поставляет юника вместе с
+   артефактами, отдельного апгрейда по пину не бывает. Сверять релизы с
+   пином не нужно; следить за содержимым репо как предвестником будущей
+   поставки: контракты `EMBEDDING_*`, схемы MCP-инструментов, доки
+   эмбеддингов и central-postgres-search.
 2. **Наши ишью** (author ntin60775) в каждом апстрим-репо: смена
    state, новые комментарии, закрытие. Открытые наши ишью — в каждом
    докладе до закрытия.
