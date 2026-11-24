@@ -2,8 +2,8 @@
 node_type: report
 title: Спайк обходного semantic-канала 1c-bsl-search
 service: _platform
-status: active
-updated: 2026-11-19
+status: archived
+updated: 2026-11-24
 tags: [semantic, embeddings, bsl-analyzer, spike, bypass]
 links:
   part_of: [README.md]
@@ -13,6 +13,11 @@ links:
 ---
 
 # Спайк обходного semantic-канала 1c-bsl-search
+
+**Итог (решение оператора 24.11): канал не заводить.** Неделя ожидания
+по unica#2512 без подвижек; своего обходного канала в разводке нет —
+спайк остаётся доказательством осуществимости и границ, semantic-роль
+ждёт подключения апстримом. Numbers ниже — не инструкция к развёртыванию.
 
 Доказательство осуществимости своего semantic-поиска, пока роль `semantic`
 в `unica.search` заглушена ядром (`ProviderRole::Semantic => None`,
