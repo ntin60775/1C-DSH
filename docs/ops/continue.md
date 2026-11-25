@@ -352,10 +352,7 @@ stand-замка) и границу `--stop --base` на общей базе; `e
 1C-DSH: линтер слотов судит по декодированному значению, граница v0.17
 названа в `1c-contour` и `1c-bsl-review-standards`, док-гниль снятого
 пресета `1c` убрана. Гейты: `pnpm test` 340/340, `pnpm typecheck`,
-32 python-теста, линт 18/18 и 11/11, KB чист. Отдельный проход (не
-этот юнит): мерж зеркала `1c-ssl-skills` на v0.17, тег `v0.17.1`,
-re-vendor в 4 проекта — материал и находки в
-[tickets/bsp-v017-sync/critic-triage.md](../../tickets/bsp-v017-sync/critic-triage.md).
+32 python-теста, линт 18/18 и 11/11, KB чист.
 
 Кросс-репо шов `team-profiles-1c` (адрес изменения для ntin
 `tickets/team-profiles/05`): T1 «Конфигурируемый набор пресетов
