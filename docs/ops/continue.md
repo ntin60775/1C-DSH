@@ -3,7 +3,7 @@ node_type: runbook
 title: Продолжение работы над проектом
 service: _platform
 status: active
-updated: 2026-11-24
+updated: 2026-11-25
 links:
   part_of: [README.md]
 ---
@@ -413,10 +413,8 @@ tickets/org-regulations-delivery/evidence/); юнит завершён.
   хроника «кейс erp-mini» в `1c-contour-deploy/SKILL.md` убрана
   (contour-deploy, 22.11, решение оператора); прочих имён проектов
   и дат в скиллах contour-deploy нет (grep 0).
-- Юнит «Отладка BSL из сессии агента» (`dap-debugging`): draft-спека
-  [docs/plans/dap-debugging.md](../plans/dap-debugging.md), открыта 20.11;
-  план-гейт пройден 20.11, дальше `critic` и нарезка. Зависимость —
-  обновление контура на Unica 0.16.0 ([unica-016-update.md](unica-016-update.md)).
+- Юнит «Отладка BSL из сессии агента» (`dap-debugging`) отложен 25.11 —
+  в разделе «Отложенные юниты».
 - Решение оператора: `supportCapability.set` для published-apply на
   пилоте; закрытие ишью #37/#58/#62 на GitHub (репо заморожен); коммиты
   переведённых проектов; перезапуск хоста (lib/ пересобран, плагин
@@ -457,6 +455,18 @@ tickets/org-regulations-delivery/evidence/); юнит завершён.
   (`1c-bsl-code-style`, отдельный репо) ещё на ZCode-ключе `when_to_use`;
   в erp-main `.dsh/1c` целиком untracked — коммит за владельцем
   (followup `commit-dsh-inputs` в реестре проекта).
+
+## Отложенные юниты
+
+- «Отладка BSL из сессии агента» (`dap-debugging`): спека
+  [docs/plans/dap-debugging.md](../plans/dap-debugging.md), план-гейт
+  20.11 пройден; **отложен 25.11** (решение оператора) до `critic` и
+  нарезки. Причина: вендорный и неправимый код закрывается временным
+  расширением с логом, станция добавляет только диагноз без гипотезы
+  внутри нерасширяемых методов — ниша узкая, частота не измерена.
+  Условие возврата: повторяющийся реальный провал, который расширение и
+  журнал не локализуют, подтверждённый спайком `dbgs` + `unica dap`.
+  Не подтвердился — спека в `archived`.
 
 ## Стартовый промпт
 

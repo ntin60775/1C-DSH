@@ -3,7 +3,7 @@ node_type: reference
 title: Unica: установка, версии, скиллы и MCP
 service: _platform
 status: active
-updated: 2026-11-24
+updated: 2026-11-25
 links:
   relates_to: [dsh-install.md, dsh-gates.md]
   implemented_by: [../unica.yaml, ../scripts/install_unica_runtime.py, ../scripts/install_unica_skills.py, ../scripts/unica_ping.py]
@@ -135,7 +135,7 @@ ntin60775/deepseek-harness#1). Воркспейс Юники фиксирует�
   ревизий, вызов сам дожидается итога. `initialize` с предложением
   `2026-07-28` согласуется до `2025-11-25` — те же одиннадцать.
 - `unica dap` — подкоманда ядра: DAP-адаптер по stdio, attach к серверу
-  отладки платформы. В контур не подключена: отдельный юнит, спека
+  отладки платформы. В контур не подключена: юнит отложен, спека
   `docs/plans/dap-debugging.md`.
 - Соседние записи доставки: `1c-testpilot`, `1c-db` (с инстансами
   мультистенда), `1c-kd`.
