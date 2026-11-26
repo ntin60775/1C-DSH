@@ -1,18 +1,15 @@
 # OntoShip role registry: the machine source of the role lists, in the init
-# bundle (plan-gate decisions of docs/plans/role-registry.md,
-# accepted by the operator 2026-11-01). Precedent: the installer array SKILLS
-# (scripts/install.sh) is the machine source of the bundle list.
+# bundle.
 #
-# Data only, no logic. Consumers parse this file as text — the anchor test
-# tests/test_role_registry.py — and keep their own carriers in two-way parity:
+# Data only, no logic. Consumers parse this file as text
+# (tests/test_role_registry.py) and keep their own carriers in two-way parity:
 # test tuples, the init skill's check line, the reference sections.
 # Composition: the core bootstraps the agent config; the review panel is a
 # subset of the core. Adding a role means adding it here; the parity test
 # names every missed carrier.
-# standards-autoship 05: pack roles (reviewer-<kontur>-<aspect>) join the
-# panel dynamically from installed-pack manifests and are not listed here;
-# the validation pool lives in the registry's [validation] section, not in
-# this file. The critic role name is kept (decision 16 keeps the bundle).
+# Pack roles (reviewer-<kontur>-<aspect>) join the panel dynamically from
+# installed-pack manifests and are not listed here; the validation pool lives
+# in the registry's [validation] section, not in this file.
 
 CORE_ROLES = ("reviewer-spec", "reviewer-tests", "reviewer-code", "reviewer-kb", "critic", "curator")
 PANEL_ROLES = ("reviewer-spec", "reviewer-tests", "reviewer-code", "reviewer-kb")
