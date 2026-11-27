@@ -377,6 +377,14 @@ tickets/org-regulations-delivery/evidence/); юнит завершён.
 
 ## Что осталось
 
+- Юнит `1c-db-tools-recovery` (ишью #16): спека
+  [docs/plans/1c-db-tools-recovery.md](../plans/1c-db-tools-recovery.md),
+  план-гейт 27.11 пройден, гейт проекций 27.11 закрыт (15 находок внесены,
+  отчёт `tickets/1c-db-tools-recovery/00-projection-report.md`). Реконнект
+  HTTP-строк доставки + диагностика живого прокси без клиента 1С;
+  автоподъём станции — отдельным тикетом по решению оператора. Нарезка
+  27.11 принята: Т1 доставка, Т2 doctor, Т3 `--status`, Т4 канон,
+  Т5 живая проба; рёбра `{Т1..Т3}→Т4`, `{Т1..Т4}+build+рестарт→Т5`.
 - Юнит «Поставка орг-регламентов» (`org-regulations-delivery`): спека
   [docs/plans/org-regulations-delivery.md](../plans/org-regulations-delivery.md),
   план-гейт и гейт проекций 20.11 (27 находок T1–T27 внесены, T8 —
