@@ -86,7 +86,7 @@ def _replace_pool(lines: list[str], start: int, end: int) -> list[str]:
 
 def reconcile(text: str) -> tuple[str, list[str]]:
     """Return the reconciled text and the list of applied changes."""
-    lines = text.splitlines(keepends=True)
+    lines = text.splitlines(keepends=True) if text.strip() else []
     if lines and not lines[-1].endswith("\n"):
         lines[-1] += "\n"
     changes: list[str] = []
@@ -95,7 +95,9 @@ def reconcile(text: str) -> tuple[str, list[str]]:
     for role, model, level in ROLE_ROUTES:
         name = f"agents.{role}"
         if name not in bounds:
-            lines += ["\n", f"[{name}]\n", f'model = "{model}"\n', f'level = "{level}"\n']
+            if lines and lines[-1].strip():
+                lines.append("\n")
+            lines += [f"[{name}]\n", f'model = "{model}"\n', f'level = "{level}"\n']
             changes.append(f"{role}: section added")
         else:
             start, end = bounds[name]
@@ -108,7 +110,9 @@ def reconcile(text: str) -> tuple[str, list[str]]:
 
     bounds = _section_bounds(lines)
     if "validation" not in bounds:
-        lines += ["\n", "[validation]\n"] + _pool_block()
+        if lines and lines[-1].strip():
+            lines.append("\n")
+        lines += ["[validation]\n"] + _pool_block()
         changes.append("validation: section added")
     else:
         start, end = bounds["validation"]
